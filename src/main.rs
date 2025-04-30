@@ -2,6 +2,7 @@ mod advanced_orbit_controls;
 mod bezier_curve_renderer;
 mod nurbs;
 mod translation_controller;
+pub mod util;
 
 use crate::advanced_orbit_controls::AdvancedOrbitControls;
 use crate::translation_controller::TranslationController;

@@ -1,13 +1,16 @@
 use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
 use crate::nurbs::point::Point;
 use crate::translation_controller::EnableTranslationControl;
+use crate::util::update_material_on;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::tailwind::*;
-use bevy::input::mouse::MouseButtonInput;
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use std::collections::HashMap;
+
+#[derive(Event)]
+pub struct RedrawEvent;
 
 #[derive(Component)]
 struct RenderPoint(usize, usize);
@@ -21,40 +24,22 @@ struct Hovered;
 #[derive(Component)]
 pub struct BezierRender;
 
-fn update_material_on<E>(
-    new_material: Handle<StandardMaterial>,
-) -> impl Fn(Trigger<E>, Query<&mut MeshMaterial3d<StandardMaterial>>) {
-    move |trigger, mut query| {
-        if let Ok(mut material) = query.get_mut(trigger.entity()) {
-            material.0 = new_material.clone();
-        }
-    }
-}
-
-fn add_hovered(trigger: Trigger<Pointer<Over>>, mut commands: Commands) {
-    commands.entity(trigger.entity()).insert(Hovered);
-}
-
-fn remove_hovered(trigger: Trigger<Pointer<Out>>, mut commands: Commands) {
-    commands.entity(trigger.entity()).remove::<Hovered>();
-}
-
-fn listen_to_mouse_left_button(
-    mut event: EventReader<MouseButtonInput>,
+fn enable_gizmo(
+    trigger: Trigger<Pointer<Click>>,
+    query: Query<&RenderPoint>,
     mut commands: Commands,
-    query: Query<Entity, With<Hovered>>,
-    all_gizmos: Query<Entity, With<EnableTranslationControl>>,
+    enabled: Query<&EnableTranslationControl>,
 ) {
-    for evt in event.read() {
-        if evt.state.is_pressed() && evt.button == MouseButton::Left {
-            for e in all_gizmos.iter() {
-                commands.entity(e).remove::<EnableTranslationControl>();
-            }
+    if query.get(trigger.entity()).is_err() {
+        return;
+    }
 
-            for e in query.iter() {
-                commands.entity(e).insert(EnableTranslationControl);
-            }
-        }
+    let mut entity = commands.get_entity(trigger.entity()).unwrap();
+
+    if enabled.get(trigger.entity()).is_ok() {
+        entity.remove::<EnableTranslationControl>();
+    } else {
+        entity.insert(EnableTranslationControl);
     }
 }
 
@@ -71,12 +56,20 @@ fn drag_point(
 }
 
 fn generate_pointcloud(
+    mut events: EventReader<RedrawEvent>,
     mut commands: Commands,
     entities: Query<Entity, With<ResultPoint>>,
     control_points: Query<(&Transform, &RenderPoint)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    if !events.is_empty() {
+        // Consume and run redraw. No matter how many events where triggered
+        events.clear()
+    } else {
+        return;
+    }
+
     for p in entities.iter() {
         commands.entity(p).despawn();
     }
@@ -187,6 +180,7 @@ fn generate_default_curve(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut event_writer: EventWriter<RedrawEvent>,
 ) {
     let material = materials.add(Color::from(GRAY_400));
     let material_hover = materials.add(Color::from(GRAY_600));
@@ -226,14 +220,16 @@ fn generate_default_curve(
             .observe(update_material_on::<Pointer<Over>>(material_hover.clone()))
             .observe(update_material_on::<Pointer<Out>>(material.clone()))
             .observe(drag_point)
-            .observe(add_hovered)
-            .observe(remove_hovered);
+            .observe(enable_gizmo);
     }
+
+    event_writer.send(RedrawEvent);
 }
 
 impl Plugin for BezierRender {
     fn build(&self, app: &mut App) {
+        app.add_event::<RedrawEvent>();
         app.add_systems(Startup, generate_default_curve);
-        app.add_systems(Update, (generate_pointcloud, listen_to_mouse_left_button));
+        app.add_systems(Update, generate_pointcloud); // , listen_to_mouse_left_button));
     }
 }
