@@ -1,4 +1,4 @@
-use crate::bezier_curve_renderer::RedrawEvent;
+use crate::bezier_curve_renderer::{RedrawEvent, Resolution};
 use crate::util::update_material_on;
 use bevy::color::palettes::tailwind::*;
 use bevy::prelude::*;
@@ -65,6 +65,7 @@ fn show_transitional_controls(
     to_enable: Query<(&Transform, Entity), Added<EnableTranslationControl>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut event_writer: EventWriter<RedrawEvent>
 ) {
     let blue = materials.add(Color::from(BLUE_600));
     let blue_hover = materials.add(Color::from(BLUE_800));
@@ -78,6 +79,7 @@ fn show_transitional_controls(
             .spawn((
                 ControlParent(entity),
                 Transform::from_translation(t.translation),
+                Visibility::default(),
             ))
             .with_children(|parent| {
                 parent
@@ -89,7 +91,8 @@ fn show_transitional_controls(
                     .with_children(|parent| {
                         draw_arrow(parent, red.clone(), red_hover.clone(), &mut meshes);
                     })
-                    .observe(drag_controller);
+                    .observe(drag_controller)
+                    .observe(drag_end_trigger_redraw);
 
                 parent
                     .spawn((
@@ -100,7 +103,8 @@ fn show_transitional_controls(
                     .with_children(|parent| {
                         draw_arrow(parent, green.clone(), green_hover.clone(), &mut meshes);
                     })
-                    .observe(drag_controller);
+                    .observe(drag_controller)
+                    .observe(drag_end_trigger_redraw);
 
                 parent
                     .spawn((
@@ -111,9 +115,17 @@ fn show_transitional_controls(
                     .with_children(|parent| {
                         draw_arrow(parent, blue.clone(), blue_hover.clone(), &mut meshes);
                     })
-                    .observe(drag_controller);
+                    .observe(drag_controller)
+                    .observe(drag_end_trigger_redraw);
             });
     }
+}
+
+fn drag_end_trigger_redraw(
+    _: Trigger<Pointer<DragEnd>>,
+    mut redraw_writer: EventWriter<RedrawEvent>,
+) {
+    redraw_writer.send(RedrawEvent((400,400)));
 }
 
 fn drag_controller(
@@ -167,7 +179,7 @@ fn drag_controller(
         t.translation = transform.translation;
     };
 
-    redraw_writer.send(RedrawEvent);
+    redraw_writer.send(RedrawEvent((50, 50)));
 }
 
 pub struct TranslationController;

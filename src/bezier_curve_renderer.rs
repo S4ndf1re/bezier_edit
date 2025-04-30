@@ -9,8 +9,10 @@ use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use std::collections::HashMap;
 
+pub type Resolution = (u32, u32);
+
 #[derive(Event)]
-pub struct RedrawEvent;
+pub struct RedrawEvent(pub Resolution);
 
 #[derive(Component)]
 struct RenderPoint(usize, usize);
@@ -53,6 +55,7 @@ fn drag_point(
     point.translation = point.translation
         + camera.right() * trigger.delta.x * 0.012
         + camera.up() * trigger.delta.y * -0.012;
+
 }
 
 fn generate_pointcloud(
@@ -63,8 +66,13 @@ fn generate_pointcloud(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    let mut resolution: Resolution = (200, 200);
     if !events.is_empty() {
         // Consume and run redraw. No matter how many events where triggered
+        for evt in events.read(){
+            resolution = evt.0;
+            break;
+        }
         events.clear()
     } else {
         return;
@@ -111,8 +119,8 @@ fn generate_pointcloud(
 
     let mut indizes: Vec<u32> = vec![];
 
-    let w = 200;
-    let h = 200;
+    let w = resolution.0;
+    let h = resolution.1;
 
     for u in 0..w {
         for v in 0..h {
@@ -219,11 +227,11 @@ fn generate_default_curve(
             ))
             .observe(update_material_on::<Pointer<Over>>(material_hover.clone()))
             .observe(update_material_on::<Pointer<Out>>(material.clone()))
-            .observe(drag_point)
+            //.observe(drag_point)
             .observe(enable_gizmo);
     }
 
-    event_writer.send(RedrawEvent);
+    event_writer.send(RedrawEvent((200, 200)));
 }
 
 impl Plugin for BezierRender {
