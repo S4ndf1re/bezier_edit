@@ -21,9 +21,6 @@ struct RenderPoint(usize, usize);
 struct ResultPoint;
 
 #[derive(Component)]
-struct Hovered;
-
-#[derive(Component)]
 pub struct BezierRender;
 
 fn enable_gizmo(
@@ -55,7 +52,6 @@ fn drag_point(
     point.translation = point.translation
         + camera.right() * trigger.delta.x * 0.012
         + camera.up() * trigger.delta.y * -0.012;
-
 }
 
 fn generate_pointcloud(
@@ -69,7 +65,7 @@ fn generate_pointcloud(
     let mut resolution: Resolution = (200, 200);
     if !events.is_empty() {
         // Consume and run redraw. No matter how many events where triggered
-        for evt in events.read(){
+        for evt in events.read() {
             resolution = evt.0;
             break;
         }
