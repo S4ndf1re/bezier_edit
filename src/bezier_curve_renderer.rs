@@ -1,6 +1,6 @@
 use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
 use crate::nurbs::point::Point;
-use crate::translation_controller::EnableTranslationControl;
+use crate::translation_control::translation_controller::EnableTranslationControl;
 use crate::util::update_material_on;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
