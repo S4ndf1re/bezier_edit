@@ -1,6 +1,7 @@
-use crate::bezier_curve_renderer::{RedrawEvent, Resolution};
+use crate::bezier_curve_renderer::{RedrawEvent, ScaleInformation};
 use crate::util::update_material_on;
 use bevy::color::palettes::tailwind::*;
+use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;
 
@@ -27,18 +28,19 @@ fn register_deletes(
 }
 
 fn draw_arrow(
-    child_builder: &mut ChildBuilder,
+    child_builder: &mut RelatedSpawnerCommands<ChildOf>,
     mat: Handle<StandardMaterial>,
     mat_hover: Handle<StandardMaterial>,
     meshes: &mut ResMut<Assets<Mesh>>,
+    scale: f32,
 ) {
-    let cuboid = meshes.add(Cuboid::new(0.07, 0.07, 0.4));
-    let line = meshes.add(Cuboid::new(0.02, 0.02, 0.8));
-    let arrow = meshes.add(Cone::new(0.035, 0.2));
+    let cuboid = meshes.add(Cuboid::new(0.07 * scale, 0.07 * scale, 0.4 * scale));
+    let line = meshes.add(Cuboid::new(0.02 * scale, 0.02 * scale, 0.8 * scale));
+    let arrow = meshes.add(Cone::new(0.035 * scale, 0.2 * scale));
 
     child_builder
         .spawn((
-            Transform::from_xyz(0.0, 0.0, -0.4),
+            Transform::from_xyz(0.0, 0.0, -0.4 * scale),
             MeshMaterial3d(mat.clone()),
             Mesh3d(cuboid.clone()),
         ))
@@ -46,12 +48,12 @@ fn draw_arrow(
         .observe(update_material_on::<Pointer<Out>>(mat.clone()));
 
     child_builder.spawn((
-        Transform::from_xyz(0.0, 0.0, -0.4),
+        Transform::from_xyz(0.0, 0.0, -0.4 * scale),
         MeshMaterial3d(mat.clone()),
         Mesh3d(line.clone()),
     ));
 
-    let mut transform = Transform::from_xyz(0.0, 0.0, -0.9);
+    let mut transform = Transform::from_xyz(0.0, 0.0, -0.9 * scale);
     transform.rotate_x(-FRAC_PI_2);
     child_builder.spawn((
         transform,
@@ -65,8 +67,9 @@ fn show_transitional_controls(
     to_enable: Query<(&Transform, Entity), Added<EnableTranslationControl>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut event_writer: EventWriter<RedrawEvent>
+    scale: Res<ScaleInformation>,
 ) {
+    let scale = scale.scale;
     let blue = materials.add(Color::from(BLUE_600));
     let blue_hover = materials.add(Color::from(BLUE_800));
     let red = materials.add(Color::from(RED_600));
@@ -89,7 +92,7 @@ fn show_transitional_controls(
                         Visibility::default(),
                     ))
                     .with_children(|parent| {
-                        draw_arrow(parent, red.clone(), red_hover.clone(), &mut meshes);
+                        draw_arrow(parent, red.clone(), red_hover.clone(), &mut meshes, scale);
                     })
                     .observe(drag_controller)
                     .observe(drag_end_trigger_redraw);
@@ -101,7 +104,13 @@ fn show_transitional_controls(
                         Visibility::default(),
                     ))
                     .with_children(|parent| {
-                        draw_arrow(parent, green.clone(), green_hover.clone(), &mut meshes);
+                        draw_arrow(
+                            parent,
+                            green.clone(),
+                            green_hover.clone(),
+                            &mut meshes,
+                            scale,
+                        );
                     })
                     .observe(drag_controller)
                     .observe(drag_end_trigger_redraw);
@@ -113,7 +122,7 @@ fn show_transitional_controls(
                         Visibility::default(),
                     ))
                     .with_children(|parent| {
-                        draw_arrow(parent, blue.clone(), blue_hover.clone(), &mut meshes);
+                        draw_arrow(parent, blue.clone(), blue_hover.clone(), &mut meshes, scale);
                     })
                     .observe(drag_controller)
                     .observe(drag_end_trigger_redraw);
@@ -125,28 +134,22 @@ fn drag_end_trigger_redraw(
     _: Trigger<Pointer<DragEnd>>,
     mut redraw_writer: EventWriter<RedrawEvent>,
 ) {
-    redraw_writer.send(RedrawEvent((400,400)));
+    redraw_writer.write(RedrawEvent((400, 400)));
 }
 
 fn drag_controller(
     trigger: Trigger<Pointer<Drag>>,
-    control_query: Query<&Control>,
+    control_query: Query<(&Control, &ChildOf)>,
     mut all_other_transforms: Query<&mut Transform, (Without<Control>, Without<ControlParent>)>,
     camera: Query<(&Camera, &GlobalTransform)>,
-    parents_query: Query<&Parent>,
     mut control_parents: Query<(&ControlParent, &mut Transform)>,
     mut redraw_writer: EventWriter<RedrawEvent>,
 ) {
-    let mut parent = None;
+    let (control, child_of) = control_query.get(trigger.target()).unwrap();
 
-    for p in parents_query.iter_ancestors(trigger.entity()) {
-        if control_parents.get(p).is_ok() {
-            parent = Some(p);
-            break;
-        }
-    }
+    let parent = child_of.parent();
 
-    let (camera, camera_transform) = camera.single();
+    let (camera, camera_transform) = camera.single().unwrap();
 
     let diff = {
         let mouse_start = camera
@@ -165,11 +168,11 @@ fn drag_controller(
         end - start
     };
 
-    let axis = { control_query.get(trigger.entity()).unwrap().0.clone() };
+    let axis = control.0;
     let direction = (diff.dot(axis)) / (diff.length() * axis.length());
     let translation = axis * direction * trigger.delta.length() * 0.01;
 
-    let (control_parent, mut transform) = control_parents.get_mut(parent.unwrap()).unwrap();
+    let (control_parent, mut transform) = control_parents.get_mut(parent).unwrap();
 
     transform.translation = transform.translation + translation;
 
@@ -179,7 +182,7 @@ fn drag_controller(
         t.translation = transform.translation;
     };
 
-    redraw_writer.send(RedrawEvent((50, 50)));
+    redraw_writer.write(RedrawEvent((50, 50)));
 }
 
 pub struct TranslationController;

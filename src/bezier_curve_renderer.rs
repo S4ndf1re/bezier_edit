@@ -11,11 +11,26 @@ use std::collections::HashMap;
 
 pub type Resolution = (u32, u32);
 
+#[derive(Resource)]
+pub struct ScaleInformation {
+    pub scale: f32,
+    pub height: f32,
+}
+
+impl Default for ScaleInformation {
+    fn default() -> Self {
+        Self {
+            scale: 1.0,
+            height: 0.0,
+        }
+    }
+}
+
 #[derive(Event)]
 pub struct RedrawEvent(pub Resolution);
 
 #[derive(Component)]
-struct RenderPoint(usize, usize);
+pub struct RenderPoint(usize, usize);
 
 #[derive(Component)]
 struct ResultPoint;
@@ -32,13 +47,13 @@ fn enable_gizmo(
     mut commands: Commands,
     enabled: Query<&EnableTranslationControl>,
 ) {
-    if query.get(trigger.entity()).is_err() {
+    if query.get(trigger.target()).is_err() {
         return;
     }
 
-    let mut entity = commands.get_entity(trigger.entity()).unwrap();
+    let mut entity = commands.get_entity(trigger.target()).unwrap();
 
-    if enabled.get(trigger.entity()).is_ok() {
+    if enabled.get(trigger.target()).is_ok() {
         entity.remove::<EnableTranslationControl>();
     } else {
         entity.insert(EnableTranslationControl);
@@ -50,12 +65,11 @@ fn drag_point(
     mut query: Query<&mut Transform, (With<RenderPoint>, Without<Camera3d>)>,
     camera: Single<&Transform, With<Camera3d>>,
 ) {
-    let mut point = query.get_mut(trigger.entity()).unwrap();
+    let mut point = query.get_mut(trigger.target()).unwrap();
 
     point.translation = point.translation
         + camera.right() * trigger.delta.x * 0.012
         + camera.up() * trigger.delta.y * -0.012;
-
 }
 
 fn generate_pointcloud(
@@ -69,7 +83,7 @@ fn generate_pointcloud(
     let mut resolution: Resolution = (200, 200);
     if !events.is_empty() {
         // Consume and run redraw. No matter how many events where triggered
-        for evt in events.read(){
+        for evt in events.read() {
             resolution = evt.0;
             break;
         }
@@ -184,15 +198,18 @@ fn generate_pointcloud(
     ));
 }
 
-fn generate_default_curve(
+pub fn generate_default_curve(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut event_writer: EventWriter<RedrawEvent>,
+    mut scale_res: Res<ScaleInformation>,
 ) {
+    let scale = scale_res.scale;
+    let height = scale_res.height;
     let material = materials.add(Color::from(GRAY_400));
     let material_hover = materials.add(Color::from(GRAY_600));
-    let sphere = meshes.add(Sphere::new(0.1).mesh().ico(5).unwrap());
+    let sphere = meshes.add(Sphere::new(0.1 * scale).mesh().ico(5).unwrap());
 
     let points = vec![
         (0, 0, -1.5, 0.0, -1.5),
@@ -221,7 +238,7 @@ fn generate_default_curve(
             .spawn((
                 BezierRender,
                 RenderPoint(p.0, p.1),
-                Transform::from_xyz(p.2, p.3, p.4),
+                Transform::from_xyz(p.2 * scale, p.3 * scale + height, p.4 * scale),
                 Mesh3d(sphere.clone()),
                 MeshMaterial3d(material.clone()),
             ))
@@ -231,12 +248,13 @@ fn generate_default_curve(
             .observe(enable_gizmo);
     }
 
-    event_writer.send(RedrawEvent((200, 200)));
+    event_writer.write(RedrawEvent((200, 200)));
 }
 
 impl Plugin for BezierRender {
     fn build(&self, app: &mut App) {
         app.add_event::<RedrawEvent>();
+        app.init_resource::<ScaleInformation>();
         app.add_systems(Startup, generate_default_curve);
         app.add_systems(Update, generate_pointcloud); // , listen_to_mouse_left_button));
     }
