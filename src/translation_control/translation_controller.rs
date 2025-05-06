@@ -1,7 +1,6 @@
 use crate::bezier_curve_renderer::RedrawEvent;
 use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
-use bevy::color::palettes::tailwind::*;
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;
 
@@ -68,13 +67,6 @@ fn show_transitional_controls(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    let blue = materials.add(Color::from(BLUE_600));
-    let blue_hover = materials.add(Color::from(BLUE_800));
-    let red = materials.add(Color::from(RED_600));
-    let red_hover = materials.add(Color::from(RED_800));
-    let green = materials.add(Color::from(GREEN_600));
-    let green_hover = materials.add(Color::from(GREEN_800));
-
     for (t, entity) in to_enable.iter() {
         commands
             .spawn((
@@ -86,7 +78,8 @@ fn show_transitional_controls(
                 for arrow in arrows.as_ref().iter() {
                     parent
                         .spawn((
-                            Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.vec, Vec3::Y),
+                            Transform::from_xyz(0.0, 0.0, 0.0)
+                                .looking_to(arrow.normalized, Vec3::Y),
                             Control(arrow.vec),
                             Visibility::default(),
                         ))
@@ -101,30 +94,6 @@ fn show_transitional_controls(
                         .observe(drag_controller)
                         .observe(drag_end_trigger_redraw);
                 }
-                //
-                //     parent
-                //         .spawn((
-                //             Transform::from_xyz(0.0, 0.0, 0.0).looking_to(Vec3::Y, Vec3::Y),
-                //             Control(Vec3::Y),
-                //             Visibility::default(),
-                //         ))
-                //         .with_children(|parent| {
-                //             draw_arrow(parent, green.clone(), green_hover.clone(), &mut meshes);
-                //         })
-                //         .observe(drag_controller)
-                //         .observe(drag_end_trigger_redraw);
-                //
-                //     parent
-                //         .spawn((
-                //             Transform::from_xyz(0.0, 0.0, 0.0).looking_to(Vec3::Z, Vec3::Y),
-                //             Control(Vec3::Z),
-                //             Visibility::default(),
-                //         ))
-                //         .with_children(|parent| {
-                //             draw_arrow(parent, blue.clone(), blue_hover.clone(), &mut meshes);
-                //         })
-                //         .observe(drag_controller)
-                //         .observe(drag_end_trigger_redraw);
             });
     }
 }

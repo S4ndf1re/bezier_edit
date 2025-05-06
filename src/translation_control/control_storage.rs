@@ -4,6 +4,7 @@ use std::slice::Iter;
 
 pub struct ControlDirection {
     pub vec: Vec3,
+    pub normalized: Vec3,
     pub color: Color,
     pub hover_color: Color,
 }
@@ -12,6 +13,7 @@ impl ControlDirection {
     pub fn new(vec: Vec3, color: Color, hover_color: Color) -> Self {
         Self {
             vec,
+            normalized: vec * 1.0 / vec.length(),
             color,
             hover_color,
         }
@@ -55,6 +57,11 @@ impl Default for ControlStorage {
                     Vec3::new(0.0, 0.0, 1.0),
                     Color::from(BLUE_600),
                     Color::from(BLUE_800),
+                ),
+                ControlDirection::new(
+                    Vec3::new(0.0, 1.0, 1.0),
+                    Color::from(PURPLE_600),
+                    Color::from(PURPLE_800),
                 ),
             ],
         }
