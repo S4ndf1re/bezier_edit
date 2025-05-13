@@ -1,5 +1,7 @@
 use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
 use crate::nurbs::point::Point;
+use crate::picking_3d;
+use crate::picking_3d::Pointer3d;
 use crate::translation_controller::EnableTranslationControl;
 use crate::util::update_material_on;
 use bevy::app::App;
@@ -43,6 +45,25 @@ pub struct BezierRender;
 
 fn enable_gizmo(
     trigger: Trigger<Pointer<Click>>,
+    query: Query<&RenderPoint>,
+    mut commands: Commands,
+    enabled: Query<&EnableTranslationControl>,
+) {
+    if query.get(trigger.target()).is_err() {
+        return;
+    }
+
+    let mut entity = commands.get_entity(trigger.target()).unwrap();
+
+    if enabled.get(trigger.target()).is_ok() {
+        entity.remove::<EnableTranslationControl>();
+    } else {
+        entity.insert(EnableTranslationControl);
+    }
+}
+
+fn enable_gizmo3d(
+    trigger: Trigger<Pointer3d<picking_3d::Click>>,
     query: Query<&RenderPoint>,
     mut commands: Commands,
     enabled: Query<&EnableTranslationControl>,
@@ -245,7 +266,8 @@ pub fn generate_default_curve(
             .observe(update_material_on::<Pointer<Over>>(material_hover.clone()))
             .observe(update_material_on::<Pointer<Out>>(material.clone()))
             //.observe(drag_point)
-            .observe(enable_gizmo);
+            .observe(enable_gizmo)
+            .observe(enable_gizmo3d);
     }
 
     event_writer.write(RedrawEvent((200, 200)));

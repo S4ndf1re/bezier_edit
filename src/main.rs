@@ -8,6 +8,7 @@ pub mod util;
 
 use crate::picking_3d::ObjectPicking3d;
 use crate::thirdparty_copy::transform_util_copy::{SnapToPosition, SnapToRotation};
+use crate::translation_controller::TranslationController;
 use bevy::prelude::*;
 use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
 use bevy_mod_openxr::add_xr_plugins;
@@ -95,12 +96,11 @@ fn create_app() -> App {
     })
     .add_plugins(bevy_mod_xr::hand_debug_gizmos::HandGizmosPlugin)
     .add_plugins(thirdparty_copy::transform_util_copy::TransformUtilitiesPlugin)
-    .add_plugins(XRUtilsActionsPlugin)
     .add_plugins(MeshPickingPlugin)
     .add_plugins(ObjectPicking3d)
-    // .add_plugins(BezierRender)
+    .add_plugins(BezierRender)
     //.add_plugins(AdvancedOrbitControls)
-    // .add_plugins(TranslationController)
+    .add_plugins(TranslationController)
     .add_systems(
         Startup,
         (

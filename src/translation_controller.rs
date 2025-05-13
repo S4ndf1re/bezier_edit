@@ -1,4 +1,6 @@
 use crate::bezier_curve_renderer::{RedrawEvent, ScaleInformation};
+use crate::picking_3d;
+use crate::picking_3d::{MoveIn, MoveOut, Pointer3d};
 use crate::util::update_material_on;
 use bevy::color::palettes::tailwind::*;
 use bevy::ecs::relationship::RelatedSpawnerCommands;
@@ -45,7 +47,9 @@ fn draw_arrow(
             Mesh3d(cuboid.clone()),
         ))
         .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
-        .observe(update_material_on::<Pointer<Out>>(mat.clone()));
+        .observe(update_material_on::<Pointer<Out>>(mat.clone()))
+        .observe(update_material_on::<Pointer3d<MoveIn>>(mat_hover.clone()))
+        .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()));
 
     child_builder.spawn((
         Transform::from_xyz(0.0, 0.0, -0.4 * scale),
@@ -95,7 +99,9 @@ fn show_transitional_controls(
                         draw_arrow(parent, red.clone(), red_hover.clone(), &mut meshes, scale);
                     })
                     .observe(drag_controller)
-                    .observe(drag_end_trigger_redraw);
+                    .observe(drag_controller3d)
+                    .observe(drag_end_trigger_redraw)
+                    .observe(drag_end3d_trigger_redraw);
 
                 parent
                     .spawn((
@@ -113,7 +119,9 @@ fn show_transitional_controls(
                         );
                     })
                     .observe(drag_controller)
-                    .observe(drag_end_trigger_redraw);
+                    .observe(drag_controller3d)
+                    .observe(drag_end_trigger_redraw)
+                    .observe(drag_end3d_trigger_redraw);
 
                 parent
                     .spawn((
@@ -125,13 +133,22 @@ fn show_transitional_controls(
                         draw_arrow(parent, blue.clone(), blue_hover.clone(), &mut meshes, scale);
                     })
                     .observe(drag_controller)
-                    .observe(drag_end_trigger_redraw);
+                    .observe(drag_controller3d)
+                    .observe(drag_end_trigger_redraw)
+                    .observe(drag_end3d_trigger_redraw);
             });
     }
 }
 
 fn drag_end_trigger_redraw(
     _: Trigger<Pointer<DragEnd>>,
+    mut redraw_writer: EventWriter<RedrawEvent>,
+) {
+    redraw_writer.write(RedrawEvent((400, 400)));
+}
+
+fn drag_end3d_trigger_redraw(
+    _: Trigger<Pointer3d<picking_3d::DragEnd>>,
     mut redraw_writer: EventWriter<RedrawEvent>,
 ) {
     redraw_writer.write(RedrawEvent((400, 400)));
@@ -171,6 +188,40 @@ fn drag_controller(
     let axis = control.0;
     let direction = (diff.dot(axis)) / (diff.length() * axis.length());
     let translation = axis * direction * trigger.delta.length() * 0.01;
+
+    let (control_parent, mut transform) = control_parents.get_mut(parent).unwrap();
+
+    transform.translation = transform.translation + translation;
+
+    let control_point = all_other_transforms.get_mut(control_parent.0);
+    if control_point.is_ok() {
+        let mut t = control_point.unwrap();
+        t.translation = transform.translation;
+    };
+
+    redraw_writer.write(RedrawEvent((50, 50)));
+}
+
+fn drag_controller3d(
+    trigger: Trigger<Pointer3d<picking_3d::Drag>>,
+    control_query: Query<(&Control, &ChildOf)>,
+    mut all_other_transforms: Query<&mut Transform, (Without<Control>, Without<ControlParent>)>,
+    camera: Query<(&Camera, &GlobalTransform)>,
+    mut control_parents: Query<(&ControlParent, &mut Transform)>,
+    mut redraw_writer: EventWriter<RedrawEvent>,
+) {
+    println!("Dragging");
+    let (control, child_of) = control_query.get(trigger.target()).unwrap();
+
+    let parent = child_of.parent();
+
+    let (camera, camera_transform) = camera.single().unwrap();
+
+    let diff = { trigger.event.current_entity_position - trigger.event.start_entity_position };
+
+    let axis = control.0;
+    let direction = (diff.dot(axis)) / (diff.length() * axis.length());
+    let translation = axis * direction * trigger.event.current_delta.length() * 0.01;
 
     let (control_parent, mut transform) = control_parents.get_mut(parent).unwrap();
 

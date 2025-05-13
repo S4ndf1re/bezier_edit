@@ -1,4 +1,4 @@
-use crate::bezier_curve_renderer::ScaleInformation;
+use crate::bezier_curve_renderer::{RenderPoint, ScaleInformation};
 use crate::Test;
 use bevy::asset::Assets;
 use bevy::color::palettes::tailwind::{BLUE_800, RED_800};
@@ -8,22 +8,23 @@ use bevy::math::bounding::{BoundingSphere, IntersectsVolume};
 use bevy::math::Vec3;
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::{
-    App, ChildOf, Commands, Component, Entity, Event, EventReader, GlobalTransform, Mesh, Mesh3d,
-    Plugin, PostUpdate, Query, Reflect, Res, ResMut, Resource, Single, Sphere, Startup, Transform,
-    Update, With,
+    App, ChildOf, Commands, Component, Entity, Event, EventReader, EventWriter, GlobalTransform,
+    IntoScheduleConfigs, Mesh, Mesh3d, Or, Plugin, PostUpdate, Query, Reflect, Res, ResMut,
+    Resource, Single, Sphere, Startup, Transform, Update, With, Without,
 };
-use bevy_mod_openxr::action_binding::OxrSendActionBindings;
+use bevy_mod_openxr::action_binding::{OxrSendActionBindings, OxrSuggestActionBinding};
 use bevy_mod_xr::actions::ActionType;
 use bevy_mod_xr::session::{XrSessionCreated, XrTracker};
 use bevy_xr_utils::tracking_utils::{
-    suggest_action_bindings, TrackingUtilitiesPlugin, XrTrackedLeftGrip, XrTrackedRightGrip,
-    XrTrackedView,
+    suggest_action_bindings, ControllerActions, TrackingUtilitiesPlugin, XrTrackedLeftGrip,
+    XrTrackedRightGrip, XrTrackedView,
 };
 use bevy_xr_utils::xr_utils_actions::{
-    ActiveSet, XRUtilsAction, XRUtilsActionSet, XRUtilsActionState, XRUtilsBinding,
+    ActiveSet, XRUtilsAction, XRUtilsActionSet, XRUtilsActionState, XRUtilsActionSystemSet,
+    XRUtilsActionsPlugin, XRUtilsBinding,
 };
 use std::collections::hash_set::Iter;
-use std::collections::{HashMap, HashSet};
+use std::collections::{hash_map, HashMap, HashSet};
 
 #[derive(Clone, Copy, Reflect)]
 pub struct Click;
@@ -39,7 +40,9 @@ pub struct DragStart;
 
 #[derive(Clone, Copy, Reflect)]
 pub struct Drag {
-    current_entity_position: Vec3,
+    pub start_entity_position: Vec3,
+    pub current_entity_position: Vec3,
+    pub current_delta: Vec3,
 }
 
 #[derive(Clone, Copy, Reflect)]
@@ -57,7 +60,7 @@ pub struct Pointer3d<E>
 where
     E: Clone + Copy + Reflect,
 {
-    /// The 3d Position of the controlelr that triggered the event
+    /// The 3d Position of the controller that triggered the event
     pub position: Vec3,
     /// The entity, that triggered the event, i.e. the controller
     pub hit_entity: Entity,
@@ -70,6 +73,7 @@ where
 struct MoveMarker {
     entity: Entity,
     global_start: Vec3,
+    current_position: Vec3,
 }
 
 #[derive(Component)]
@@ -136,10 +140,17 @@ impl PickingState {
         }
 
         let removed = if self.hovered_entities.contains_key(entity) {
-            self.hovered_entities
+            let removed = self
+                .hovered_entities
                 .get_mut(entity)
                 .unwrap()
-                .remove(controller)
+                .remove(controller);
+
+            if self.hovered_entities.get(entity).unwrap().is_empty() {
+                self.hovered_entities.remove(entity).is_some() && removed
+            } else {
+                false
+            }
         } else {
             false
         };
@@ -153,10 +164,10 @@ impl PickingState {
             HoveredBy::Right => self.hovered_by_right.remove(entity),
         };
 
-        assert_eq!(
-            removed, removed_inverse,
-            "This case should never ever happen. If this case happens, a programming error can be assumed"
-        );
+        // assert_eq!(
+        //     removed, removed_inverse,
+        //     "This case should never ever happen. If this case happens, a programming error can be assumed"
+        // );
         removed_inverse && removed
     }
 
@@ -167,10 +178,21 @@ impl PickingState {
         }
     }
 
+    pub fn iter_all(&self) -> hash_map::Keys<'_, Entity, HashSet<HoveredBy>> {
+        self.hovered_entities.keys()
+    }
+
     pub fn contains_entity(&self, entity: &Entity, controller: &HoveredBy) -> bool {
         match controller {
             HoveredBy::Left => self.hovered_by_left.contains(entity),
             HoveredBy::Right => self.hovered_by_left.contains(entity),
+        }
+    }
+
+    pub fn set_dragging(&mut self, is_dragging: bool, controller: &HoveredBy) {
+        match controller {
+            HoveredBy::Left => self.is_dragging_left = is_dragging,
+            HoveredBy::Right => self.is_dragging_right = is_dragging,
         }
     }
 }
@@ -198,11 +220,15 @@ impl Pointer3dState {
     pub fn set_state(&mut self, state: bool, controller: &HoveredBy) {
         match controller {
             HoveredBy::Left => {
-                self.toggled_left_since = 0;
+                if self.grab_left_prev_state != state {
+                    self.toggled_left_since = 0;
+                }
                 self.grab_left_prev_state = state
             }
             HoveredBy::Right => {
-                self.toggled_right_since = 0;
+                if self.grab_right_prev_state != state {
+                    self.toggled_right_since = 0;
+                }
                 self.grab_right_prev_state = state
             }
         }
@@ -243,7 +269,10 @@ pub enum Intersection {
 fn check_intersections(
     mut commands: Commands,
     // mut event_writer: EventWriter<Intersection>,
-    controls_points: Query<(&GlobalTransform, Entity), With<Test>>,
+    controls_points: Query<
+        (&GlobalTransform, Entity),
+        (Without<XrTrackedRightGrip>, Without<XrTrackedLeftGrip>),
+    >,
     left_tracked: Single<(&GlobalTransform, Entity), With<XrTrackedLeftGrip>>,
     right_tracked: Single<(&GlobalTransform, Entity), With<XrTrackedRightGrip>>,
     res_scale: Res<ScaleInformation>,
@@ -300,8 +329,15 @@ fn test_all_hovered(
 
     let mut to_remove = Vec::new();
 
-    for entity in &mut res_picked.as_mut().hovered_entities.keys() {
-        let p = controls_points.get(*entity).unwrap();
+    for entity in &mut res_picked.iter_all() {
+        let p = controls_points.get(*entity);
+        if p.is_err() {
+            to_remove.push((*entity, HoveredBy::Left));
+            to_remove.push((*entity, HoveredBy::Right));
+            continue;
+        }
+        let p = p.unwrap();
+
         let test = BoundingSphere::new(p.0.translation(), 0.1 * scale);
 
         if !bb_sphere_left.intersects(&test) {
@@ -315,18 +351,19 @@ fn test_all_hovered(
 
     for removable in to_remove {
         if res_picked.remove_from_entity(&removable.0, &removable.1) {
-            commands
-                .get_entity(removable.0)
-                .unwrap()
-                .trigger(Pointer3d {
-                    position: left_tracked.0.translation(),
-                    hit_entity: match removable.1 {
-                        HoveredBy::Left => left_tracked.1,
-                        HoveredBy::Right => right_tracked.1,
-                    },
-                    event: MoveOut,
-                    controler: removable.1,
-                });
+            let command_entity = commands.get_entity(removable.0);
+            if command_entity.is_err() {
+                continue;
+            }
+            command_entity.unwrap().trigger(Pointer3d {
+                position: left_tracked.0.translation(),
+                hit_entity: match removable.1 {
+                    HoveredBy::Left => left_tracked.1,
+                    HoveredBy::Right => right_tracked.1,
+                },
+                event: MoveOut,
+                controler: removable.1,
+            });
         }
     }
 }
@@ -356,6 +393,7 @@ fn log_intersections(
                     MoveMarker {
                         entity: *entity,
                         global_start: transform.translation(),
+                        current_position: transform.translation(),
                     },
                 ));
             }
@@ -377,6 +415,7 @@ fn log_intersections(
                     MoveMarker {
                         entity: *entity,
                         global_start: transform.translation(),
+                        current_position: transform.translation(),
                     },
                 ));
             }
@@ -393,11 +432,10 @@ fn create_hand_trackers(
 ) {
     let scale = scale_res.scale;
     let height = scale_res.height;
-    info!("Creating trackers");
     // Add left grip tracking
     commands.spawn((
-        Mesh3d::from(meshes.add(Sphere::new(0.3 * scale))),
-        MeshMaterial3d::from(materials.add(Color::from(BLUE_800))),
+        // Mesh3d::from(meshes.add(Sphere::new(0.3 * scale))),
+        // MeshMaterial3d::from(materials.add(Color::from(BLUE_800))),
         Transform::from_xyz(0.0, 0.0, 0.0),
         XrTrackedLeftGrip,
         XrTracker,
@@ -405,19 +443,11 @@ fn create_hand_trackers(
 
     // Add right grip Tracking
     commands.spawn((
-        Mesh3d::from(meshes.add(Sphere::new(0.3 * scale))),
-        MeshMaterial3d::from(materials.add(Color::from(BLUE_800))),
+        // Mesh3d::from(meshes.add(Sphere::new(0.3 * scale))),
+        // MeshMaterial3d::from(materials.add(Color::from(BLUE_800))),
         Transform::from_xyz(0.0, 0.0, 0.0),
         XrTrackedRightGrip,
         XrTracker,
-    ));
-
-    // Add right grip Tracking
-    commands.spawn((
-        Mesh3d::from(meshes.add(Sphere::new(0.3 * scale))),
-        MeshMaterial3d::from(materials.add(Color::from(RED_800))),
-        Transform::from_xyz(0.0, 0.0 + height, 0.0),
-        Test,
     ));
 
     // Add head tracking
@@ -439,9 +469,9 @@ pub fn setup_actions(mut commands: Commands) {
     let grab_action_left = commands
         .spawn((
             XRUtilsAction {
-                action_name: "grab".into(),
-                localized_name: "picking_grab".into(),
-                action_type: ActionType::Bool,
+                action_name: "grab_left".into(),
+                localized_name: "picking_grab_left".into(),
+                action_type: ActionType::Float,
             },
             GrabMarker(HoveredBy::Left),
         ))
@@ -450,9 +480,9 @@ pub fn setup_actions(mut commands: Commands) {
     let grab_action_right = commands
         .spawn((
             XRUtilsAction {
-                action_name: "grab".into(),
-                localized_name: "picking_grab".into(),
-                action_type: ActionType::Bool,
+                action_name: "grab_right".into(),
+                localized_name: "picking_grab_right".into(),
+                action_type: ActionType::Float,
             },
             GrabMarker(HoveredBy::Right),
         ))
@@ -460,15 +490,15 @@ pub fn setup_actions(mut commands: Commands) {
 
     let controller_left_binding = commands
         .spawn(XRUtilsBinding {
-            profile: "interaction_profiles/hp/mixed_reality_controller".into(),
-            binding: "/user/hand/left/input/grip/pose".into(),
+            profile: "/interaction_profiles/hp/mixed_reality_controller".into(),
+            binding: "/user/hand/left/input/trigger/value".into(),
         })
         .id();
 
     let controller_right_binding = commands
         .spawn(XRUtilsBinding {
-            profile: "interaction_profiles/hp/mixed_reality_controller".into(),
-            binding: "/user/hand/right/input/grip/pose".into(),
+            profile: "/interaction_profiles/hp/mixed_reality_controller".into(),
+            binding: "/user/hand/right/input/trigger/value".into(),
         })
         .id();
 
@@ -485,6 +515,10 @@ pub fn setup_actions(mut commands: Commands) {
         .add_children(&[grab_action_left, grab_action_right]);
 }
 
+fn tick(mut pointer_state: ResMut<Pointer3dState>) {
+    pointer_state.add_tick();
+}
+
 fn handle_input_grab(
     mut commands: Commands,
     action_query: Query<(&XRUtilsActionState, &GrabMarker)>,
@@ -492,8 +526,8 @@ fn handle_input_grab(
     transform_query: Query<&GlobalTransform>,
     left_tracked: Single<(&GlobalTransform, Entity), With<XrTrackedLeftGrip>>,
     right_tracked: Single<(&GlobalTransform, Entity), With<XrTrackedRightGrip>>,
-    picking_state: Res<PickingState>,
-    moved_marked_query: Query<(&GlobalTransform, &MoveMarker)>,
+    mut picking_state: ResMut<PickingState>,
+    mut moved_marked_query: Query<(&GlobalTransform, &mut MoveMarker, Entity)>,
 ) {
     for action in action_query.iter() {
         let state = action.0;
@@ -505,30 +539,41 @@ fn handle_input_grab(
         };
 
         match state {
-            XRUtilsActionState::Bool(gripped) => {
+            XRUtilsActionState::Float(gripped) => {
+                let current_state = gripped.current_state > 0.2;
                 if gripped.is_active
-                    && !gripped.current_state
+                    && !current_state
                     && pointer_state.is_grabbing(&hover_by)
                     && pointer_state.is_just_toggled(&hover_by)
                 {
                     // Click event here, since the new state is false, the old state was true and the state change lasted only <n ticks
                     for entity in picking_state.iter(&hover_by) {
-                        let entity_global_position = transform_query.get(*entity).unwrap();
+                        let entity_global_position = transform_query.get(*entity);
+                        if entity_global_position.is_err() {
+                            continue;
+                        }
+                        let entity_global_position = entity_global_position.unwrap();
                         commands.get_entity(*entity).unwrap().trigger(Pointer3d {
                             hit_entity: tracked.1,
                             controler: hover_by,
                             position: entity_global_position.translation(),
-                            event: DragEnd,
+                            event: Click,
                         });
                     }
                 } else if gripped.is_active
-                    && !gripped.current_state
+                    && !current_state
                     && pointer_state.is_grabbing(&hover_by)
                     && !pointer_state.is_just_toggled(&hover_by)
                 {
+                    picking_state.set_dragging(false, &hover_by);
+
+                    for (_, _, entity) in moved_marked_query.iter() {
+                        commands.get_entity(entity).unwrap().despawn();
+                    }
+
                     // End Drag here, new state is false, old one was true for >n ticks
                 } else if gripped.is_active
-                    && gripped.current_state
+                    && current_state
                     && pointer_state.is_grabbing(&hover_by)
                     && !pointer_state.is_just_toggled(&hover_by)
                 {
@@ -547,6 +592,7 @@ fn handle_input_grab(
                                 MoveMarker {
                                     entity: *entity,
                                     global_start: transform.translation(),
+                                    current_position: transform.translation(),
                                 },
                             ));
 
@@ -557,47 +603,78 @@ fn handle_input_grab(
                                 position: transform.translation(),
                             });
                         }
-                    } else {
-                        for (transform, marker) in moved_marked_query.iter() {
-                            if picking_state.contains_entity(&marker.entity, &hover_by) {
-                                let entity_global_position =
-                                    transform_query.get(marker.entity).unwrap();
-                                commands
-                                    .get_entity(marker.entity)
-                                    .unwrap()
-                                    .trigger(Pointer3d {
-                                        controler: hover_by,
-                                        hit_entity: tracked.1,
-                                        event: Drag {
-                                            current_entity_position: transform.translation(),
-                                        },
-                                        position: entity_global_position.translation(),
-                                    });
-                            }
+                    }
+
+                    for (transform, mut marker, _) in moved_marked_query.iter_mut() {
+                        if picking_state.contains_entity(&marker.entity, &hover_by) {
+                            let entity_global_position =
+                                transform_query.get(marker.entity).unwrap();
+
+                            // Dispatch Drag event on entity. Use old state for positional calculation
+                            // TODO: Debug why no events are sended here???
+                            commands
+                                .get_entity(marker.entity)
+                                .unwrap()
+                                .trigger(Pointer3d {
+                                    controler: hover_by,
+                                    hit_entity: tracked.1,
+                                    event: Drag {
+                                        start_entity_position: marker.global_start,
+                                        current_entity_position: transform.translation(),
+                                        current_delta: transform.translation()
+                                            - marker.current_position,
+                                    },
+                                    position: entity_global_position.translation(),
+                                });
+
+                            // Update marker to new state
+                            marker.current_position = transform.translation();
                         }
                     }
+                    picking_state.set_dragging(true, &hover_by);
                 }
-                pointer_state.set_state(gripped.current_state, &hover_by);
+                pointer_state.set_state(current_state, &hover_by);
             }
             _ => {}
         }
     }
 }
 
+fn suggest_action_bindings_hp_headset(
+    actions: Res<ControllerActions>,
+    mut bindings: EventWriter<OxrSuggestActionBinding>,
+) {
+    bindings.write(OxrSuggestActionBinding {
+        action: actions.left.as_raw(),
+        interaction_profile: "/interaction_profiles/hp/mixed_reality_controller".into(),
+        bindings: vec!["/user/hand/left/input/grip/pose".into()],
+    });
+    bindings.write(OxrSuggestActionBinding {
+        action: actions.right.as_raw(),
+        interaction_profile: "/interaction_profiles/hp/mixed_reality_controller".into(),
+        bindings: vec!["/user/hand/right/input/grip/pose".into()],
+    });
+}
+
 pub struct ObjectPicking3d;
 
 impl Plugin for ObjectPicking3d {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_actions)
+        app.add_systems(XrSessionCreated, create_hand_trackers)
+            //default bindings only use for prototyping
+            .add_systems(OxrSendActionBindings, suggest_action_bindings_hp_headset)
+            .add_systems(
+                Startup,
+                setup_actions.before(XRUtilsActionSystemSet::CreateEvents),
+            )
             .add_systems(Update, handle_input_grab)
             .add_systems(PostUpdate, check_intersections)
             .add_systems(PostUpdate, test_all_hovered)
+            .add_systems(PostUpdate, tick)
             // .add_systems(PostUpdate, log_intersections)
-            .add_systems(XrSessionCreated, create_hand_trackers)
             .add_event::<Intersection>()
             .add_plugins(TrackingUtilitiesPlugin)
-            //default bindings only use for prototyping
-            .add_systems(OxrSendActionBindings, suggest_action_bindings)
+            .add_plugins(XRUtilsActionsPlugin)
             .add_event::<Pointer3d<Click>>()
             .add_event::<Pointer3d<MoveIn>>()
             .add_event::<Pointer3d<MoveOut>>()
@@ -605,6 +682,6 @@ impl Plugin for ObjectPicking3d {
             .add_event::<Pointer3d<Drag>>()
             .add_event::<Pointer3d<DragEnd>>()
             .insert_resource(PickingState::new())
-            .insert_resource(Pointer3dState::new(10)); // On 60 FPS, 10 Ticks correspond to 0,1666666667 s
+            .insert_resource(Pointer3dState::new(15)); // On 90 FPS (VR Standard), 15 Ticks correspond to 0,1666666667 s
     }
 }
