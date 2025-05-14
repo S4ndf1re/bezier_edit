@@ -1,10 +1,8 @@
 use crate::bezier_curve_renderer::{RedrawEvent, ScaleInformation};
-use crate::picking_3d;
-use crate::picking_3d::{MoveIn, MoveOut, Pointer3d};
-use crate::bezier_curve_renderer::RedrawEvent;
+use crate::picking3d::picking_3d;
+use crate::picking3d::picking_3d::{MoveIn, MoveOut, Picking3dInteractable, Pointer3d};
 use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
-use bevy::color::palettes::tailwind::*;
 use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;
@@ -25,7 +23,7 @@ fn register_deletes(
     for event in deleted.read() {
         for (entity, contrl) in controls.iter() {
             if contrl.0 == event {
-                commands.entity(entity).despawn_recursive();
+                commands.entity(entity).despawn();
             }
         }
     }
@@ -47,25 +45,32 @@ fn draw_arrow(
             Transform::from_xyz(0.0, 0.0, -0.4 * scale),
             MeshMaterial3d(mat.clone()),
             Mesh3d(cuboid.clone()),
+            Picking3dInteractable,
         ))
         .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()))
         .observe(update_material_on::<Pointer3d<MoveIn>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()));
 
-    child_builder.spawn((
-        Transform::from_xyz(0.0, 0.0, -0.4 * scale),
-        MeshMaterial3d(mat.clone()),
-        Mesh3d(line.clone()),
-    ));
+    child_builder
+        .spawn((
+            Transform::from_xyz(0.0, 0.0, -0.4 * scale),
+            MeshMaterial3d(mat.clone()),
+            Mesh3d(line.clone()),
+        ))
+        .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
+        .observe(update_material_on::<Pointer<Out>>(mat.clone()));
 
     let mut transform = Transform::from_xyz(0.0, 0.0, -0.9 * scale);
     transform.rotate_x(-FRAC_PI_2);
-    child_builder.spawn((
-        transform,
-        MeshMaterial3d(mat.clone()),
-        Mesh3d(arrow.clone()),
-    ));
+    child_builder
+        .spawn((
+            transform,
+            MeshMaterial3d(mat.clone()),
+            Mesh3d(arrow.clone()),
+        ))
+        .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
+        .observe(update_material_on::<Pointer<Out>>(mat.clone()));
 }
 
 fn show_transitional_controls(
@@ -77,12 +82,6 @@ fn show_transitional_controls(
     scale: Res<ScaleInformation>,
 ) {
     let scale = scale.scale;
-    let blue = materials.add(Color::from(BLUE_600));
-    let blue_hover = materials.add(Color::from(BLUE_800));
-    let red = materials.add(Color::from(RED_600));
-    let red_hover = materials.add(Color::from(RED_800));
-    let green = materials.add(Color::from(GREEN_600));
-    let green_hover = materials.add(Color::from(GREEN_800));
 
     for (t, entity) in to_enable.iter() {
         commands
@@ -97,7 +96,8 @@ fn show_transitional_controls(
                         .spawn((
                             Transform::from_xyz(0.0, 0.0, 0.0)
                                 .looking_to(arrow.normalized, Vec3::Y),
-                            Control(arrow.vec),
+                            Control(arrow.normalized),
+                            Picking3dInteractable,
                             Visibility::default(),
                         ))
                         .with_children(|parent| {
@@ -106,6 +106,7 @@ fn show_transitional_controls(
                                 materials.add(arrow.color),
                                 materials.add(arrow.hover_color),
                                 &mut meshes,
+                                scale,
                             );
                         })
                         .observe(drag_controller)
@@ -183,24 +184,32 @@ fn drag_controller3d(
     trigger: Trigger<Pointer3d<picking_3d::Drag>>,
     control_query: Query<(&Control, &ChildOf)>,
     mut all_other_transforms: Query<&mut Transform, (Without<Control>, Without<ControlParent>)>,
-    camera: Query<(&Camera, &GlobalTransform)>,
-    mut control_parents: Query<(&ControlParent, &mut Transform)>,
+    mut control_parents: Query<(&ControlParent, &mut Transform, &GlobalTransform)>,
     mut redraw_writer: EventWriter<RedrawEvent>,
 ) {
-    println!("Dragging");
+    // NOTE: Make sure that the draw event is triggered only once. Otherwise this difference adding happens multiple times for the same event........
     let (control, child_of) = control_query.get(trigger.target()).unwrap();
 
     let parent = child_of.parent();
 
-    let (camera, camera_transform) = camera.single().unwrap();
-
-    let diff = { trigger.event.current_entity_position - trigger.event.start_entity_position };
+    let diff = trigger.event.delta;
 
     let axis = control.0;
-    let direction = (diff.dot(axis)) / (diff.length() * axis.length());
-    let translation = axis * direction * trigger.event.current_delta.length() * 0.01;
+    let direction = (axis.dot(diff)) / (axis.length() * diff.length());
+    let translation = axis * diff.length() * direction;
 
-    let (control_parent, mut transform) = control_parents.get_mut(parent).unwrap();
+    let (control_parent, mut transform, global_transform) =
+        control_parents.get_mut(parent).unwrap();
+
+    println!(
+        "Global: ({}, {},  {}), local: ({}, {}, {})",
+        global_transform.translation(),
+        global_transform.rotation(),
+        global_transform.scale(),
+        transform.translation,
+        transform.rotation,
+        transform.scale,
+    );
 
     transform.translation = transform.translation + translation;
 
@@ -217,7 +226,8 @@ pub struct TranslationController;
 
 impl Plugin for TranslationController {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (show_transitional_controls));
+        app.add_systems(Update, show_transitional_controls);
         app.add_systems(PostUpdate, register_deletes);
+        app.init_resource::<ControlStorage>();
     }
 }

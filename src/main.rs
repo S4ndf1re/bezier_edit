@@ -1,15 +1,13 @@
 mod advanced_orbit_controls;
 mod bezier_curve_renderer;
 mod nurbs;
-mod translation_control;
-mod picking_3d;
+mod picking3d;
 mod thirdparty_copy;
+mod translation_control;
 pub mod util;
 
-use crate::picking_3d::ObjectPicking3d;
-use crate::thirdparty_copy::transform_util_copy::{SnapToPosition, SnapToRotation};
-use crate::translation_controller::TranslationController;
 use crate::advanced_orbit_controls::AdvancedOrbitControls;
+use crate::thirdparty_copy::transform_util_copy::{SnapToPosition, SnapToRotation};
 use crate::translation_control::control_storage::ControlStorage;
 use bevy::prelude::*;
 use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
@@ -18,6 +16,7 @@ use bevy_mod_openxr::resources::OxrSessionConfig;
 use bevy_mod_openxr::types::EnvironmentBlendMode;
 use bevy_xr_utils::xr_utils_actions::{XRUtilsActionSystemSet, XRUtilsActionsPlugin};
 use bezier_curve_renderer::*;
+use picking3d::picking_3d::ObjectPicking3d;
 
 use translation_control::translation_controller::TranslationController;
 
@@ -101,14 +100,7 @@ fn create_app() -> App {
     .add_plugins(BezierRender)
     //.add_plugins(AdvancedOrbitControls)
     .add_plugins(TranslationController)
-    .add_systems(
-        Startup,
-        (
-            setup.before(generate_default_curve),
-            create_actions.before(XRUtilsActionSystemSet::CreateEvents),
-        ),
-    )
-    .init_resource::<ScaleInformation>()
+    .add_systems(Startup, (setup.before(generate_default_curve),))
     .insert_resource(ClearColor(Color::NONE));
 
     app

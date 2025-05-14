@@ -1,8 +1,7 @@
 use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
 use crate::nurbs::point::Point;
-use crate::picking_3d;
-use crate::picking_3d::Pointer3d;
-use crate::translation_controller::EnableTranslationControl;
+use crate::picking3d::picking_3d;
+use crate::picking3d::picking_3d::{Picking3dInteractable, Pointer3d};
 use crate::translation_control::translation_controller::EnableTranslationControl;
 use crate::util::update_material_on;
 use bevy::app::App;
@@ -260,6 +259,7 @@ pub fn generate_default_curve(
                 Transform::from_xyz(p.2 * scale, p.3 * scale + height, p.4 * scale),
                 Mesh3d(sphere.clone()),
                 MeshMaterial3d(material.clone()),
+                Picking3dInteractable,
             ))
             .observe(update_material_on::<Pointer<Over>>(material_hover.clone()))
             .observe(update_material_on::<Pointer<Out>>(material.clone()))
