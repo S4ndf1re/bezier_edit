@@ -1,14 +1,16 @@
 mod advanced_orbit_controls;
 mod bezier_curve_renderer;
 mod nurbs;
+mod translation_control;
 mod picking_3d;
 mod thirdparty_copy;
-mod translation_controller;
 pub mod util;
 
 use crate::picking_3d::ObjectPicking3d;
 use crate::thirdparty_copy::transform_util_copy::{SnapToPosition, SnapToRotation};
 use crate::translation_controller::TranslationController;
+use crate::advanced_orbit_controls::AdvancedOrbitControls;
+use crate::translation_control::control_storage::ControlStorage;
 use bevy::prelude::*;
 use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
 use bevy_mod_openxr::add_xr_plugins;
@@ -16,6 +18,8 @@ use bevy_mod_openxr::resources::OxrSessionConfig;
 use bevy_mod_openxr::types::EnvironmentBlendMode;
 use bevy_xr_utils::xr_utils_actions::{XRUtilsActionSystemSet, XRUtilsActionsPlugin};
 use bezier_curve_renderer::*;
+
+use translation_control::translation_controller::TranslationController;
 
 #[cfg(not(feature = "vr_enable"))]
 fn setup(mut commands: Commands) {
@@ -32,9 +36,6 @@ fn setup(mut commands: Commands) {
         Transform::from_xyz(10.0, 10.0, 10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
     ));
 }
-
-#[derive(Component)]
-struct Test;
 
 #[cfg(feature = "vr_enable")]
 fn setup(
@@ -73,13 +74,12 @@ fn create_app() -> App {
         .add_plugins(BezierRender)
         .add_plugins(AdvancedOrbitControls)
         .add_plugins(TranslationController)
+        .init_resource::<ControlStorage>()
         .add_systems(Startup, setup);
 
     app
 }
 
-#[cfg(feature = "vr_enable")]
-fn create_actions() {}
 #[cfg(feature = "vr_enable")]
 fn create_app() -> App {
     info!("Creating VR App");

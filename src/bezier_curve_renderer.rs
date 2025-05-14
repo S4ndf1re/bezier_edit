@@ -3,6 +3,7 @@ use crate::nurbs::point::Point;
 use crate::picking_3d;
 use crate::picking_3d::Pointer3d;
 use crate::translation_controller::EnableTranslationControl;
+use crate::translation_control::translation_controller::EnableTranslationControl;
 use crate::util::update_material_on;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
@@ -36,9 +37,6 @@ pub struct RenderPoint(usize, usize);
 
 #[derive(Component)]
 struct ResultPoint;
-
-#[derive(Component)]
-struct Hovered;
 
 #[derive(Component)]
 pub struct BezierRender;
