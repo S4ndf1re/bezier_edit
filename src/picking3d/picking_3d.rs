@@ -1,32 +1,27 @@
-use crate::bezier_curve_renderer::{RenderPoint, ScaleInformation};
-use bevy::asset::Assets;
-use bevy::color::palettes::tailwind::{BLUE_300, BLUE_600, BLUE_800, RED_800};
-use bevy::color::Color;
-use bevy::ecs::query::QueryData;
-use bevy::ecs::traversal::Traversal;
-use bevy::log::info;
+use crate::bezier_curve_renderer::ScaleInformation;
+use crate::picking3d::events::{
+    Click, Drag, DragEnd, DragStart, HoveredBy, MoveIn, MoveOut, Pointer3d,
+};
+use crate::picking3d::picking_state::PickingState;
+use crate::picking3d::pointer_state::Pointer3dState;
 use bevy::math::bounding::{BoundingSphere, IntersectsVolume};
 use bevy::math::Vec3;
-use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::{
-    App, ChildOf, Commands, Component, Entity, Event, EventReader, EventWriter, GlobalTransform,
-    IntoScheduleConfigs, Mesh, Mesh3d, Or, Plugin, PostUpdate, Query, Reflect, Res, ResMut,
-    Resource, Single, Sphere, Startup, Transform, Update, Visibility, Window, With, Without,
+    App, ChildOf, Commands, Component, Entity, EventWriter, GlobalTransform, IntoScheduleConfigs,
+    Plugin, PostUpdate, Query, Res, ResMut, Single, Startup, Transform, Update, Visibility, With,
+    Without,
 };
-use bevy::render::camera::NormalizedRenderTarget;
 use bevy_mod_openxr::action_binding::{OxrSendActionBindings, OxrSuggestActionBinding};
 use bevy_mod_xr::actions::ActionType;
 use bevy_mod_xr::session::{XrSessionCreated, XrTracker};
 use bevy_xr_utils::tracking_utils::{
-    suggest_action_bindings, ControllerActions, TrackingUtilitiesPlugin, XrTrackedLeftGrip,
-    XrTrackedRightGrip, XrTrackedView,
+    ControllerActions, TrackingUtilitiesPlugin, XrTrackedLeftGrip, XrTrackedRightGrip,
+    XrTrackedView,
 };
 use bevy_xr_utils::xr_utils_actions::{
     ActiveSet, XRUtilsAction, XRUtilsActionSet, XRUtilsActionState, XRUtilsActionSystemSet,
     XRUtilsActionsPlugin, XRUtilsBinding,
 };
-use std::collections::hash_set::Iter;
-use std::collections::{hash_map, HashMap, HashSet};
 use std::fmt::Debug;
 
 /// Component to shift picking center according the the later found global transpose
@@ -36,82 +31,6 @@ pub struct Picking3dTranslation(pub Vec3);
 #[derive(Component, Clone, Copy)]
 pub struct Picking3dInteractable;
 
-#[derive(Clone, Copy, Reflect, Debug)]
-pub struct Click;
-
-#[derive(Clone, Copy, Reflect, Debug)]
-pub struct MoveIn;
-
-#[derive(Clone, Copy, Reflect, Debug)]
-pub struct MoveOut;
-
-#[derive(Clone, Copy, Reflect, Debug)]
-pub struct DragStart;
-
-#[derive(Clone, Copy, Reflect, Debug)]
-pub struct Drag {
-    pub start_entity_position: Vec3,
-    pub current_entity_position: Vec3,
-    pub delta: Vec3,
-}
-
-#[derive(Clone, Copy, Reflect, Debug)]
-pub struct DragEnd;
-
-#[derive(Clone, Copy, Hash, PartialOrd, PartialEq, Eq, Debug)]
-pub enum HoveredBy {
-    Left,
-    Right,
-}
-
-/// The Pointer3d Structure represents any picking event
-#[derive(Component, Clone, Copy)]
-pub struct Pointer3d<E>
-where
-    E: Clone + Copy + Reflect,
-{
-    /// The 3d Position of the controller that triggered the event
-    pub position: Vec3,
-    /// The entity, that triggered the event, i.e. the controller
-    pub hit_entity: Entity,
-    /// The event type itself. This may contain additional information
-    pub event: E,
-    pub controler: HoveredBy,
-}
-
-/// A traversal query (i.e. it implements [`Traversal`]) intended for use with [`Pointer`] events.
-///
-/// This will always traverse to the parent, if the entity being visited has one. Otherwise, it
-/// propagates to the pointer's window and stops there.
-#[derive(QueryData)]
-pub struct Pointer3dTraversal {
-    child_of: Option<&'static ChildOf>,
-}
-
-impl<E> Traversal<Pointer3d<E>> for Pointer3dTraversal
-where
-    E: Debug + Clone + Copy + Reflect,
-{
-    fn traverse(item: Self::Item<'_>, pointer: &Pointer3d<E>) -> Option<Entity> {
-        let Pointer3dTraversalItem { child_of } = item;
-
-        // Send event to parent, if it has one.
-        if let Some(child_of) = child_of {
-            return Some(child_of.parent());
-        };
-
-        None
-    }
-}
-
-impl<E> Event for Pointer3d<E>
-where
-    E: Debug + Clone + Copy + Reflect,
-{
-    type Traversal = Pointer3dTraversal;
-    const AUTO_PROPAGATE: bool = true;
-}
-
 #[derive(Component)]
 struct MoveMarker {
     entity: Entity,
@@ -120,188 +39,7 @@ struct MoveMarker {
 }
 
 #[derive(Component)]
-struct GrabMarker(HoveredBy);
-
-#[derive(Resource)]
-struct PickingState {
-    hovered_entities: HashMap<Entity, HashSet<HoveredBy>>,
-    hovered_by_left: HashSet<Entity>,
-    hovered_by_right: HashSet<Entity>,
-    is_dragging_left: bool,
-    is_dragging_right: bool,
-}
-
-impl PickingState {
-    pub fn new() -> Self {
-        Self {
-            hovered_entities: HashMap::new(),
-            hovered_by_left: HashSet::new(),
-            hovered_by_right: HashSet::new(),
-            is_dragging_left: false,
-            is_dragging_right: false,
-        }
-    }
-
-    fn check_is_dragging(&self, controller: &HoveredBy) -> bool {
-        match controller {
-            HoveredBy::Left => self.is_dragging_left,
-            HoveredBy::Right => self.is_dragging_right,
-        }
-    }
-    pub fn contains_entity_and_controller(&self, entity: &Entity, controller: &HoveredBy) -> bool {
-        self.hovered_entities.contains_key(entity)
-            && self
-                .hovered_entities
-                .get(entity)
-                .unwrap()
-                .contains(controller)
-    }
-
-    pub fn ensure_inserted(&mut self, entity: Entity, controller: HoveredBy) {
-        if self.check_is_dragging(&controller) {
-            return;
-        }
-
-        self.hovered_entities
-            .entry(entity)
-            .or_insert(HashSet::new())
-            .insert(controller);
-
-        match controller {
-            HoveredBy::Left => {
-                self.hovered_by_left.insert(entity);
-            }
-            HoveredBy::Right => {
-                self.hovered_by_right.insert(entity);
-            }
-        }
-    }
-
-    pub fn remove_from_entity(&mut self, entity: &Entity, controller: &HoveredBy) -> bool {
-        if self.check_is_dragging(&controller) {
-            return false;
-        }
-
-        let removed = if self.hovered_entities.contains_key(entity) {
-            let removed = self
-                .hovered_entities
-                .get_mut(entity)
-                .unwrap()
-                .remove(controller);
-
-            if self.hovered_entities.get(entity).unwrap().is_empty() {
-                self.hovered_entities.remove(entity).is_some() && removed
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-
-        self.hovered_entities
-            .get_mut(entity)
-            .map(|set| set.remove(controller));
-
-        let removed_inverse = match controller {
-            HoveredBy::Left => self.hovered_by_left.remove(entity),
-            HoveredBy::Right => self.hovered_by_right.remove(entity),
-        };
-
-        // assert_eq!(
-        //     removed, removed_inverse,
-        //     "This case should never ever happen. If this case happens, a programming error can be assumed"
-        // );
-        removed_inverse && removed
-    }
-
-    pub fn iter(&self, controller: &HoveredBy) -> Iter<Entity> {
-        match controller {
-            HoveredBy::Left => self.hovered_by_left.iter(),
-            HoveredBy::Right => self.hovered_by_right.iter(),
-        }
-    }
-
-    pub fn iter_all(&self) -> hash_map::Keys<'_, Entity, HashSet<HoveredBy>> {
-        self.hovered_entities.keys()
-    }
-
-    pub fn contains_entity(&self, entity: &Entity, controller: &HoveredBy) -> bool {
-        match controller {
-            HoveredBy::Left => self.hovered_by_left.contains(entity),
-            HoveredBy::Right => self.hovered_by_right.contains(entity),
-        }
-    }
-
-    pub fn set_dragging(&mut self, is_dragging: bool, controller: &HoveredBy) {
-        match controller {
-            HoveredBy::Left => self.is_dragging_left = is_dragging,
-            HoveredBy::Right => self.is_dragging_right = is_dragging,
-        }
-    }
-}
-
-#[derive(Resource)]
-struct Pointer3dState {
-    grab_left_prev_state: bool,
-    grab_right_prev_state: bool,
-    toggled_left_since: u32,
-    toggled_right_since: u32,
-    max_ticks: u32,
-}
-
-impl Pointer3dState {
-    pub fn new(max_ticks: u32) -> Self {
-        Self {
-            grab_left_prev_state: false,
-            grab_right_prev_state: false,
-            toggled_left_since: 0,
-            toggled_right_since: 0,
-            max_ticks,
-        }
-    }
-
-    pub fn set_state(&mut self, state: bool, controller: &HoveredBy) {
-        match controller {
-            HoveredBy::Left => {
-                if self.grab_left_prev_state != state {
-                    self.toggled_left_since = 0;
-                }
-                self.grab_left_prev_state = state
-            }
-            HoveredBy::Right => {
-                if self.grab_right_prev_state != state {
-                    self.toggled_right_since = 0;
-                }
-                self.grab_right_prev_state = state
-            }
-        }
-    }
-
-    pub fn add_tick(&mut self) {
-        if self.grab_left_prev_state {
-            self.toggled_left_since += 1;
-        }
-
-        if self.grab_right_prev_state {
-            self.toggled_right_since += 1;
-        }
-    }
-
-    pub fn is_grabbing(&self, controller: &HoveredBy) -> bool {
-        match controller {
-            HoveredBy::Left => self.grab_left_prev_state,
-            HoveredBy::Right => self.grab_right_prev_state,
-        }
-    }
-
-    /// Test if the controller is toggled in shorter than n ticks (<)
-    pub fn is_just_toggled(&self, controller: &HoveredBy) -> bool {
-        match controller {
-            HoveredBy::Left => self.toggled_left_since < self.max_ticks,
-            HoveredBy::Right => self.toggled_right_since < self.max_ticks,
-        }
-    }
-}
+struct GrabActionMarker(HoveredBy);
 
 fn check_intersections(
     mut commands: Commands,
@@ -467,7 +205,7 @@ pub fn setup_actions(mut commands: Commands) {
                 localized_name: "picking_grab_left".into(),
                 action_type: ActionType::Float,
             },
-            GrabMarker(HoveredBy::Left),
+            GrabActionMarker(HoveredBy::Left),
         ))
         .id();
 
@@ -478,7 +216,7 @@ pub fn setup_actions(mut commands: Commands) {
                 localized_name: "picking_grab_right".into(),
                 action_type: ActionType::Float,
             },
-            GrabMarker(HoveredBy::Right),
+            GrabActionMarker(HoveredBy::Right),
         ))
         .id();
 
@@ -515,15 +253,13 @@ fn tick(mut pointer_state: ResMut<Pointer3dState>) {
 
 fn handle_input_grab(
     mut commands: Commands,
-    action_query: Query<(&XRUtilsActionState, &GrabMarker)>,
+    action_query: Query<(&XRUtilsActionState, &GrabActionMarker)>,
     mut pointer_state: ResMut<Pointer3dState>,
     transform_query: Query<&GlobalTransform>,
     left_tracked: Single<(&GlobalTransform, Entity), With<XrTrackedLeftGrip>>,
     right_tracked: Single<(&GlobalTransform, Entity), With<XrTrackedRightGrip>>,
     mut picking_state: ResMut<PickingState>,
     mut moved_marked_query: Query<(&GlobalTransform, &mut MoveMarker, Entity)>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut meshes: ResMut<Assets<Mesh>>,
 ) {
     for action in action_query.iter() {
         let state = action.0;

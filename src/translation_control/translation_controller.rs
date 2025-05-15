@@ -1,6 +1,6 @@
 use crate::bezier_curve_renderer::{RedrawEvent, ScaleInformation};
-use crate::picking3d::picking_3d;
-use crate::picking3d::picking_3d::{MoveIn, MoveOut, Picking3dInteractable, Pointer3d};
+use crate::picking3d::events::{MoveIn, MoveOut, Pointer3d};
+use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
 use bevy::ecs::relationship::RelatedSpawnerCommands;
@@ -126,7 +126,7 @@ fn drag_end_trigger_redraw(
 }
 
 fn drag_end3d_trigger_redraw(
-    _: Trigger<Pointer3d<picking_3d::DragEnd>>,
+    _: Trigger<Pointer3d<crate::picking3d::events::DragEnd>>,
     mut redraw_writer: EventWriter<RedrawEvent>,
 ) {
     redraw_writer.write(RedrawEvent((400, 400)));
@@ -181,7 +181,7 @@ fn drag_controller(
 }
 
 fn drag_controller3d(
-    trigger: Trigger<Pointer3d<picking_3d::Drag>>,
+    trigger: Trigger<Pointer3d<crate::picking3d::events::Drag>>,
     control_query: Query<(&Control, &ChildOf)>,
     mut all_other_transforms: Query<&mut Transform, (Without<Control>, Without<ControlParent>)>,
     mut control_parents: Query<(&ControlParent, &mut Transform, &GlobalTransform)>,

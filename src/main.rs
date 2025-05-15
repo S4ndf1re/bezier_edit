@@ -1,7 +1,7 @@
 mod advanced_orbit_controls;
 mod bezier_curve_renderer;
 mod nurbs;
-mod picking3d;
+pub mod picking3d;
 mod thirdparty_copy;
 mod translation_control;
 pub mod util;

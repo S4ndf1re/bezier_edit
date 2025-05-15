@@ -1,7 +1,8 @@
 use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
 use crate::nurbs::point::Point;
-use crate::picking3d::picking_3d;
-use crate::picking3d::picking_3d::{Picking3dInteractable, Pointer3d};
+use crate::picking3d::events;
+use crate::picking3d::events::Pointer3d;
+use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::translation_control::translation_controller::EnableTranslationControl;
 use crate::util::update_material_on;
 use bevy::app::App;
@@ -60,7 +61,7 @@ fn enable_gizmo(
 }
 
 fn enable_gizmo3d(
-    trigger: Trigger<Pointer3d<picking_3d::Click>>,
+    trigger: Trigger<Pointer3d<events::Click>>,
     query: Query<&RenderPoint>,
     mut commands: Commands,
     enabled: Query<&EnableTranslationControl>,
