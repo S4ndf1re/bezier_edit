@@ -3,6 +3,7 @@ mod bezier_curve_renderer;
 mod nurbs;
 pub mod picking3d;
 mod thirdparty_copy;
+mod thumbstick3d;
 mod translation_control;
 pub mod util;
 
@@ -18,6 +19,7 @@ use bevy_xr_utils::xr_utils_actions::{XRUtilsActionSystemSet, XRUtilsActionsPlug
 use bezier_curve_renderer::*;
 use picking3d::picking_3d::ObjectPicking3d;
 
+use crate::thumbstick3d::ThumbstickPlugin;
 use translation_control::translation_controller::TranslationController;
 
 #[cfg(not(feature = "vr_enable"))]
@@ -99,6 +101,7 @@ fn create_app() -> App {
     .add_plugins(ObjectPicking3d)
     .add_plugins(BezierRender)
     //.add_plugins(AdvancedOrbitControls)
+    .add_plugins(ThumbstickPlugin)
     .add_plugins(TranslationController)
     .add_systems(Startup, (setup.before(generate_default_curve),))
     .insert_resource(ClearColor(Color::NONE));

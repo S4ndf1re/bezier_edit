@@ -32,6 +32,7 @@ impl Default for CameraSettings {
 
 pub struct AdvancedOrbitControls;
 
+#[cfg(not(feature = "vr_enable"))]
 fn orbit(
     mut camera: Single<&mut Transform, With<Camera>>,
     camera_settings: Res<CameraSettings>,
@@ -56,6 +57,37 @@ fn orbit(
 
     let yaw = yaw + delta_yaw;
     camera.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
+
+    // Adjust target distance
+    let target = Vec3::ZERO;
+    camera.translation = target - camera.forward() * camera_settings.orbit_distance;
+}
+
+#[cfg(feature = "vr_enable")]
+fn orbit(
+    mut camera: Single<&mut Transform, With<XrTrackingRoot>>,
+    // mut position_event: EventWriter<SnapToPosition>,
+    // mut rotation_event: EventWriter<SnapToRotation>,
+    camera_settings: Res<CameraSettings>,
+    accumulated_thumbstick_info: Res<AccumulatedThumbstickInfo>,
+) {
+    let delta = Vec2::new(
+        accumulated_thumbstick_info.x(),
+        accumulated_thumbstick_info.y(),
+    );
+
+    let delta_pitch = delta.y * camera_settings.pitch_speed;
+    let delta_yaw = delta.x * camera_settings.yaw_speed;
+
+    let (yaw, pitch, roll) = camera.rotation.to_euler(EulerRot::YXZ);
+
+    let pitch = (pitch + delta_pitch).clamp(
+        camera_settings.pitch_range.start,
+        camera_settings.pitch_range.end,
+    );
+
+    let yaw = yaw + delta_yaw;
+    camera.rotation = camera.rotation * Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
 
     // Adjust target distance
     let target = Vec3::ZERO;

@@ -7,6 +7,10 @@ use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;
 
+
+#[derive(Component)]
+pub struct ShadowMarker;
+
 #[derive(Component)]
 pub struct EnableTranslationControl;
 

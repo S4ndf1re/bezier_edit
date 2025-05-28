@@ -10,6 +10,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::tailwind::*;
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
+use num::ToPrimitive;
 use std::collections::HashMap;
 
 pub type Resolution = (u32, u32);
@@ -40,6 +41,40 @@ struct ResultPoint;
 
 #[derive(Component)]
 pub struct BezierRender;
+
+#[derive(Component)]
+#[require(Mesh3d)]
+pub struct RenderLine(Entity, Entity);
+
+fn update_lines(
+    mut commands: Commands,
+    mut lines: Query<(&RenderLine, Entity, &Mesh3d)>,
+    transforms: Query<&Transform>,
+    mut meshes: ResMut<Assets<Mesh>>,
+) {
+    for (line, line_entity, mesh3d) in lines.iter_mut() {
+        let (entity1, entity2) = {
+            let entity1 = transforms.get(line.0);
+            let entity2 = transforms.get(line.1);
+            (entity1, entity2)
+        };
+
+        if entity1.is_err() || entity2.is_err() {
+            commands.get_entity(line_entity).unwrap().despawn();
+        }
+
+        let mesh = meshes.get_mut(mesh3d).expect("Must be here");
+
+        if let Some(attrib) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) {
+            *attrib = vec![entity1.unwrap().translation, entity2.unwrap().translation].into();
+        } else {
+            mesh.insert_attribute(
+                Mesh::ATTRIBUTE_POSITION,
+                vec![entity1.unwrap().translation, entity2.unwrap().translation],
+            );
+        }
+    }
+}
 
 fn enable_gizmo(
     trigger: Trigger<Pointer<Click>>,
@@ -144,7 +179,9 @@ fn generate_pointcloud(
 
     let mut mat = StandardMaterial::default();
     mat.base_color = Color::from(GRAY_500);
+    mat.base_color.set_alpha(1.0);
     mat.cull_mode = None;
+    mat.alpha_mode = AlphaMode::Add;
 
     let mut computed_points: Vec<[f32; 3]> = vec![];
     let mut normals: Vec<[f32; 3]> = vec![];
@@ -175,7 +212,7 @@ fn generate_pointcloud(
                 (v as f64) / ((h as f64) - 1.0),
             );
             let normal = &u_diff.cross(&v_diff) * (1.0 / u_diff.cross(&v_diff).magnitude());
-            normals.push([-normal.x as f32, -normal.y as f32, -normal.z as f32]);
+            normals.push([normal.x as f32, normal.y as f32, normal.z as f32]);
             // uvs.push([0.0, 0.0]);
 
             // commands.spawn((
@@ -222,7 +259,7 @@ pub fn generate_default_curve(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut event_writer: EventWriter<RedrawEvent>,
-    mut scale_res: Res<ScaleInformation>,
+    scale_res: Res<ScaleInformation>,
 ) {
     let scale = scale_res.scale;
     let height = scale_res.height;
@@ -230,30 +267,26 @@ pub fn generate_default_curve(
     let material_hover = materials.add(Color::from(GRAY_600));
     let sphere = meshes.add(Sphere::new(0.1 * scale).mesh().ico(5).unwrap());
 
-    let points = vec![
-        (0, 0, -1.5, 0.0, -1.5),
-        (0, 1, -0.5, 0.0, -1.5),
-        (0, 2, 0.5, 0.0, -1.5),
-        (0, 3, 1.5, 0.0, -1.5),
-        //
-        (1, 0, -1.5, 0.0, -0.5),
-        (1, 1, -0.5, 0.0, -0.5),
-        (1, 2, 0.5, 0.0, -0.5),
-        (1, 3, 1.5, 0.0, -0.5),
-        //
-        (2, 0, -1.5, 0.0, 0.5),
-        (2, 1, -0.5, 0.0, 0.5),
-        (2, 2, 0.5, 0.0, 0.5),
-        (2, 3, 1.5, 0.0, 0.5),
-        //
-        (3, 0, -1.5, 0.0, 1.5),
-        (3, 1, -0.5, 0.0, 1.5),
-        (3, 2, 0.5, 0.0, 1.5),
-        (3, 3, 1.5, 0.0, 1.5),
-    ];
+    let (w, h) = (4, 4);
+    let min_x = -w.to_f32().unwrap() / 2.0 + if w % 2 == 0 { 0.5 } else { 0.0 };
+    let min_y = -h.to_f32().unwrap() / 2.0 + if h % 2 == 0 { 0.5 } else { 0.0 };
 
-    for p in points {
-        commands
+    let mut points = vec![];
+    let mut curr_x = min_x;
+    let mut curr_y = min_y;
+    for y in 0..h {
+        for x in 0..w {
+            points.push((y, x, curr_x, 0.0, curr_y));
+            curr_x += 1.0;
+        }
+        curr_x = min_x;
+        curr_y += 1.0;
+    }
+
+    let mut ids = vec![];
+
+    for p in &points {
+        let id = commands
             .spawn((
                 BezierRender,
                 RenderPoint(p.0, p.1),
@@ -266,7 +299,62 @@ pub fn generate_default_curve(
             .observe(update_material_on::<Pointer<Out>>(material.clone()))
             //.observe(drag_point)
             .observe(enable_gizmo)
-            .observe(enable_gizmo3d);
+            .observe(enable_gizmo3d)
+            .id();
+        ids.push(id);
+    }
+
+    for i in 0..points.len() {
+        let p0 = points[i];
+        let p0_id = ids[i];
+
+        if i + 1 < (i / w + 1) * w {
+            if let Some(py) = points.get(i + 1) {
+                let id = ids.get(i + 1).expect("must be present").clone();
+                let mut mesh = Mesh::new(
+                    PrimitiveTopology::LineList,
+                    RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+                );
+                mesh.insert_attribute(
+                    Mesh::ATTRIBUTE_POSITION,
+                    vec![
+                        Vec3::new(p0.2 * scale, p0.3 * scale, p0.4 * scale),
+                        Vec3::new(py.2 * scale, py.3 * scale, py.4 * scale),
+                    ],
+                );
+
+                commands.spawn((
+                    Transform::from_xyz(0.0, 0.0, 0.0),
+                    RenderLine(p0_id, id),
+                    MeshMaterial3d(materials.add(Color::BLACK)),
+                    Mesh3d(meshes.add(mesh)),
+                ));
+            }
+        }
+
+        if i + w < points.len() {
+            if let Some(px) = points.get(i + w) {
+                let id = ids.get(i + w).expect("must be present").clone();
+                let mut mesh = Mesh::new(
+                    PrimitiveTopology::LineList,
+                    RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+                );
+                mesh.insert_attribute(
+                    Mesh::ATTRIBUTE_POSITION,
+                    vec![
+                        Vec3::new(p0.2 * scale, p0.3 * scale, p0.4 * scale),
+                        Vec3::new(px.2 * scale, px.3 * scale, px.4 * scale),
+                    ],
+                );
+
+                commands.spawn((
+                    Transform::from_xyz(0.0, 0.0, 0.0),
+                    RenderLine(p0_id, id),
+                    MeshMaterial3d(materials.add(Color::BLACK)),
+                    Mesh3d(meshes.add(mesh)),
+                ));
+            }
+        }
     }
 
     event_writer.write(RedrawEvent((200, 200)));
@@ -277,6 +365,6 @@ impl Plugin for BezierRender {
         app.add_event::<RedrawEvent>();
         app.init_resource::<ScaleInformation>();
         app.add_systems(Startup, generate_default_curve);
-        app.add_systems(Update, generate_pointcloud); // , listen_to_mouse_left_button));
+        app.add_systems(Update, (generate_pointcloud, update_lines)); // , listen_to_mouse_left_button));
     }
 }
