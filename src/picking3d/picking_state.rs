@@ -1,7 +1,7 @@
 use crate::picking3d::events::HoveredBy;
 use bevy::prelude::{Entity, Resource};
 use std::collections::hash_set::Iter;
-use std::collections::{hash_map, HashMap, HashSet};
+use std::collections::{HashMap, HashSet, hash_map};
 
 #[derive(Resource)]
 pub struct PickingState {
@@ -45,7 +45,7 @@ impl PickingState {
 
         self.hovered_entities
             .entry(entity)
-            .or_insert(HashSet::new())
+            .or_default()
             .insert(controller);
 
         match controller {
@@ -59,7 +59,7 @@ impl PickingState {
     }
 
     pub fn remove_from_entity(&mut self, entity: &Entity, controller: &HoveredBy) -> bool {
-        if self.check_is_dragging(&controller) {
+        if self.check_is_dragging(controller) {
             return false;
         }
 
