@@ -44,7 +44,7 @@ pub fn cubic_hermite_polynome(i: usize, t: f64) -> f64 {
         1 => 1.0 / 3.0 * bernstein(1, 3, t),
         2 => -1.0 / 3.0 * bernstein(2, 3, t),
         3 => bernstein(2, 3, t) + bernstein(3, 3, t),
-        _ => panic!("i must be contained within the interval [0, 3]. i = {}", i),
+        _ => panic!("i must be contained within the interval [0, 3]. i = {i}"),
     }
 }
 
@@ -55,6 +55,6 @@ pub fn cubic_hermite_polynome_hat(i: usize, t: f64, interval: (f64, f64)) -> f64
         1 => (b - a) * cubic_hermite_polynome(1, t),
         2 => (b - a) * cubic_hermite_polynome(2, t),
         3 => cubic_hermite_polynome(3, t),
-        _ => panic!("i must be contained within the interval [0, 3]. i = {}", i),
+        _ => panic!("i must be contained within the interval [0, 3]. i = {i}"),
     }
 }

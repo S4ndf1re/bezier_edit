@@ -121,9 +121,7 @@ pub fn eval_bspline<T: AsRef<[Point]>, S: AsRef<[f64]>>(points: T, us: S, u: f64
 }
 
 fn x_diff(xs: &[f64], i: i32, l: usize) -> f64 {
-    if i < 0 {
-        0.0
-    } else if i == l as i32 {
+    if i < 0 || i == l as i32 {
         0.0
     } else {
         xs[(i + 1) as usize] - xs[i as usize]
@@ -238,7 +236,7 @@ pub fn de_boor<T: AsRef<[Point]>, S: AsRef<[f64]>>(
     let us = us.as_ref();
     assert!(us[n - 1] <= u && u <= us[l + n - 1], "s(u) is not defined");
 
-    let idx = find_us_idx(&us, u).expect("Interval must be found");
+    let idx = find_us_idx(us, u).expect("Interval must be found");
 
     let rank = us
         .iter()
@@ -248,8 +246,7 @@ pub fn de_boor<T: AsRef<[Point]>, S: AsRef<[f64]>>(
         return control[idx];
     }
 
-    let mut stages = Vec::new();
-    stages.reserve(n + 1);
+    let mut stages = Vec::with_capacity(n + 1);
 
     let mut stage = vec![Point::new(0.0, 0.0, 0.0, None); n + 1];
     for i in idx + 1 - n..=idx + 1 {

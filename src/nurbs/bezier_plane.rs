@@ -1,5 +1,3 @@
-use bevy::reflect::List;
-
 use crate::nurbs::bezier::{de_casteljau, derive_after_de_casteljau, split_at};
 use crate::nurbs::point::Point;
 
@@ -64,9 +62,9 @@ pub fn derive_2d(control_points: &ControlPoints2D, u: f64, v: f64) -> (Point, Po
     // Do the same for the v vector. Notice however, that we have to invert column and row storage, and also swap parameters
     let mut new_control = vec![Point::new(0.0, 0.0, 0.0, None); m + 1];
 
+    #[allow(clippy::needless_range_loop)]
     for i in 0..=n {
-        let mut inner_control_points = vec![];
-        inner_control_points.reserve(m + 1);
+        let mut inner_control_points = Vec::with_capacity(m + 1);
         for j in 0..=m {
             inner_control_points.push(control_points[j][i]);
         }
