@@ -1,5 +1,5 @@
-use num::pow;
 use crate::nurbs::point::Point;
+use num::pow;
 
 pub fn sum(n: i32) -> i32 {
     (n * n + n) / 2

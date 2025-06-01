@@ -1,9 +1,9 @@
-use nalgebra::DVector;
-use nalgebra::DMatrix;
-use num::pow::Pow;
-use std::ops::Mul;
 use crate::nurbs::bezier::horner_scheme;
 use crate::nurbs::point::Point;
+use nalgebra::DMatrix;
+use nalgebra::DVector;
+use num::pow::Pow;
+use std::ops::Mul;
 
 fn delta_u_i(us: &[f64], i: usize) -> f64 {
     us[i + 1] - us[i]

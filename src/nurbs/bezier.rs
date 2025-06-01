@@ -1,7 +1,6 @@
 use crate::nurbs::point::Point;
 use crate::nurbs::util::n_choose_k;
 use num::pow;
-use std::borrow::Borrow;
 
 pub fn de_casteljau<T: AsRef<[Point]>>(points: T, t: f64) -> Vec<Vec<Point>> {
     let points = points.as_ref();
@@ -9,7 +8,7 @@ pub fn de_casteljau<T: AsRef<[Point]>>(points: T, t: f64) -> Vec<Vec<Point>> {
 
     let mut stage = Vec::new();
     for p in points {
-        stage.push(p.clone());
+        stage.push(*p);
     }
     stages.push(stage);
 
@@ -28,7 +27,7 @@ pub fn de_casteljau<T: AsRef<[Point]>>(points: T, t: f64) -> Vec<Vec<Point>> {
     stages
 }
 
-pub fn derive_after_de_casteljau(points: &Vec<Vec<Point>>) -> Point {
+pub fn derive_after_de_casteljau(points: &[Vec<Point>]) -> Point {
     let n = points.len() - 1;
 
     &points[n - 1][1] - &points[n - 1][0]
@@ -37,14 +36,13 @@ pub fn derive_after_de_casteljau(points: &Vec<Vec<Point>>) -> Point {
 pub fn atiken(points: &[Point], ts: &[f64], t: f64) -> Vec<Vec<Point>> {
     assert_eq!(points.len(), ts.len());
 
-    let mut stages = Vec::new();
-    stages.reserve(points.len());
+    let mut stages = Vec::with_capacity(points.len());
 
     let n = points.len() - 1;
 
     let mut stage = Vec::new();
     for p in points {
-        stage.push(p.clone());
+        stage.push(*p);
     }
     stages.push(stage);
 
@@ -52,7 +50,7 @@ pub fn atiken(points: &[Point], ts: &[f64], t: f64) -> Vec<Vec<Point>> {
         let mut new_stage = Vec::new();
         for i in 0..=n - r {
             let pri = &((ts[i + r] - t) / (ts[i + r] - ts[i]) * &stages[r - 1][i])
-                + &(&(t - ts[i]) / (ts[i + r] - ts[i]) * &stages[r - 1][i + 1]);
+                + &((t - ts[i]) / (ts[i + r] - ts[i]) * &stages[r - 1][i + 1]);
             new_stage.push(pri);
         }
         stages.push(new_stage);
@@ -67,15 +65,30 @@ pub fn horner_scheme<T: AsRef<[Point]>>(points: T, t: f64) -> Point {
     let mut k = 0;
 
     let mut factor = n_choose_k(n, k) as f64 * &points[0];
-    k = k + 1;
+    k += 1;
 
-    for i in 1..points.len() {
-        let p = &points[i];
+    for (i, p) in points.iter().enumerate() {
         let n_c_k = n_choose_k(n, k) as f64;
-        k = k + 1;
+        k += 1;
 
         factor = &((1.0 - t) * &factor) + &(pow(t, i) * n_c_k * p);
     }
 
     factor
+}
+
+/// Split a bezier curve at parameter t, resulting in two sub bezier lines with n control points
+pub fn split_at<T: AsRef<[Point]>>(points: T, t: f64) -> (Vec<Point>, Vec<Point>) {
+    let decas = de_casteljau(points.as_ref(), t);
+
+    let mut left_half = Vec::with_capacity(points.as_ref().len());
+    let mut right_half = Vec::with_capacity(points.as_ref().len());
+
+    let n = points.as_ref().len();
+    for i in 0..n {
+        left_half.push(decas[i][0]);
+        right_half.push(decas[n - i][i]);
+    }
+
+    (left_half, right_half)
 }
