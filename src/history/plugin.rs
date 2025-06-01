@@ -64,7 +64,7 @@ impl HistoryResource {
     }
 
     pub fn add_ending(&mut self, entity: Entity, transform: Transform) {
-        let entry = self.history.entry(entity).or_insert(VecDeque::new());
+        let entry = self.history.entry(entity).or_default();
         if !entry.is_empty() {
             if entry.back().unwrap().end.is_none() {
                 entry.back_mut().unwrap().end = Some(transform);
@@ -115,14 +115,14 @@ fn listen_to_history_log_events(
                 if transform.is_err() {
                     return;
                 }
-                if history.entity_first_seen(&entity) {
+                if history.entity_first_seen(entity) {
                     commands
                         .get_entity(*entity)
                         .unwrap()
                         .observe(despawn_entity)
                         .observe(remove_entity);
                 }
-                history.add_starting(*entity, transform.unwrap().clone());
+                history.add_starting(*entity, *transform.unwrap());
             }
             HistoryLogEvent::End(entity) => {
                 let transform = query.get(*entity);
@@ -130,7 +130,7 @@ fn listen_to_history_log_events(
                     return;
                 }
 
-                history.add_ending(*entity, transform.unwrap().clone());
+                history.add_ending(*entity, *transform.unwrap());
             }
         }
     }
