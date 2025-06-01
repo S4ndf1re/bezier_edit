@@ -60,7 +60,7 @@ impl<E> Traversal<Pointer3d<E>> for Pointer3dTraversal
 where
     E: Debug + Clone + Copy + Reflect,
 {
-    fn traverse(item: Self::Item<'_>, pointer: &Pointer3d<E>) -> Option<Entity> {
+    fn traverse(item: Self::Item<'_>, _: &Pointer3d<E>) -> Option<Entity> {
         let Pointer3dTraversalItem { child_of } = item;
 
         // Send event to parent, if it has one.
