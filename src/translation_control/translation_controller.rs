@@ -7,7 +7,6 @@ use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;
 
-
 #[derive(Component)]
 pub struct ShadowMarker;
 
@@ -115,6 +114,7 @@ fn show_transitional_controls(
                         })
                         .observe(drag_controller)
                         .observe(drag_controller3d)
+                        .observe(drag_start)
                         .observe(drag_end_trigger_redraw)
                         .observe(drag_end3d_trigger_redraw);
                 }
@@ -122,18 +122,75 @@ fn show_transitional_controls(
     }
 }
 
+fn drag_start(
+    trigger: Trigger<Pointer<DragStart>>,
+    mut commands: Commands,
+    arrow_query: Query<(&ChildOf, Entity), With<Control>>,
+    control_parents: Query<&ControlParent>,
+    all_transforms: Query<&Transform, Without<ControlParent>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    arrows: Res<ControlStorage>,
+    scale: Res<ScaleInformation>,
+) {
+    let dragged_entity = trigger.target();
+    let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
+
+    let dragged_parent = dragged_childof.parent();
+
+    let control_parent = control_parents.get(dragged_parent).unwrap();
+    let start_transform = all_transforms.get(control_parent.0).unwrap();
+
+    let scale = scale.scale;
+
+    commands
+        .spawn((ShadowMarker, start_transform.clone(), Visibility::default()))
+        .with_children(|parent| {
+            for arrow in arrows.as_ref().iter() {
+                parent
+                    .spawn((
+                        Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.normalized, Vec3::Y),
+                        Control(arrow.normalized),
+                        Picking3dInteractable,
+                        Visibility::default(),
+                    ))
+                    .with_children(|parent| {
+                        draw_arrow(
+                            parent,
+                            materials.add(arrow.shadow_color),
+                            materials.add(arrow.shadow_color),
+                            &mut meshes,
+                            scale,
+                        );
+                    });
+            }
+        });
+}
+
 fn drag_end_trigger_redraw(
     _: Trigger<Pointer<DragEnd>>,
     mut redraw_writer: EventWriter<RedrawEvent>,
+    mut commands: Commands,
+    query: Query<Entity, With<ShadowMarker>>,
 ) {
     redraw_writer.write(RedrawEvent((400, 400)));
+
+    for entity in query {
+        commands.get_entity(entity).unwrap().despawn();
+    }
 }
 
 fn drag_end3d_trigger_redraw(
     _: Trigger<Pointer3d<crate::picking3d::events::DragEnd>>,
     mut redraw_writer: EventWriter<RedrawEvent>,
+    mut commands: Commands,
+    query: Query<Entity, With<ShadowMarker>>,
 ) {
     redraw_writer.write(RedrawEvent((400, 400)));
+
+    for entity in query {
+        commands.get_entity(entity).unwrap().despawn();
+    }
 }
 
 fn drag_controller(
@@ -172,9 +229,9 @@ fn drag_controller(
     let translation = axis * direction * trigger.delta.length() * 0.01;
 
     let (control_parent, mut transform) = control_parents.get_mut(parent).unwrap();
+    transform.translation += translation;
 
-    transform.translation = transform.translation + translation;
-
+    // Only adjust the control parent
     let control_point = all_other_transforms.get_mut(control_parent.0);
     if control_point.is_ok() {
         let mut t = control_point.unwrap();
@@ -188,7 +245,7 @@ fn drag_controller3d(
     trigger: Trigger<Pointer3d<crate::picking3d::events::Drag>>,
     control_query: Query<(&Control, &ChildOf)>,
     mut all_other_transforms: Query<&mut Transform, (Without<Control>, Without<ControlParent>)>,
-    mut control_parents: Query<(&ControlParent, &mut Transform, &GlobalTransform)>,
+    mut control_parents: Query<(&ControlParent, &mut Transform)>,
     mut redraw_writer: EventWriter<RedrawEvent>,
 ) {
     // NOTE: Make sure that the draw event is triggered only once. Otherwise this difference adding happens multiple times for the same event........
@@ -202,20 +259,9 @@ fn drag_controller3d(
     let direction = (axis.dot(diff)) / (axis.length() * diff.length());
     let translation = axis * diff.length() * direction;
 
-    let (control_parent, mut transform, global_transform) =
-        control_parents.get_mut(parent).unwrap();
+    let (control_parent, mut transform) = control_parents.get_mut(parent).unwrap();
 
-    println!(
-        "Global: ({}, {},  {}), local: ({}, {}, {})",
-        global_transform.translation(),
-        global_transform.rotation(),
-        global_transform.scale(),
-        transform.translation,
-        transform.rotation,
-        transform.scale,
-    );
-
-    transform.translation = transform.translation + translation;
+    transform.translation += translation;
 
     let control_point = all_other_transforms.get_mut(control_parent.0);
     if control_point.is_ok() {

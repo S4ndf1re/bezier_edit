@@ -77,7 +77,9 @@ pub fn horner_scheme<T: AsRef<[Point]>>(points: T, t: f64) -> Point {
     factor
 }
 
-/// Split a bezier curve at parameter t, resulting in two sub bezier lines with n control points
+/// Split a bezier curve at parameter t, resulting in two sub bezier lines with n control points.
+/// Lower is the splitted line defined in the interval [0, t] whereas upper is defined in the
+/// interval [c, 1]. Each resunting curve will be defined in [0,1], each.
 pub fn split_at<T: AsRef<[Point]>>(points: T, t: f64) -> (Vec<Point>, Vec<Point>) {
     let decas = de_casteljau(points.as_ref(), t);
 
@@ -87,7 +89,7 @@ pub fn split_at<T: AsRef<[Point]>>(points: T, t: f64) -> (Vec<Point>, Vec<Point>
     let n = points.as_ref().len();
     for i in 0..n {
         left_half.push(decas[i][0]);
-        right_half.push(decas[n - i][i]);
+        right_half.push(decas[n - i - 1][i]);
     }
 
     (left_half, right_half)

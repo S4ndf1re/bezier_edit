@@ -1,4 +1,6 @@
-use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
+use crate::nurbs::bezier_plane::{
+    ControlPoints2D, derive_2d, determine_u_v, eval_2d_bezier_curves, split_surface,
+};
 use crate::nurbs::point::Point;
 use crate::picking3d::events;
 use crate::picking3d::events::Pointer3d;
@@ -7,9 +9,11 @@ use crate::translation_control::translation_controller::EnableTranslationControl
 use crate::util::update_material_on;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
+use bevy::color::palettes::css::LIGHT_GRAY;
 use bevy::color::palettes::tailwind::*;
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
+use bevy::render::render_resource::Face;
 use num::ToPrimitive;
 use std::collections::HashMap;
 
@@ -30,6 +34,9 @@ impl Default for ScaleInformation {
     }
 }
 
+#[derive(Component)]
+pub struct SurfaceClick(f64, f64);
+
 #[derive(Event)]
 pub struct RedrawEvent(pub Resolution);
 
@@ -37,7 +44,7 @@ pub struct RedrawEvent(pub Resolution);
 pub struct RenderPoint(usize, usize);
 
 #[derive(Component)]
-struct ResultPoint;
+struct ResultSurface;
 
 #[derive(Component)]
 pub struct BezierRender;
@@ -126,30 +133,7 @@ fn drag_point(
         + camera.up() * trigger.delta.y * -0.012;
 }
 
-fn generate_pointcloud(
-    mut events: EventReader<RedrawEvent>,
-    mut commands: Commands,
-    entities: Query<Entity, With<ResultPoint>>,
-    control_points: Query<(&Transform, &RenderPoint)>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    let mut resolution: Resolution = (200, 200);
-    if !events.is_empty() {
-        // Consume and run redraw. No matter how many events where triggered
-        for evt in events.read() {
-            resolution = evt.0;
-            break;
-        }
-        events.clear()
-    } else {
-        return;
-    }
-
-    for p in entities.iter() {
-        commands.entity(p).despawn();
-    }
-
+fn collect_control_points(control_points: Query<(&Transform, &RenderPoint)>) -> ControlPoints2D {
     let mut points = HashMap::<usize, Vec<(usize, Point)>>::new();
     for (transform, render_point) in control_points.iter() {
         let curve = points.entry(render_point.0).or_default();
@@ -177,12 +161,13 @@ fn generate_pointcloud(
     let multi_curves: Vec<Vec<Point>> =
         multi_curves.iter().map(|p| p.1.clone()).collect::<Vec<_>>();
 
-    let mut mat = StandardMaterial::default();
-    mat.base_color = Color::from(GRAY_500);
-    mat.base_color.set_alpha(1.0);
-    mat.cull_mode = None;
-    mat.alpha_mode = AlphaMode::Add;
+    multi_curves
+}
 
+fn create_mesh_from_control_points(
+    control_points: &ControlPoints2D,
+    resolution: Resolution,
+) -> Mesh {
     let mut computed_points: Vec<[f32; 3]> = vec![];
     let mut normals: Vec<[f32; 3]> = vec![];
     // let mut uvs: Vec<[f32; 2]> = vec![];
@@ -195,7 +180,7 @@ fn generate_pointcloud(
     for u in 0..w {
         for v in 0..h {
             let resulting_point = eval_2d_bezier_curves(
-                &multi_curves,
+                control_points,
                 (u as f64) / ((w as f64) - 1.0),
                 (v as f64) / ((h as f64) - 1.0),
             );
@@ -207,24 +192,12 @@ fn generate_pointcloud(
             ]);
 
             let (u_diff, v_diff) = derive_2d(
-                &multi_curves,
+                control_points,
                 (u as f64) / ((w as f64) - 1.0),
                 (v as f64) / ((h as f64) - 1.0),
             );
             let normal = &u_diff.cross(&v_diff) * (1.0 / u_diff.cross(&v_diff).magnitude());
-            normals.push([normal.x as f32, normal.y as f32, normal.z as f32]);
-            // uvs.push([0.0, 0.0]);
-
-            // commands.spawn((
-            //     ResultPoint,
-            //     Transform::from_xyz(
-            //         resulting_point.x as f32,
-            //         resulting_point.y as f32,
-            //         resulting_point.z as f32,
-            //     ),
-            //     Mesh3d(sphere.clone()),
-            //     MeshMaterial3d(result_mat.clone()),
-            // ));
+            normals.push([-normal.x as f32, -normal.y as f32, -normal.z as f32]);
         }
     }
 
@@ -246,12 +219,127 @@ fn generate_pointcloud(
     // mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
     mesh.insert_indices(Indices::U32(indizes));
 
-    commands.spawn((
-        Transform::default(),
-        ResultPoint,
-        Mesh3d(meshes.add(mesh)),
-        MeshMaterial3d(materials.add(mat)),
-    ));
+    mesh
+}
+
+fn generate_pointcloud(
+    mut events: EventReader<RedrawEvent>,
+    mut commands: Commands,
+    entities: Query<Entity, With<ResultSurface>>,
+    control_points: Query<(&Transform, &RenderPoint)>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let mut resolution: Resolution = (200, 200);
+    if !events.is_empty() {
+        // Consume and run redraw. No matter how many events where triggered
+        #[allow(clippy::never_loop)]
+        for evt in events.read() {
+            resolution = evt.0;
+            break;
+        }
+        events.clear()
+    } else {
+        return;
+    }
+
+    let multi_curves = collect_control_points(control_points);
+
+    let mut color = Color::from(GRAY_500);
+    color.set_alpha(0.3);
+
+    let mat = StandardMaterial {
+        base_color: color,
+        double_sided: true,
+        cull_mode: None,
+        alpha_mode: AlphaMode::Blend,
+        ..Default::default()
+    };
+
+    let mesh = create_mesh_from_control_points(&multi_curves, resolution);
+
+    // Despawn old, respawn new
+    for p in entities.iter() {
+        commands.entity(p).despawn();
+    }
+
+    commands
+        .spawn((
+            Transform::default(),
+            ResultSurface,
+            Mesh3d(meshes.add(mesh)),
+            MeshMaterial3d(materials.add(mat)),
+        ))
+        .observe(bezier_surface_picking);
+}
+
+pub fn bezier_surface_picking(
+    trigger: Trigger<Pointer<Click>>,
+    control_points: Query<(&Transform, &RenderPoint)>,
+    old_click: Query<Entity, With<SurfaceClick>>,
+    scale_res: Res<ScaleInformation>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut commands: Commands,
+) {
+    let scale = scale_res.scale;
+
+    for old in old_click.iter() {
+        let _ = commands.get_entity(old).map(|mut e| {
+            e.despawn();
+        });
+    }
+
+    let control_points = collect_control_points(control_points);
+
+    let material = materials.add(Color::from(RED_400));
+    let sphere = meshes.add(Sphere::new(0.07 * scale).mesh().ico(5).unwrap());
+
+    if let Some(click_coords) = trigger.hit.position {
+        println!("Trying to hit surface at point: {click_coords}");
+        // Currently the volume vaule is completely arbitrary
+        let possible_hits = determine_u_v(
+            &control_points,
+            &Point::new(
+                click_coords.x as f64,
+                click_coords.y as f64,
+                click_coords.z as f64,
+                None,
+            ),
+            0.0000001,
+        );
+
+        println!("evaluated hits");
+
+        if let Some(hits) = possible_hits {
+            println!("found hits: {hits:?}");
+            for hit in hits {
+                let evaluated = eval_2d_bezier_curves(&control_points, hit.0, hit.1);
+
+                commands.spawn((
+                    SurfaceClick(hit.0, hit.1),
+                    MeshMaterial3d(material.clone()),
+                    Mesh3d(sphere.clone()),
+                    Transform::from_xyz(evaluated.x as f32, evaluated.y as f32, evaluated.z as f32),
+                ));
+            }
+        }
+    }
+}
+
+#[allow(clippy::complexity)]
+pub fn update_surface_click(
+    mut set: ParamSet<(
+        Query<(&SurfaceClick, &mut Transform)>,
+        Query<(&Transform, &RenderPoint)>,
+    )>,
+) {
+    let points = collect_control_points(set.p1());
+
+    for (surface, mut transform) in set.p0() {
+        let point = eval_2d_bezier_curves(&points, surface.0, surface.1);
+        transform.translation = Vec3::new(point.x as f32, point.y as f32, point.z as f32);
+    }
 }
 
 pub fn generate_default_curve(
@@ -304,56 +392,57 @@ pub fn generate_default_curve(
         ids.push(id);
     }
 
+    // Draw lines between neighbouring controls points to generate a visible grid
     for i in 0..points.len() {
         let p0 = points[i];
         let p0_id = ids[i];
 
-        if i + 1 < (i / w + 1) * w {
-            if let Some(py) = points.get(i + 1) {
-                let id = ids.get(i + 1).expect("must be present").clone();
-                let mut mesh = Mesh::new(
-                    PrimitiveTopology::LineList,
-                    RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
-                );
-                mesh.insert_attribute(
-                    Mesh::ATTRIBUTE_POSITION,
-                    vec![
-                        Vec3::new(p0.2 * scale, p0.3 * scale, p0.4 * scale),
-                        Vec3::new(py.2 * scale, py.3 * scale, py.4 * scale),
-                    ],
-                );
+        if i + 1 < (i / w + 1) * w
+            && let Some(py) = points.get(i + 1)
+        {
+            let id = *ids.get(i + 1).expect("must be present");
+            let mut mesh = Mesh::new(
+                PrimitiveTopology::LineList,
+                RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+            );
+            mesh.insert_attribute(
+                Mesh::ATTRIBUTE_POSITION,
+                vec![
+                    Vec3::new(p0.2 * scale, p0.3 * scale, p0.4 * scale),
+                    Vec3::new(py.2 * scale, py.3 * scale, py.4 * scale),
+                ],
+            );
 
-                commands.spawn((
-                    Transform::from_xyz(0.0, 0.0, 0.0),
-                    RenderLine(p0_id, id),
-                    MeshMaterial3d(materials.add(Color::BLACK)),
-                    Mesh3d(meshes.add(mesh)),
-                ));
-            }
+            commands.spawn((
+                Transform::from_xyz(0.0, 0.0, 0.0),
+                RenderLine(p0_id, id),
+                MeshMaterial3d(materials.add(Color::BLACK)),
+                Mesh3d(meshes.add(mesh)),
+            ));
         }
 
-        if i + w < points.len() {
-            if let Some(px) = points.get(i + w) {
-                let id = ids.get(i + w).expect("must be present").clone();
-                let mut mesh = Mesh::new(
-                    PrimitiveTopology::LineList,
-                    RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
-                );
-                mesh.insert_attribute(
-                    Mesh::ATTRIBUTE_POSITION,
-                    vec![
-                        Vec3::new(p0.2 * scale, p0.3 * scale, p0.4 * scale),
-                        Vec3::new(px.2 * scale, px.3 * scale, px.4 * scale),
-                    ],
-                );
+        if i + w < points.len()
+            && let Some(px) = points.get(i + 2)
+        {
+            let id = *ids.get(i + w).expect("must be present");
+            let mut mesh = Mesh::new(
+                PrimitiveTopology::LineList,
+                RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
+            );
+            mesh.insert_attribute(
+                Mesh::ATTRIBUTE_POSITION,
+                vec![
+                    Vec3::new(p0.2 * scale, p0.3 * scale, p0.4 * scale),
+                    Vec3::new(px.2 * scale, px.3 * scale, px.4 * scale),
+                ],
+            );
 
-                commands.spawn((
-                    Transform::from_xyz(0.0, 0.0, 0.0),
-                    RenderLine(p0_id, id),
-                    MeshMaterial3d(materials.add(Color::BLACK)),
-                    Mesh3d(meshes.add(mesh)),
-                ));
-            }
+            commands.spawn((
+                Transform::from_xyz(0.0, 0.0, 0.0),
+                RenderLine(p0_id, id),
+                MeshMaterial3d(materials.add(Color::BLACK)),
+                Mesh3d(meshes.add(mesh)),
+            ));
         }
     }
 
@@ -365,6 +454,9 @@ impl Plugin for BezierRender {
         app.add_event::<RedrawEvent>();
         app.init_resource::<ScaleInformation>();
         app.add_systems(Startup, generate_default_curve);
-        app.add_systems(Update, (generate_pointcloud, update_lines)); // , listen_to_mouse_left_button));
+        app.add_systems(
+            Update,
+            (generate_pointcloud, update_lines, update_surface_click),
+        ); // , listen_to_mouse_left_button));
     }
 }

@@ -1,5 +1,6 @@
 mod advanced_orbit_controls;
 mod bezier_curve_renderer;
+mod history;
 mod nurbs;
 pub mod picking3d;
 mod thirdparty_copy;
@@ -17,6 +18,7 @@ use bevy_mod_openxr::resources::OxrSessionConfig;
 use bevy_mod_openxr::types::EnvironmentBlendMode;
 use bevy_xr_utils::xr_utils_actions::{XRUtilsActionSystemSet, XRUtilsActionsPlugin};
 use bezier_curve_renderer::*;
+use history::plugin::HistoryPlugin;
 use picking3d::picking_3d::ObjectPicking3d;
 
 use crate::thumbstick3d::ThumbstickPlugin;
@@ -26,7 +28,7 @@ use translation_control::translation_controller::TranslationController;
 fn setup(mut commands: Commands) {
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(0.0, 0.0, -10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+        Transform::from_xyz(-10.0, 0.0, 0.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
     ));
 
     commands.spawn((
@@ -34,7 +36,7 @@ fn setup(mut commands: Commands) {
             shadows_enabled: true,
             ..default()
         },
-        Transform::from_xyz(10.0, 10.0, 10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+        Transform::from_xyz(0.0, 10.0, 0.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
     ));
 }
 
@@ -71,6 +73,7 @@ fn create_app() -> App {
     info!("Creating Non-VR App");
     let mut app = App::new();
     app.add_plugins(DefaultPlugins)
+        .add_plugins(HistoryPlugin)
         .add_plugins(MeshPickingPlugin)
         .add_plugins(BezierRender)
         .add_plugins(AdvancedOrbitControls)
@@ -97,6 +100,7 @@ fn create_app() -> App {
     })
     .add_plugins(bevy_mod_xr::hand_debug_gizmos::HandGizmosPlugin)
     .add_plugins(thirdparty_copy::transform_util_copy::TransformUtilitiesPlugin)
+    .add_plugins(HistoryPlugin)
     .add_plugins(MeshPickingPlugin)
     .add_plugins(ObjectPicking3d)
     .add_plugins(BezierRender)
