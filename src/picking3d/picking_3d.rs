@@ -40,6 +40,9 @@ struct MoveMarker {
 #[derive(Component)]
 struct GrabActionMarker(HoveredBy);
 
+#[derive(Component)]
+struct GrabPose(HoveredBy);
+
 #[allow(clippy::complexity)]
 fn check_intersections(
     mut commands: Commands,

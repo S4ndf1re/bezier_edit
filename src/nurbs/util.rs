@@ -1,8 +1,14 @@
+use std::ops::Mul;
+
 use crate::nurbs::point::Point;
 use num::pow;
 
 pub fn sum(n: i32) -> i32 {
     (n * n + n) / 2
+}
+
+pub fn factorial(n: usize) -> usize {
+    (1..=n).fold(1, |a, b| a * b)
 }
 
 pub fn n_choose_k(n: usize, k: usize) -> usize {

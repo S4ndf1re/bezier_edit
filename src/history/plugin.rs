@@ -2,10 +2,12 @@ use std::collections::{HashMap, VecDeque};
 
 use bevy::{ecs::world::OnDespawn, prelude::*};
 
+use crate::bezier_curve_renderer::RedrawEvent;
+
 #[derive(Event)]
 pub enum HistoryLogEvent {
-    Begin(Entity),
-    End(Entity),
+    Begin(Entity, Option<Transform>),
+    End(Entity, Option<Transform>),
 }
 
 #[derive(Event)]
@@ -14,6 +16,7 @@ pub struct HistoryPopEvent(Entity);
 #[derive(Event)]
 pub struct HistoryUndoEvent;
 
+#[derive(Debug)]
 struct HistoryEntry {
     start: Transform,
     end: Option<Transform>,
@@ -83,10 +86,7 @@ impl HistoryResource {
     }
 
     pub fn pop(&mut self, entity: &Entity) -> Option<HistoryEntry> {
-        if self.history.contains_key(entity) {
-            self.history.get_mut(entity).unwrap().pop_back();
-        }
-        None
+        self.history.get_mut(entity)?.pop_back()
     }
 
     pub fn pop_last_entity(&mut self) -> Option<Entity> {
@@ -110,11 +110,12 @@ fn listen_to_history_log_events(
 ) {
     for evt in reader.read() {
         match evt {
-            HistoryLogEvent::Begin(entity) => {
+            HistoryLogEvent::Begin(entity, trans) => {
                 let transform = query.get(*entity);
                 if transform.is_err() {
                     return;
                 }
+
                 if history.entity_first_seen(entity) {
                     commands
                         .get_entity(*entity)
@@ -122,15 +123,23 @@ fn listen_to_history_log_events(
                         .observe(despawn_entity)
                         .observe(remove_entity);
                 }
-                history.add_starting(*entity, *transform.unwrap());
+
+                if trans.is_some() {
+                    history.add_starting(*entity, trans.unwrap());
+                } else {
+                    history.add_starting(*entity, *transform.unwrap());
+                }
             }
-            HistoryLogEvent::End(entity) => {
+            HistoryLogEvent::End(entity, trans) => {
                 let transform = query.get(*entity);
                 if transform.is_err() {
                     return;
                 }
-
-                history.add_ending(*entity, *transform.unwrap());
+                if trans.is_some() {
+                    history.add_ending(*entity, trans.unwrap());
+                } else {
+                    history.add_ending(*entity, *transform.unwrap());
+                }
             }
         }
     }
@@ -140,13 +149,19 @@ fn listen_to_history_pop_events(
     mut reader: EventReader<HistoryPopEvent>,
     mut history: ResMut<HistoryResource>,
     mut query: Query<&mut Transform>,
+    mut redraw_writer: EventWriter<RedrawEvent>,
 ) {
+    let mut redraw = false;
     for evt in reader.read() {
         if let Some(last_location) = history.pop(&evt.0)
             && let Ok(mut transform) = query.get_mut(evt.0)
         {
             *transform = last_location.start;
+            redraw = true;
         }
+    }
+    if redraw {
+        redraw_writer.write(RedrawEvent((400, 400)));
     }
 }
 
@@ -154,7 +169,9 @@ fn listen_to_history_undo_events(
     mut reader: EventReader<HistoryUndoEvent>,
     mut history: ResMut<HistoryResource>,
     mut query: Query<&mut Transform>,
+    mut redraw_writer: EventWriter<RedrawEvent>,
 ) {
+    let mut redraw = false;
     for _evt in reader.read() {
         loop {
             let entity = history.pop_last_entity();
@@ -162,6 +179,7 @@ fn listen_to_history_undo_events(
                 if let Ok(mut transform) = query.get_mut(entity) {
                     if let Some(last_location) = history.pop(&entity) {
                         *transform = last_location.start;
+                        redraw = true;
                     }
                     break;
                 }
@@ -169,6 +187,10 @@ fn listen_to_history_undo_events(
                 break;
             }
         }
+    }
+
+    if redraw {
+        redraw_writer.write(RedrawEvent((400, 400)));
     }
 }
 
@@ -179,6 +201,8 @@ impl Plugin for HistoryPlugin {
         app.insert_resource(HistoryResource::new(40));
         app.add_event::<HistoryLogEvent>();
         app.add_event::<HistoryPopEvent>();
+        app.add_event::<HistoryUndoEvent>();
+        app.add_systems(PreUpdate, listen_to_history_undo_events);
         app.add_systems(
             PostUpdate,
             listen_to_history_log_events.before(listen_to_history_pop_events),

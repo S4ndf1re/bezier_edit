@@ -1,6 +1,9 @@
+use num::pow;
+
 use crate::nurbs::point::Point;
 use crate::nurbs::util::n_choose_k;
-use num::pow;
+
+use super::util::factorial;
 
 pub fn de_casteljau<T: AsRef<[Point]>>(points: T, t: f64) -> Vec<Vec<Point>> {
     let points = points.as_ref();
@@ -27,10 +30,15 @@ pub fn de_casteljau<T: AsRef<[Point]>>(points: T, t: f64) -> Vec<Vec<Point>> {
     stages
 }
 
-pub fn derive_after_de_casteljau(points: &[Vec<Point>]) -> Point {
+pub fn derive_after_de_casteljau(points: &[Vec<Point>], r: usize) -> Point {
     let n = points.len() - 1;
 
-    &points[n - 1][1] - &points[n - 1][0]
+    let mut sum = Point::default();
+    for j in 0..=r {
+        sum = &sum + &(&points[n - r][j] * ((n_choose_k(r, j) as f64) * pow(-1.0, r - j)));
+    }
+
+    ((factorial(n) / factorial(n - r)) as f64) * &sum
 }
 
 pub fn atiken(points: &[Point], ts: &[f64], t: f64) -> Vec<Vec<Point>> {

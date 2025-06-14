@@ -1,4 +1,5 @@
 use crate::bezier_curve_renderer::{RedrawEvent, ScaleInformation};
+use crate::history::plugin::HistoryLogEvent;
 use crate::picking3d::events::{MoveIn, MoveOut, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::translation_control::control_storage::ControlStorage;
@@ -122,6 +123,7 @@ fn show_transitional_controls(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn drag_start(
     trigger: Trigger<Pointer<DragStart>>,
     mut commands: Commands,
@@ -132,6 +134,7 @@ fn drag_start(
     mut meshes: ResMut<Assets<Mesh>>,
     arrows: Res<ControlStorage>,
     scale: Res<ScaleInformation>,
+    mut history: EventWriter<HistoryLogEvent>,
 ) {
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
@@ -144,7 +147,7 @@ fn drag_start(
     let scale = scale.scale;
 
     commands
-        .spawn((ShadowMarker, start_transform.clone(), Visibility::default()))
+        .spawn((ShadowMarker, *start_transform, Visibility::default()))
         .with_children(|parent| {
             for arrow in arrows.as_ref().iter() {
                 parent
@@ -165,32 +168,59 @@ fn drag_start(
                     });
             }
         });
+
+    history.write(HistoryLogEvent::Begin(
+        control_parent.0,
+        Some(*start_transform),
+    ));
 }
 
 fn drag_end_trigger_redraw(
-    _: Trigger<Pointer<DragEnd>>,
+    trigger: Trigger<Pointer<DragEnd>>,
+    arrow_query: Query<(&ChildOf, Entity), With<Control>>,
+    control_parents: Query<&ControlParent>,
     mut redraw_writer: EventWriter<RedrawEvent>,
     mut commands: Commands,
     query: Query<Entity, With<ShadowMarker>>,
+    mut history: EventWriter<HistoryLogEvent>,
 ) {
+    let dragged_entity = trigger.target();
+    let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
+
+    let dragged_parent = dragged_childof.parent();
+    let control_parent = control_parents.get(dragged_parent).unwrap();
+
     redraw_writer.write(RedrawEvent((400, 400)));
 
     for entity in query {
         commands.get_entity(entity).unwrap().despawn();
     }
+
+    history.write(HistoryLogEvent::End(control_parent.0, None));
 }
 
 fn drag_end3d_trigger_redraw(
-    _: Trigger<Pointer3d<crate::picking3d::events::DragEnd>>,
+    trigger: Trigger<Pointer3d<crate::picking3d::events::DragEnd>>,
+    arrow_query: Query<(&ChildOf, Entity), With<Control>>,
+    control_parents: Query<&ControlParent>,
     mut redraw_writer: EventWriter<RedrawEvent>,
     mut commands: Commands,
     query: Query<Entity, With<ShadowMarker>>,
+    mut history: EventWriter<HistoryLogEvent>,
 ) {
+    let dragged_entity = trigger.target();
+    let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
+
+    let dragged_parent = dragged_childof.parent();
+    let control_parent = control_parents.get(dragged_parent).unwrap();
+
     redraw_writer.write(RedrawEvent((400, 400)));
 
     for entity in query {
         commands.get_entity(entity).unwrap().despawn();
     }
+
+    history.write(HistoryLogEvent::End(control_parent.0, None));
 }
 
 fn drag_controller(

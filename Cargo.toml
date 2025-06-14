@@ -4,12 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = "0.16.0"
+bevy = { version = "0.16.0", default-features = true }
 num = "0.4.3"
 nalgebra = "0.33.2"
 bevy_mod_openxr = "0.3.0"
 bevy_mod_xr = "0.3.0"
 bevy_xr_utils = "0.3.0"
+openxr = "0.19.0"
+variantly = "0.4.0"
+bevy_lunex = "0.4.1"
 
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]

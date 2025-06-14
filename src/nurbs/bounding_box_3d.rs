@@ -17,7 +17,7 @@ impl BoundingBox3DRange {
         if self.1 < self.0 {
             return false;
         }
-        self.0 - f32::EPSILON as f64 <= value && value <= self.1 + f32::EPSILON as f64
+        self.0 - 3.0 * f32::EPSILON as f64 <= value && value <= self.1 + 3.0 * f32::EPSILON as f64
     }
 
     pub fn length(&self) -> f64 {

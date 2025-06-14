@@ -3,9 +3,11 @@ mod bezier_curve_renderer;
 mod history;
 mod nurbs;
 pub mod picking3d;
+pub mod solver;
 mod thirdparty_copy;
 mod thumbstick3d;
 mod translation_control;
+mod ui;
 pub mod util;
 
 use crate::advanced_orbit_controls::AdvancedOrbitControls;
@@ -70,6 +72,8 @@ fn setup(
 
 #[cfg(not(feature = "vr_enable"))]
 fn create_app() -> App {
+    use ui::UiPlugin;
+
     info!("Creating Non-VR App");
     let mut app = App::new();
     app.add_plugins(DefaultPlugins)
@@ -78,6 +82,7 @@ fn create_app() -> App {
         .add_plugins(BezierRender)
         .add_plugins(AdvancedOrbitControls)
         .add_plugins(TranslationController)
+        .add_plugins(UiPlugin)
         .init_resource::<ControlStorage>()
         .add_systems(Startup, setup);
 

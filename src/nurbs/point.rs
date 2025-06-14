@@ -1,3 +1,4 @@
+use bevy::math::Vec3;
 use num::traits::clamp_min;
 use std::ops::{Add, Div, Mul, Sub};
 
@@ -27,7 +28,7 @@ impl Point {
         Point::new(
             self.y * other.z - self.z * other.y,
             self.z * other.x - self.x * other.z,
-            self.x * other.y - self.y * other.z,
+            self.x * other.y - self.y * other.x,
             None,
         )
     }
@@ -72,5 +73,17 @@ impl Div<f64> for Point {
     type Output = Point;
     fn div(self, rhs: f64) -> Self::Output {
         Point::new(self.x / rhs, self.y / rhs, self.z / rhs, Some(self.w))
+    }
+}
+
+impl From<Point> for Vec3 {
+    fn from(value: Point) -> Self {
+        Vec3::new(value.x as f32, value.y as f32, value.z as f32)
+    }
+}
+
+impl From<Vec3> for Point {
+    fn from(value: Vec3) -> Self {
+        Point::new(value.x as f64, value.y as f64, value.z as f64, None)
     }
 }

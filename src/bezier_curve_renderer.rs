@@ -1,3 +1,4 @@
+use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{
     ControlPoints2D, derive_2d, determine_u_v, eval_2d_bezier_curves, split_surface,
 };
@@ -5,19 +6,28 @@ use crate::nurbs::point::Point;
 use crate::picking3d::events;
 use crate::picking3d::events::Pointer3d;
 use crate::picking3d::picking_3d::Picking3dInteractable;
+use crate::solver::{C1Constraint, Constraints, Solver};
 use crate::translation_control::translation_controller::EnableTranslationControl;
 use crate::util::update_material_on;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
-use bevy::color::palettes::css::LIGHT_GRAY;
+use bevy::color::palettes::css::BLACK;
 use bevy::color::palettes::tailwind::*;
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_resource::Face;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use num::ToPrimitive;
 use std::collections::HashMap;
 
 pub type Resolution = (u32, u32);
+
+#[derive(Resource, Default)]
+pub struct ConstraintState {
+    c1_enabled: bool,
+}
+
+#[derive(Event)]
+pub struct ToggleC1Enable;
 
 #[derive(Resource)]
 pub struct ScaleInformation {
@@ -42,6 +52,10 @@ pub struct RedrawEvent(pub Resolution);
 
 #[derive(Component)]
 pub struct RenderPoint(usize, usize);
+
+#[derive(Component)]
+#[require(Transform, Visibility)]
+pub struct C1ControlPoint(i32, i32, usize, usize);
 
 #[derive(Component)]
 struct ResultSurface;
@@ -86,6 +100,25 @@ fn update_lines(
 fn enable_gizmo(
     trigger: Trigger<Pointer<Click>>,
     query: Query<&RenderPoint>,
+    mut commands: Commands,
+    enabled: Query<&EnableTranslationControl>,
+) {
+    if query.get(trigger.target()).is_err() {
+        return;
+    }
+
+    let mut entity = commands.get_entity(trigger.target()).unwrap();
+
+    if enabled.get(trigger.target()).is_ok() {
+        entity.remove::<EnableTranslationControl>();
+    } else {
+        entity.insert(EnableTranslationControl);
+    }
+}
+
+fn enable_gizmo_shadow_points(
+    trigger: Trigger<Pointer<Click>>,
+    query: Query<&C1ControlPoint>,
     mut commands: Commands,
     enabled: Query<&EnableTranslationControl>,
 ) {
@@ -167,15 +200,31 @@ fn collect_control_points(control_points: Query<(&Transform, &RenderPoint)>) -> 
 fn create_mesh_from_control_points(
     control_points: &ControlPoints2D,
     resolution: Resolution,
-) -> Mesh {
+    mut images: ResMut<Assets<Image>>,
+) -> (Mesh, Handle<Image>) {
     let mut computed_points: Vec<[f32; 3]> = vec![];
     let mut normals: Vec<[f32; 3]> = vec![];
-    // let mut uvs: Vec<[f32; 2]> = vec![];
+    let mut uvs: Vec<[f32; 2]> = vec![];
 
     let mut indizes: Vec<u32> = vec![];
 
     let w = resolution.0;
     let h = resolution.1;
+
+    let mut image = Image::new_fill(
+        // 2D image of size 256x256
+        Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        // Initialize it with a beige color
+        &(BLACK.to_u8_array()),
+        // Use the same encoding as the color we set
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
 
     for u in 0..w {
         for v in 0..h {
@@ -184,6 +233,11 @@ fn create_mesh_from_control_points(
                 (u as f64) / ((w as f64) - 1.0),
                 (v as f64) / ((h as f64) - 1.0),
             );
+
+            uvs.push([
+                ((u as f64) / ((w as f64) - 1.0)) as f32,
+                ((v as f64) / ((h as f64) - 1.0)) as f32,
+            ]);
 
             computed_points.push([
                 resulting_point.x as f32,
@@ -195,11 +249,37 @@ fn create_mesh_from_control_points(
                 control_points,
                 (u as f64) / ((w as f64) - 1.0),
                 (v as f64) / ((h as f64) - 1.0),
+                1,
             );
-            let normal = &u_diff.cross(&v_diff) * (1.0 / u_diff.cross(&v_diff).magnitude());
+            let normal = &u_diff.cross(&v_diff);
             normals.push([-normal.x as f32, -normal.y as f32, -normal.z as f32]);
+
+            let (u_diff, v_diff) = derive_2d(
+                control_points,
+                (u as f64) / ((w as f64) - 1.0),
+                (v as f64) / ((h as f64) - 1.0),
+                2,
+            );
+
+            const SCALE: f64 = 20.0;
+            let sum = &u_diff + &v_diff;
+            let direction = &(sum / sum.magnitude()) * &Point::new(0.0, 1.0, 0.0, None);
+            let len = sum.magnitude();
+            if let Some(pixel) = image.pixel_bytes_mut(UVec3::new(u, v, 0)) {
+                if direction >= 0.0 {
+                    pixel[0] = { len / SCALE * u8::MAX as f64 } as u8;
+                    pixel[1] = { 0.0 * u8::MAX as f64 / 5.0 } as u8;
+                    pixel[2] = { 0.0 * u8::MAX as f64 / 5.0 } as u8;
+                } else {
+                    pixel[0] = { 0.0 * u8::MAX as f64 / 5.0 } as u8;
+                    pixel[1] = { 0.0 * u8::MAX as f64 / 5.0 } as u8;
+                    pixel[2] = { len / SCALE * u8::MAX as f64 } as u8;
+                }
+            }
         }
     }
+
+    let handle = images.add(image);
 
     for u in 0..(w - 1) {
         for v in 0..(h - 1) {
@@ -216,10 +296,10 @@ fn create_mesh_from_control_points(
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::all());
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, computed_points);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    // mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
     mesh.insert_indices(Indices::U32(indizes));
 
-    mesh
+    (mesh, handle)
 }
 
 fn generate_pointcloud(
@@ -229,6 +309,7 @@ fn generate_pointcloud(
     control_points: Query<(&Transform, &RenderPoint)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    images: ResMut<Assets<Image>>,
 ) {
     let mut resolution: Resolution = (200, 200);
     if !events.is_empty() {
@@ -244,19 +325,17 @@ fn generate_pointcloud(
     }
 
     let multi_curves = collect_control_points(control_points);
-
     let mut color = Color::from(GRAY_500);
     color.set_alpha(0.3);
 
+    let (mesh, image_handle) = create_mesh_from_control_points(&multi_curves, resolution, images);
+
     let mat = StandardMaterial {
-        base_color: color,
+        base_color_texture: Some(image_handle),
         double_sided: true,
         cull_mode: None,
-        alpha_mode: AlphaMode::Blend,
         ..Default::default()
     };
-
-    let mesh = create_mesh_from_control_points(&multi_curves, resolution);
 
     // Despawn old, respawn new
     for p in entities.iter() {
@@ -294,9 +373,9 @@ pub fn bezier_surface_picking(
 
     let material = materials.add(Color::from(RED_400));
     let sphere = meshes.add(Sphere::new(0.07 * scale).mesh().ico(5).unwrap());
+    let normal_pointer = meshes.add(Cuboid::new(0.07 * scale, 0.07 * scale, 0.5 * scale));
 
     if let Some(click_coords) = trigger.hit.position {
-        println!("Trying to hit surface at point: {click_coords}");
         // Currently the volume vaule is completely arbitrary
         let possible_hits = determine_u_v(
             &control_points,
@@ -309,19 +388,31 @@ pub fn bezier_surface_picking(
             0.0000001,
         );
 
-        println!("evaluated hits");
-
         if let Some(hits) = possible_hits {
-            println!("found hits: {hits:?}");
             for hit in hits {
                 let evaluated = eval_2d_bezier_curves(&control_points, hit.0, hit.1);
+                let (u_diff, v_diff) = derive_2d(&control_points, hit.0, hit.1, 1);
+                let normal = &u_diff.cross(&v_diff);
 
-                commands.spawn((
-                    SurfaceClick(hit.0, hit.1),
-                    MeshMaterial3d(material.clone()),
-                    Mesh3d(sphere.clone()),
-                    Transform::from_xyz(evaluated.x as f32, evaluated.y as f32, evaluated.z as f32),
-                ));
+                commands
+                    .spawn((
+                        SurfaceClick(hit.0, hit.1),
+                        MeshMaterial3d(material.clone()),
+                        Mesh3d(sphere.clone()),
+                        Transform::from_xyz(
+                            evaluated.x as f32,
+                            evaluated.y as f32,
+                            evaluated.z as f32,
+                        )
+                        .looking_to(Into::<Vec3>::into(-1.0 * normal), Vec3::Y),
+                    ))
+                    .with_children(|parent| {
+                        parent.spawn((
+                            Transform::from_xyz(0.0, 0.0, -0.25 * scale),
+                            MeshMaterial3d(material.clone()),
+                            Mesh3d(normal_pointer.clone()),
+                        ));
+                    });
             }
         }
     }
@@ -338,7 +429,11 @@ pub fn update_surface_click(
 
     for (surface, mut transform) in set.p0() {
         let point = eval_2d_bezier_curves(&points, surface.0, surface.1);
+        let (u_diff, v_diff) = derive_2d(&points, surface.0, surface.1, 1);
+        let normal = &u_diff.cross(&v_diff);
+
         transform.translation = Vec3::new(point.x as f32, point.y as f32, point.z as f32);
+        transform.look_to(Into::<Vec3>::into(-1.0 * normal), Vec3::Y);
     }
 }
 
@@ -352,19 +447,32 @@ pub fn generate_default_curve(
     let scale = scale_res.scale;
     let height = scale_res.height;
     let material = materials.add(Color::from(GRAY_400));
+    let material_shadow = materials.add(Color::from(GRAY_700));
     let material_hover = materials.add(Color::from(GRAY_600));
     let sphere = meshes.add(Sphere::new(0.1 * scale).mesh().ico(5).unwrap());
 
-    let (w, h) = (4, 4);
+    let (w, h): (usize, usize) = (6, 6);
     let min_x = -w.to_f32().unwrap() / 2.0 + if w % 2 == 0 { 0.5 } else { 0.0 };
     let min_y = -h.to_f32().unwrap() / 2.0 + if h % 2 == 0 { 0.5 } else { 0.0 };
 
     let mut points = vec![];
+    let mut c1_control_points: Vec<(i32, i32, usize, usize)> = vec![];
     let mut curr_x = min_x;
     let mut curr_y = min_y;
-    for y in 0..h {
-        for x in 0..w {
-            points.push((y, x, curr_x, 0.0, curr_y));
+    for y in 0..h as i32 {
+        for x in 0..w as i32 {
+            if y == 0 {
+                c1_control_points.push((-1, x, y as usize, x as usize));
+            } else if y == (h as i32) - 1 {
+                c1_control_points.push((y + 1, x, y as usize, x as usize));
+            }
+
+            if x == 0 {
+                c1_control_points.push((y, -1, y as usize, x as usize));
+            } else if x == (w as i32) - 1 {
+                c1_control_points.push((y, x + 1, y as usize, x as usize));
+            }
+            points.push((y as usize, x as usize, curr_x, 0.0, curr_y));
             curr_x += 1.0;
         }
         curr_x = min_x;
@@ -390,6 +498,18 @@ pub fn generate_default_curve(
             .observe(enable_gizmo3d)
             .id();
         ids.push(id);
+    }
+
+    for p in c1_control_points {
+        // TODO, determine the position based on the initial grid using c1 conditions
+        commands
+            .spawn((
+                C1ControlPoint(p.0, p.1, p.2, p.3),
+                Mesh3d(sphere.clone()),
+                MeshMaterial3d(material_shadow.clone()),
+                Visibility::Hidden,
+            ))
+            .observe(enable_gizmo_shadow_points);
     }
 
     // Draw lines between neighbouring controls points to generate a visible grid
@@ -449,14 +569,103 @@ pub fn generate_default_curve(
     event_writer.write(RedrawEvent((200, 200)));
 }
 
+#[allow(clippy::complexity)]
+fn handle_c1_points_events(
+    mut reader: EventReader<ToggleC1Enable>,
+    mut constraint_state: ResMut<ConstraintState>,
+    mut set: ParamSet<(
+        Query<(&mut Transform, &C1ControlPoint, &mut Visibility)>,
+        Query<(&Transform, &RenderPoint)>,
+    )>,
+) {
+    if !reader.is_empty() {
+        reader.clear();
+        constraint_state.c1_enabled = !constraint_state.c1_enabled;
+    } else {
+        return;
+    }
+
+    let points = collect_control_points(set.p1());
+
+    for (mut trans, c1_point, mut visibility) in set.p0().iter_mut() {
+        if constraint_state.c1_enabled {
+            let constraint = C1Constraint::new(
+                Point::default(),
+                (c1_point.0, c1_point.1),
+                (c1_point.2, c1_point.3),
+            );
+
+            if let Some(new_position) = constraint.inverse(&points) {
+                trans.translation = new_position.into();
+                *visibility = Visibility::Visible;
+            }
+        } else {
+            *visibility = Visibility::Hidden;
+        }
+    }
+}
+
+#[allow(clippy::complexity)]
+fn solve_constraints(
+    constraint_state: Res<ConstraintState>,
+    mut set: ParamSet<(
+        Query<(&Transform, &C1ControlPoint)>,
+        Query<(&mut Transform, &RenderPoint)>,
+    )>,
+) {
+    let points = collect_control_points(set.p1().as_readonly());
+
+    let mut constraints = vec![];
+
+    for (trans, c1_point) in set.p0().iter() {
+        if constraint_state.c1_enabled {
+            let constraint = C1Constraint::new(
+                trans.translation.into(),
+                (c1_point.0, c1_point.1),
+                (c1_point.2, c1_point.3),
+            );
+            constraints.push(constraint);
+        }
+    }
+
+    let points = Solver::solve_constraints(
+        &points,
+        Constraints {
+            c1_constraints: constraints,
+        },
+    );
+
+    for (mut trans, render_point) in set.p1().iter_mut() {
+        trans.translation = points[render_point.0][render_point.1].into();
+    }
+}
+
+fn handle_keyboard(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut toggle_writer: EventWriter<ToggleC1Enable>,
+    mut history: EventWriter<HistoryUndoEvent>,
+) {
+    if keyboard.just_released(KeyCode::Space) {
+        toggle_writer.write(ToggleC1Enable);
+    }
+
+    if keyboard.just_released(KeyCode::KeyU) {
+        history.write(HistoryUndoEvent);
+    }
+}
+
 impl Plugin for BezierRender {
     fn build(&self, app: &mut App) {
         app.add_event::<RedrawEvent>();
         app.init_resource::<ScaleInformation>();
         app.add_systems(Startup, generate_default_curve);
+        app.add_systems(PreUpdate, (handle_keyboard, solve_constraints));
         app.add_systems(
             Update,
             (generate_pointcloud, update_lines, update_surface_click),
         ); // , listen_to_mouse_left_button));
+        app.add_systems(PostUpdate, handle_c1_points_events);
+        app.init_resource::<ConstraintState>();
+        app.add_event::<ToggleC1Enable>();
     }
 }

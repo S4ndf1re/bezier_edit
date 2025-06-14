@@ -37,7 +37,7 @@ pub fn eval_2d_bezier_curves(control_points: &ControlPoints2D, u: f64, v: f64) -
         .unwrap()
 }
 
-pub fn derive_2d(control_points: &ControlPoints2D, u: f64, v: f64) -> (Point, Point) {
+pub fn derive_2d(control_points: &ControlPoints2D, u: f64, v: f64, r: usize) -> (Point, Point) {
     let m = control_points.len() - 1;
     assert!(m > 1);
 
@@ -52,7 +52,7 @@ pub fn derive_2d(control_points: &ControlPoints2D, u: f64, v: f64) -> (Point, Po
     let mut new_control = vec![Point::new(0.0, 0.0, 0.0, None); m + 1];
 
     for i in 0..=m {
-        new_control[i] = derive_after_de_casteljau(&de_casteljau(&control_points[i], u))
+        new_control[i] = derive_after_de_casteljau(&de_casteljau(&control_points[i], u), r)
     }
 
     let u_diff = *de_casteljau(&new_control, v)
@@ -71,7 +71,7 @@ pub fn derive_2d(control_points: &ControlPoints2D, u: f64, v: f64) -> (Point, Po
             inner_control_points.push(control_points[j][i]);
         }
 
-        new_control[i] = derive_after_de_casteljau(&de_casteljau(&inner_control_points, v))
+        new_control[i] = derive_after_de_casteljau(&de_casteljau(&inner_control_points, v), r)
     }
 
     let v_diff = *de_casteljau(&new_control, u)
