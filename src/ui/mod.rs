@@ -7,8 +7,16 @@ use bevy::{
     sprite::Anchor,
 };
 use bevy_lunex::{UiStateTrait, prelude::*};
+use struct_patch::Patch;
 
-#[derive(Resource, Default)]
+#[derive(Component)]
+struct UText;
+
+#[derive(Component)]
+struct VText;
+
+#[derive(Resource, Default, Patch)]
+#[patch(name = "UiStateChangeset", attribute(derive(Event, Clone)))]
 pub struct UiState {
     u: f64,
     v: f64,
@@ -20,17 +28,19 @@ fn spawn_background<'a>(
 ) -> EntityCommands<'a> {
     ui.spawn((
         Name::new("Background"),
+        UiDepth::Set(-100.0),
         UiLayout::solid()
             .size(Rl(100.0))
             .scaling(Scaling::Fill)
             .pack(),
-        UiColor::new(vec![(UiBase::id(), GRAY_900.with_alpha(0.7))]),
+        UiColor::new(vec![(UiBase::id(), GRAY_900.with_alpha(0.6))]),
         // Provide a material to this mesh
         MeshMaterial3d(materials.add(StandardMaterial {
             alpha_mode: AlphaMode::Blend,
             unlit: true,
             ..Default::default()
         })),
+        Transform::from_xyz(0.0, 0.0, 0.0),
         UiMeshPlane3d,
     ))
 }
@@ -154,8 +164,91 @@ fn spawn_lock_buttons(
     .observe(hover_set::<Pointer<Out>, false>);
 }
 
+fn spawn_uv_control(
+    ui: &mut RelatedSpawnerCommands<'_, ChildOf>,
+    #[allow(unused)] ui_state: ResMut<UiState>,
+    materials: &mut Assets<StandardMaterial>,
+) {
+    ui.spawn((
+        Name::new("U-Value"),
+        UiLayout::window()
+            .pos(Rl((25.0, 50.0)))
+            .size((Rw(40.0), Rh(40.0)))
+            .anchor(Anchor::BottomCenter)
+            .pack(),
+    ))
+    .with_children(|ui| {
+        ui.spawn((UiLayout::solid().size(Rl(100.0)).pack(), UiMeshPlane3d))
+            .with_children(|ui| {
+                ui.spawn((
+                    Name::new("U-Value text"),
+                    UiLayout::new(vec![(UiBase::id(), UiLayout::window().full())]),
+                    UiColor::new(vec![(UiBase::id(), Color::WHITE)]),
+                    UText,
+                    Text3d::new("U: None"),
+                    Text3dStyling {
+                        size: 10.0,
+                        color: Srgba::new(1., 1., 1., 1.),
+                        align: TextAlign::Center,
+                        font: Arc::from("Rajdhani"),
+                        weight: Weight::BOLD,
+                        ..Default::default()
+                    },
+                    MeshMaterial3d(materials.add(StandardMaterial {
+                        base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
+                        alpha_mode: AlphaMode::Blend,
+                        unlit: true,
+                        ..Default::default()
+                    })),
+                    Mesh3d::default(),
+                    // OnHoverSetCursor::new(SystemCursorIcon::Pointer),
+                    Pickable::IGNORE,
+                ));
+            });
+    });
+
+    ui.spawn((
+        Name::new("V-Value"),
+        UiLayout::window()
+            .pos(Rl((75.0, 50.0)))
+            .size((Rw(40.0), Rh(40.0)))
+            .anchor(Anchor::BottomCenter)
+            .pack(),
+    ))
+    .with_children(|ui| {
+        ui.spawn((UiLayout::window().full().pack(), UiMeshPlane3d))
+            .with_children(|ui| {
+                ui.spawn((
+                    Name::new("V-Value Text"),
+                    UiLayout::new(vec![(UiBase::id(), UiLayout::window().full())]),
+                    UiColor::new(vec![(UiBase::id(), Color::WHITE)]),
+                    VText,
+                    Text3d::new("V: None"),
+                    Text3dStyling {
+                        size: 10.0,
+                        color: Srgba::new(1., 1., 1., 1.),
+                        align: TextAlign::Center,
+                        font: Arc::from("Rajdhani"),
+                        weight: Weight::BOLD,
+                        ..Default::default()
+                    },
+                    MeshMaterial3d(materials.add(StandardMaterial {
+                        base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
+                        alpha_mode: AlphaMode::Blend,
+                        unlit: true,
+                        ..Default::default()
+                    })),
+                    Mesh3d::default(),
+                    // OnHoverSetCursor::new(SystemCursorIcon::Pointer),
+                    Pickable::IGNORE,
+                ));
+            });
+    });
+}
+
 fn spawn_layouted(
     ui: &mut RelatedSpawnerCommands<'_, ChildOf>,
+    ui_state: ResMut<UiState>,
     materials: &mut Assets<StandardMaterial>,
 ) {
     ui.spawn((
@@ -175,11 +268,13 @@ fn spawn_layouted(
             .size((Rw(100.0), Rh(40.0)))
             .anchor(Anchor::TopLeft)
             .pack(),
-    ));
+    ))
+    .with_children(|ui| spawn_uv_control(ui, ui_state, materials));
 }
 
 fn build_ui(
     mut commands: Commands,
+    ui_state: ResMut<UiState>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     // asset_server: Res<AssetServer>,
 ) {
@@ -197,14 +292,12 @@ fn build_ui(
             Transform::from_xyz(0.0, 1.0, 0.0),
         ))
         .with_children(|ui| {
-            spawn_background(ui, materials.as_mut()).with_children(|ui| {
-                spawn_layouted(ui, materials.as_mut());
-                // spawn_text(ui, materials.as_mut());
-            });
+            spawn_background(ui, materials.as_mut()); // spawn_text(ui, materials.as_mut());
+            spawn_layouted(ui, ui_state, materials.as_mut());
         });
 }
 
-pub fn follow_camera(
+fn follow_camera(
     camera: Query<&Transform, (With<Camera>, Without<UiRoot3d>)>,
     mut ui: Query<&mut Transform, (With<UiLayoutRoot>, Without<Camera>)>,
 ) {
@@ -214,11 +307,28 @@ pub fn follow_camera(
     }
 }
 
+fn handle_ui_state_change(
+    mut event_reader: EventReader<UiStateChangeset>,
+    mut state: ResMut<UiState>,
+    mut u_text: Query<&mut Text3d, (With<UText>, Without<VText>)>,
+    mut v_text: Query<&mut Text3d, (With<VText>, Without<UText>)>,
+) {
+    for evt in event_reader.read() {
+        state.apply(evt.clone());
+        let mut u_text = u_text.single_mut().unwrap();
+        let mut v_text = v_text.single_mut().unwrap();
+
+        *u_text = Text3d::new(format!("U: {:.2}", state.u));
+        *v_text = Text3d::new(format!("V: {:.2}", state.v));
+    }
+}
+
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((UiLunexPlugins, UiLunexDebugPlugin::<0, 0>));
+        app.add_plugins(UiLunexPlugins); // , UiLunexDebugPlugin::<0, 0>));
+        app.add_event::<UiStateChangeset>();
         app.init_resource::<UiState>();
         app.insert_resource(LoadFonts {
             font_directories: vec!["assets/fonts".to_owned()],
@@ -226,5 +336,6 @@ impl Plugin for UiPlugin {
         });
         app.add_systems(Startup, build_ui);
         app.add_systems(Update, follow_camera);
+        app.add_systems(PostUpdate, handle_ui_state_change);
     }
 }

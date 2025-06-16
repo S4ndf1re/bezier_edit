@@ -3,7 +3,6 @@ use bevy::prelude::*;
 use std::slice::Iter;
 
 pub struct ControlDirection {
-    pub vec: Vec3,
     pub normalized: Vec3,
     pub color: Color,
     pub hover_color: Color,
@@ -13,7 +12,6 @@ pub struct ControlDirection {
 impl ControlDirection {
     pub fn new(vec: Vec3, color: Color, hover_color: Color, shadow_color: Color) -> Self {
         Self {
-            vec,
             normalized: vec * 1.0 / vec.length(),
             color,
             hover_color,
@@ -28,10 +26,12 @@ pub struct ControlStorage {
 }
 
 impl ControlStorage {
+    #[allow(unused)]
     pub fn new() -> Self {
         Self { arrows: Vec::new() }
     }
 
+    #[allow(unused)]
     pub fn add_direction(&mut self, direction: ControlDirection) {
         self.arrows.push(direction);
     }

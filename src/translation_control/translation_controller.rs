@@ -1,4 +1,4 @@
-use crate::bezier_curve_renderer::{RedrawEvent, ScaleInformation};
+use crate::bezier_curve::bezier_curve_renderer::{RedrawEvent, RenderInformation};
 use crate::history::plugin::HistoryLogEvent;
 use crate::picking3d::events::{MoveIn, MoveOut, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
@@ -83,7 +83,7 @@ fn show_transitional_controls(
     arrows: Res<ControlStorage>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    scale: Res<ScaleInformation>,
+    scale: Res<RenderInformation>,
 ) {
     let scale = scale.scale;
 
@@ -133,7 +133,7 @@ fn drag_start(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     arrows: Res<ControlStorage>,
-    scale: Res<ScaleInformation>,
+    scale: Res<RenderInformation>,
     mut history: EventWriter<HistoryLogEvent>,
 ) {
     let dragged_entity = trigger.target();
@@ -190,7 +190,7 @@ fn drag_end_trigger_redraw(
     let dragged_parent = dragged_childof.parent();
     let control_parent = control_parents.get(dragged_parent).unwrap();
 
-    redraw_writer.write(RedrawEvent((400, 400)));
+    redraw_writer.write(RedrawEvent::HighQuality);
 
     for entity in query {
         commands.get_entity(entity).unwrap().despawn();
@@ -214,7 +214,7 @@ fn drag_end3d_trigger_redraw(
     let dragged_parent = dragged_childof.parent();
     let control_parent = control_parents.get(dragged_parent).unwrap();
 
-    redraw_writer.write(RedrawEvent((400, 400)));
+    redraw_writer.write(RedrawEvent::HighQuality);
 
     for entity in query {
         commands.get_entity(entity).unwrap().despawn();
@@ -263,12 +263,11 @@ fn drag_controller(
 
     // Only adjust the control parent
     let control_point = all_other_transforms.get_mut(control_parent.0);
-    if control_point.is_ok() {
-        let mut t = control_point.unwrap();
+    if let Ok(mut t) = control_point {
         t.translation = transform.translation;
     };
 
-    redraw_writer.write(RedrawEvent((50, 50)));
+    redraw_writer.write(RedrawEvent::Fast);
 }
 
 fn drag_controller3d(
@@ -294,12 +293,11 @@ fn drag_controller3d(
     transform.translation += translation;
 
     let control_point = all_other_transforms.get_mut(control_parent.0);
-    if control_point.is_ok() {
-        let mut t = control_point.unwrap();
+    if let Ok(mut t) = control_point {
         t.translation = transform.translation;
     };
 
-    redraw_writer.write(RedrawEvent((50, 50)));
+    redraw_writer.write(RedrawEvent::Fast);
 }
 
 pub struct TranslationController;

@@ -1,5 +1,5 @@
 mod advanced_orbit_controls;
-mod bezier_curve_renderer;
+mod bezier_curve;
 mod history;
 mod nurbs;
 pub mod picking3d;
@@ -19,7 +19,7 @@ use bevy_mod_openxr::add_xr_plugins;
 use bevy_mod_openxr::resources::OxrSessionConfig;
 use bevy_mod_openxr::types::EnvironmentBlendMode;
 use bevy_xr_utils::xr_utils_actions::{XRUtilsActionSystemSet, XRUtilsActionsPlugin};
-use bezier_curve_renderer::*;
+use bezier_curve::bezier_curve_renderer::*;
 use history::plugin::HistoryPlugin;
 use picking3d::picking_3d::ObjectPicking3d;
 
@@ -47,7 +47,7 @@ fn setup(
     mut commands: Commands,
     mut rotation_writer: EventWriter<SnapToRotation>,
     mut position_writer: EventWriter<SnapToPosition>,
-    mut scale: ResMut<ScaleInformation>,
+    mut scale: ResMut<RenderInformation>,
 ) {
     scale.scale = 0.3;
 
@@ -79,7 +79,7 @@ fn create_app() -> App {
     app.add_plugins(DefaultPlugins)
         .add_plugins(HistoryPlugin)
         .add_plugins(MeshPickingPlugin)
-        .add_plugins(BezierRender)
+        .add_plugins(BezierRenderPlugin)
         .add_plugins(AdvancedOrbitControls)
         .add_plugins(TranslationController)
         .add_plugins(UiPlugin)

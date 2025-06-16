@@ -1,19 +1,13 @@
-use std::ops::Deref;
-
 use bevy::prelude::*;
 use bevy_mod_openxr::{
     action_binding::{OxrSendActionBindings, OxrSuggestActionBinding},
     action_set_attaching::OxrAttachActionSet,
     action_set_syncing::{OxrActionSetSyncSet, OxrSyncActionSet},
-    add_xr_plugins, openxr_session_running,
+    openxr_session_running,
     resources::OxrInstance,
     session::OxrSession,
-    spaces::OxrSpaceExt,
 };
-use bevy_mod_xr::{
-    session::{XrSessionCreated, session_available},
-    spaces::XrSpace,
-};
+use bevy_mod_xr::session::{XrSessionCreated, session_available};
 use openxr::Posef;
 
 pub struct AimTrackingPlugin;
@@ -74,13 +68,7 @@ fn create_actions(instance: Res<OxrInstance>, mut cmds: Commands) {
     cmds.insert_resource(ControllerAimActions { set, left, right })
 }
 
-fn spawn_hands(
-    actions: Res<ControllerAimActions>,
-    mut cmds: Commands,
-    session: Res<OxrSession>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
+fn spawn_hands(actions: Res<ControllerAimActions>, mut cmds: Commands, session: Res<OxrSession>) {
     let left_space = session
         .create_action_space(&actions.left, openxr::Path::NULL, Isometry3d::IDENTITY)
         .unwrap();

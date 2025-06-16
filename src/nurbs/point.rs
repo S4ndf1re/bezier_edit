@@ -87,3 +87,15 @@ impl From<Vec3> for Point {
         Point::new(value.x as f64, value.y as f64, value.z as f64, None)
     }
 }
+
+impl From<&Point> for [f32; 3] {
+    fn from(value: &Point) -> Self {
+        [value.x as f32, value.y as f32, value.z as f32]
+    }
+}
+
+impl From<Point> for [f32; 3] {
+    fn from(value: Point) -> Self {
+        [value.x as f32, value.y as f32, value.z as f32]
+    }
+}

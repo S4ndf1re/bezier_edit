@@ -10,7 +10,6 @@ struct CameraSettings {
     pub pitch_speed: f32,
     // Clamp pitch to this range
     pub pitch_range: Range<f32>,
-    pub roll_speed: f32,
     pub yaw_speed: f32,
 }
 
@@ -24,7 +23,6 @@ impl Default for CameraSettings {
             orbit_distance: 10.0,
             pitch_speed: 0.003,
             pitch_range: -pitch_limit..pitch_limit,
-            roll_speed: 1.0,
             yaw_speed: 0.004,
         }
     }

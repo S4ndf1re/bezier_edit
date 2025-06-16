@@ -1,4 +1,4 @@
-use crate::bezier_curve_renderer::ScaleInformation;
+use crate::bezier_curve::bezier_curve_renderer::RenderInformation;
 use crate::picking3d::events::{
     Click, Drag, DragEnd, DragStart, HoveredBy, MoveIn, MoveOut, Pointer3d,
 };
@@ -40,9 +40,6 @@ struct MoveMarker {
 #[derive(Component)]
 struct GrabActionMarker(HoveredBy);
 
-#[derive(Component)]
-struct GrabPose(HoveredBy);
-
 #[allow(clippy::complexity)]
 fn check_intersections(
     mut commands: Commands,
@@ -57,7 +54,7 @@ fn check_intersections(
     >,
     left_tracked: Single<(&GlobalTransform, Entity), With<XrTrackedLeftGrip>>,
     right_tracked: Single<(&GlobalTransform, Entity), With<XrTrackedRightGrip>>,
-    res_scale: Res<ScaleInformation>,
+    res_scale: Res<RenderInformation>,
     mut state: ResMut<PickingState>,
 ) {
     let scale = res_scale.scale;
@@ -120,7 +117,7 @@ fn test_all_hovered(
     >,
     left_tracked: Single<(&GlobalTransform, Entity), With<XrTrackedLeftGrip>>,
     right_tracked: Single<(&GlobalTransform, Entity), With<XrTrackedRightGrip>>,
-    res_scale: Res<ScaleInformation>,
+    res_scale: Res<RenderInformation>,
     mut res_picked: ResMut<PickingState>,
 ) {
     let scale = res_scale.scale;

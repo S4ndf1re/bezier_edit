@@ -1,14 +1,13 @@
-use std::ops::Mul;
-
 use crate::nurbs::point::Point;
 use num::pow;
 
+#[allow(unused)]
 pub fn sum(n: i32) -> i32 {
     (n * n + n) / 2
 }
 
 pub fn factorial(n: usize) -> usize {
-    (1..=n).fold(1, |a, b| a * b)
+    (1..=n).product::<usize>()
 }
 
 pub fn n_choose_k(n: usize, k: usize) -> usize {
@@ -22,10 +21,12 @@ pub fn n_choose_k(n: usize, k: usize) -> usize {
     (mul + 0.01) as usize
 }
 
+#[allow(unused)]
 pub fn bernstein(i: usize, n: usize, t: f64) -> f64 {
     n_choose_k(n, i) as f64 * pow(t, i) * pow(1.0 - t, n - i)
 }
 
+#[allow(unused)]
 pub fn bernstein_to_point(i: usize, r: usize, t: f64, bezier_points: &[Point]) -> Point {
     let mut sum = Point::new(0.0, 0.0, 0.0, None);
 
@@ -44,6 +45,7 @@ pub fn bernstein_to_point(i: usize, r: usize, t: f64, bezier_points: &[Point]) -
     sum
 }
 
+#[allow(unused)]
 pub fn cubic_hermite_polynome(i: usize, t: f64) -> f64 {
     match i {
         0 => bernstein(0, 3, t) + bernstein(1, 3, t),
@@ -54,6 +56,7 @@ pub fn cubic_hermite_polynome(i: usize, t: f64) -> f64 {
     }
 }
 
+#[allow(unused)]
 pub fn cubic_hermite_polynome_hat(i: usize, t: f64, interval: (f64, f64)) -> f64 {
     let (a, b) = interval;
     match i {

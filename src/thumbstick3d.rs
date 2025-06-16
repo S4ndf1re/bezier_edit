@@ -25,10 +25,12 @@ impl AccumulatedThumbstickInfo {
         Self { x: 0.0, y: 0.0 }
     }
 
+    #[allow(unused)]
     pub fn x(&self) -> f32 {
         self.x
     }
 
+    #[allow(unused)]
     pub fn y(&self) -> f32 {
         self.y
     }
@@ -118,17 +120,14 @@ fn update_thumbstick_events(
     thumbstick_state.x = 0.0;
     thumbstick_state.y = 0.0;
     for (event, marker) in events.iter() {
-        match event {
-            XRUtilsActionState::Float(state) => {
-                if !state.is_active {
-                    continue;
-                }
-                match marker.0 {
-                    ThumbstickDirection::X => thumbstick_state.x += state.current_state,
-                    ThumbstickDirection::Y => thumbstick_state.y += state.current_state,
-                }
+        if let XRUtilsActionState::Float(state) = event {
+            if !state.is_active {
+                continue;
             }
-            _ => (),
+            match marker.0 {
+                ThumbstickDirection::X => thumbstick_state.x += state.current_state,
+                ThumbstickDirection::Y => thumbstick_state.y += state.current_state,
+            }
         }
     }
 }

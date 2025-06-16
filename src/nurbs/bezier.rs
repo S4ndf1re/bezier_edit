@@ -41,6 +41,7 @@ pub fn derive_after_de_casteljau(points: &[Vec<Point>], r: usize) -> Point {
     ((factorial(n) / factorial(n - r)) as f64) * &sum
 }
 
+#[allow(unused)]
 pub fn atiken(points: &[Point], ts: &[f64], t: f64) -> Vec<Vec<Point>> {
     assert_eq!(points.len(), ts.len());
 
@@ -67,6 +68,7 @@ pub fn atiken(points: &[Point], ts: &[f64], t: f64) -> Vec<Vec<Point>> {
     stages
 }
 
+#[allow(unused)]
 pub fn horner_scheme<T: AsRef<[Point]>>(points: T, t: f64) -> Point {
     let points = points.as_ref();
     let n = points.len() - 1;

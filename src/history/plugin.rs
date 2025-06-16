@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use bevy::{ecs::world::OnDespawn, prelude::*};
 
-use crate::bezier_curve_renderer::RedrawEvent;
+use crate::bezier_curve::bezier_curve_renderer::RedrawEvent;
 
 #[derive(Event)]
 pub enum HistoryLogEvent {
@@ -161,7 +161,7 @@ fn listen_to_history_pop_events(
         }
     }
     if redraw {
-        redraw_writer.write(RedrawEvent((400, 400)));
+        redraw_writer.write(RedrawEvent::HighQuality);
     }
 }
 
@@ -190,7 +190,7 @@ fn listen_to_history_undo_events(
     }
 
     if redraw {
-        redraw_writer.write(RedrawEvent((400, 400)));
+        redraw_writer.write(RedrawEvent::HighQuality);
     }
 }
 
