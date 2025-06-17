@@ -2,6 +2,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::{color::palettes::css::BLACK, prelude::*};
+use num::pow;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::nurbs::bezier_plane::{ControlPoints2D, derive_2d, eval_2d_bezier_curves};
@@ -14,9 +15,11 @@ pub struct ComputationResultBezierSurface {
     pub v: u32,
     pub point: Point,
     pub normal: Point,
+    pub u_diff_1: Point,
+    pub v_diff_1: Point,
     pub uvs: [f32; 2],
-    pub u_diff: Point,
-    pub v_diff: Point,
+    pub u_diff_2: Point,
+    pub v_diff_2: Point,
 }
 
 pub fn compute_points(
@@ -33,10 +36,10 @@ pub fn compute_points(
 
     let resulting_point = eval_2d_bezier_curves(control_points, uvs[0], uvs[1]);
 
-    let (u_diff, v_diff) = derive_2d(control_points, uvs[0], uvs[1], 1);
-    let normal = &u_diff.cross(&v_diff) * -1.0;
+    let (u_diff_1, v_diff_1) = derive_2d(control_points, uvs[0], uvs[1], 1);
+    let normal = &u_diff_1.cross(&v_diff_1) * -1.0;
 
-    let (u_diff, v_diff) = derive_2d(control_points, uvs[0], uvs[1], 2);
+    let (u_diff_2, v_diff_2) = derive_2d(control_points, uvs[0], uvs[1], 2);
 
     let uvs = [uvs[0] as f32, uvs[1] as f32];
 
@@ -45,9 +48,11 @@ pub fn compute_points(
         v,
         point: resulting_point,
         normal,
+        u_diff_1,
+        v_diff_1,
         uvs,
-        u_diff,
-        v_diff,
+        u_diff_2,
+        v_diff_2,
     }
 }
 
@@ -97,8 +102,10 @@ pub fn create_mesh_from_control_points(
             let color = curvature_to_color(
                 curvature_mode,
                 &local_point.normal,
-                &local_point.u_diff,
-                &local_point.v_diff,
+                &local_point.u_diff_1,
+                &local_point.v_diff_1,
+                &local_point.u_diff_2,
+                &local_point.v_diff_2,
                 scale,
             );
             pixel[0] = { color.0 * u8::MAX as f64 } as u8;
@@ -134,28 +141,31 @@ pub fn create_mesh_from_control_points(
 fn curvature_to_color(
     curvature_mode: &CurvatureDisplayMode,
     normal: &Point,
-    u_diff: &Point,
-    v_diff: &Point,
+    u_diff_1: &Point,
+    v_diff_1: &Point,
+    u_diff_2: &Point,
+    v_diff_2: &Point,
     scale: f64,
 ) -> (f64, f64, f64) {
     if *curvature_mode == CurvatureDisplayMode::None {
-        (1.0, 1.0, 1.0)
+        (0.5, 0.5, 0.5)
     } else {
         let (direction, magnitude) = match *curvature_mode {
             CurvatureDisplayMode::U => {
-                let direction = u_diff * normal / (u_diff.magnitude() * normal.magnitude());
-                let magnitude = u_diff.magnitude();
+                let direction = u_diff_2 * normal / (u_diff_2.magnitude() * normal.magnitude());
+                let magnitude = u_diff_1.cross(u_diff_2).magnitude() / pow(u_diff_1.magnitude(), 3);
                 (direction, magnitude)
             }
             CurvatureDisplayMode::V => {
-                let direction = v_diff * normal / (v_diff.magnitude() * normal.magnitude());
-                let magnitude = v_diff.magnitude();
+                let direction = v_diff_2 * normal / (v_diff_2.magnitude() * normal.magnitude());
+                let magnitude = v_diff_1.cross(v_diff_2).magnitude() / pow(v_diff_1.magnitude(), 3);
                 (direction, magnitude)
             }
             _ => {
-                let sum = (u_diff + v_diff) / 2.0;
-                let direction = &sum * normal / (sum.magnitude() * normal.magnitude());
-                let magnitude = sum.magnitude();
+                let sum_1 = (u_diff_1 + v_diff_1) / 2.0;
+                let sum_2 = (u_diff_2 + v_diff_2) / 2.0;
+                let direction = &sum_2 * normal / (sum_2.magnitude() * normal.magnitude());
+                let magnitude = sum_1.cross(&sum_2).magnitude() / pow(sum_1.magnitude(), 3);
                 (direction, magnitude)
             }
         };
@@ -168,7 +178,7 @@ fn curvature_to_color(
             1.0 / magnitude
         };
 
-        let max_radius: f64 = 5.0 * scale;
+        let max_radius: f64 = 20.0 * scale;
         #[allow(clippy::collapsible_else_if)]
         let hue = if direction >= 0.0 {
             if radius > max_radius {
