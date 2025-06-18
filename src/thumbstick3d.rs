@@ -72,28 +72,28 @@ fn setup_thumstick_actions(mut commands: Commands) {
 
     let controller_left_x_binding = commands
         .spawn(XRUtilsBinding {
-            profile: "/interaction_profiles/hp/mixed_reality_controller".into(),
+            profile: "/interaction_profiles/oculus/touch_controller".into(),
             binding: "/user/hand/left/input/thumbstick/x".into(),
         })
         .id();
 
     let controller_left_y_binding = commands
         .spawn(XRUtilsBinding {
-            profile: "/interaction_profiles/hp/mixed_reality_controller".into(),
+            profile: "/interaction_profiles/oculus/touch_controller".into(),
             binding: "/user/hand/left/input/thumbstick/y".into(),
         })
         .id();
 
     let controller_right_x_binding = commands
         .spawn(XRUtilsBinding {
-            profile: "/interaction_profiles/hp/mixed_reality_controller".into(),
+            profile: "/interaction_profiles/oculus/touch_controller".into(),
             binding: "/user/hand/right/input/thumbstick/x".into(),
         })
         .id();
 
     let controller_right_y_binding = commands
         .spawn(XRUtilsBinding {
-            profile: "/interaction_profiles/hp/mixed_reality_controller".into(),
+            profile: "/interaction_profiles/oculus/touch_controller".into(),
             binding: "/user/hand/right/input/thumbstick/y".into(),
         })
         .id();

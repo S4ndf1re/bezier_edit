@@ -1,6 +1,8 @@
+use super::components::*;
+use super::util::{create_mesh_from_control_points, CurvatureDisplayMode};
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{
-    ControlPoints2D, derive_2d, determine_u_v, eval_2d_bezier_curves,
+    derive_2d, determine_u_v, eval_2d_bezier_curves, ControlPoints2D,
 };
 use crate::nurbs::point::Point;
 use crate::picking3d::events;
@@ -10,6 +12,7 @@ use crate::solver::{C1Constraint, Constraints, Solver};
 use crate::translation_control::translation_controller::EnableTranslationControl;
 use crate::ui::UiStateChangeset;
 use crate::util::update_material_on;
+use crate::RootTransform;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::tailwind::*;
@@ -17,9 +20,6 @@ use bevy::prelude::*;
 use bevy::render::mesh::PrimitiveTopology;
 use num::ToPrimitive;
 use std::collections::HashMap;
-
-use super::components::*;
-use super::util::{CurvatureDisplayMode, create_mesh_from_control_points};
 
 pub type Resolution = (u32, u32);
 
@@ -211,6 +211,7 @@ fn collect_control_points(control_points: Query<(&Transform, &RenderPoint)>) -> 
 
 #[allow(clippy::complexity)]
 fn generate_pointcloud(
+    root: Query<Entity, With<RootTransform>>,
     mut events: EventReader<RedrawEvent>,
     mut commands: Commands,
     entities: Query<Entity, With<ResultSurface>>,
@@ -261,19 +262,22 @@ fn generate_pointcloud(
         commands.entity(p).despawn();
     }
 
-    commands
-        .spawn((
+    let mut root = commands.get_entity(root.single().unwrap()).unwrap();
+    root.with_children(|ui| {
+        ui.spawn((
             Transform::default(),
             ResultSurface,
             Mesh3d(meshes.add(mesh)),
             MeshMaterial3d(materials.add(mat)),
         ))
         .observe(bezier_surface_picking);
+    });
 }
 
 #[allow(clippy::complexity)]
 pub fn bezier_surface_picking(
     trigger: Trigger<Pointer<Click>>,
+    root: Query<Entity, With<RootTransform>>,
     control_points: Query<(&Transform, &RenderPoint)>,
     old_click: Query<Entity, With<SurfaceClick>>,
     scale_res: Res<RenderInformation>,
@@ -296,6 +300,7 @@ pub fn bezier_surface_picking(
     let sphere = meshes.add(Sphere::new(0.07 * scale).mesh().ico(5).unwrap());
     let normal_pointer = meshes.add(Cuboid::new(0.07 * scale, 0.07 * scale, 0.5 * scale));
 
+    let mut root = commands.get_entity(root.single().unwrap()).unwrap();
     if let Some(click_coords) = trigger.hit.position {
         // Currently the volume vaule is completely arbitrary
         let possible_hits = determine_u_v(
@@ -319,8 +324,8 @@ pub fn bezier_surface_picking(
                 let (u_diff, v_diff) = derive_2d(&control_points, hit.0, hit.1, 1);
                 let normal = &u_diff.cross(&v_diff);
 
-                commands
-                    .spawn((
+                root.with_children(|ui| {
+                    ui.spawn((
                         SurfaceClick(hit.0, hit.1),
                         MeshMaterial3d(material.clone()),
                         Mesh3d(sphere.clone()),
@@ -338,6 +343,7 @@ pub fn bezier_surface_picking(
                             Mesh3d(normal_pointer.clone()),
                         ));
                     });
+                });
             }
             ui_state_writer.write(UiStateChangeset {
                 u: Some(u),
@@ -368,11 +374,13 @@ pub fn update_surface_click(
 
 pub fn generate_default_curve(
     mut commands: Commands,
+    root: Query<Entity, With<RootTransform>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut event_writer: EventWriter<RedrawEvent>,
     scale_res: Res<RenderInformation>,
 ) {
+    let mut root = commands.get_entity(root.single().unwrap()).unwrap();
     let scale = scale_res.scale;
     let height = scale_res.height;
     let material = materials.add(Color::from(GRAY_400));
@@ -411,33 +419,36 @@ pub fn generate_default_curve(
     let mut ids = vec![];
 
     for p in &points {
-        let id = commands
-            .spawn((
-                BezierRender,
-                RenderPoint(p.0, p.1),
-                Transform::from_xyz(p.2 * scale, p.3 * scale + height, p.4 * scale),
-                Mesh3d(sphere.clone()),
-                MeshMaterial3d(material.clone()),
-                Picking3dInteractable,
-            ))
-            .observe(update_material_on::<Pointer<Over>>(material_hover.clone()))
-            .observe(update_material_on::<Pointer<Out>>(material.clone()))
-            //.observe(drag_point)
-            .observe(enable_gizmo)
-            .observe(enable_gizmo3d)
-            .id();
-        ids.push(id);
+        root.with_children(|ui| {
+            let id = ui
+                .spawn((
+                    BezierRender,
+                    RenderPoint(p.0, p.1),
+                    Transform::from_xyz(p.2 * scale, p.3 * scale + height, p.4 * scale),
+                    Mesh3d(sphere.clone()),
+                    MeshMaterial3d(material.clone()),
+                    Picking3dInteractable,
+                ))
+                .observe(update_material_on::<Pointer<Over>>(material_hover.clone()))
+                .observe(update_material_on::<Pointer<Out>>(material.clone()))
+                //.observe(drag_point)
+                .observe(enable_gizmo)
+                .observe(enable_gizmo3d)
+                .id();
+            ids.push(id);
+        });
     }
 
     for p in c1_control_points {
-        commands
-            .spawn((
+        root.with_children(|ui| {
+            ui.spawn((
                 C1ControlPoint(p.0, p.1, p.2, p.3),
                 Mesh3d(sphere.clone()),
                 MeshMaterial3d(material_shadow.clone()),
                 Visibility::Hidden,
             ))
             .observe(enable_gizmo_shadow_points);
+        });
     }
 
     // Draw lines between neighbouring controls points to generate a visible grid
@@ -461,7 +472,7 @@ pub fn generate_default_curve(
                 ],
             );
 
-            commands.spawn((
+            root.with_child((
                 Transform::from_xyz(0.0, 0.0, 0.0),
                 RenderLine(p0_id, id),
                 MeshMaterial3d(materials.add(Color::BLACK)),
@@ -485,7 +496,7 @@ pub fn generate_default_curve(
                 ],
             );
 
-            commands.spawn((
+            root.with_child((
                 Transform::from_xyz(0.0, 0.0, 0.0),
                 RenderLine(p0_id, id),
                 MeshMaterial3d(materials.add(Color::BLACK)),

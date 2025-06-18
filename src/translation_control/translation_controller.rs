@@ -4,6 +4,7 @@ use crate::picking3d::events::{MoveIn, MoveOut, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
+use crate::RootTransform;
 use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;
@@ -78,6 +79,7 @@ fn draw_arrow(
 }
 
 fn show_transitional_controls(
+    root: Query<Entity, With<RootTransform>>,
     mut commands: Commands,
     to_enable: Query<(&Transform, Entity), Added<EnableTranslationControl>>,
     arrows: Res<ControlStorage>,
@@ -85,11 +87,12 @@ fn show_transitional_controls(
     mut meshes: ResMut<Assets<Mesh>>,
     scale: Res<RenderInformation>,
 ) {
+    let mut root = commands.get_entity(root.single().unwrap()).unwrap();
     let scale = scale.scale;
 
     for (t, entity) in to_enable.iter() {
-        commands
-            .spawn((
+        root.with_children(|ui| {
+            ui.spawn((
                 ControlParent(entity),
                 Transform::from_translation(t.translation),
                 Visibility::default(),
@@ -120,12 +123,14 @@ fn show_transitional_controls(
                         .observe(drag_end3d_trigger_redraw);
                 }
             });
+        });
     }
 }
 
 #[allow(clippy::too_many_arguments)]
 fn drag_start(
     trigger: Trigger<Pointer<DragStart>>,
+    root: Query<Entity, With<RootTransform>>,
     mut commands: Commands,
     arrow_query: Query<(&ChildOf, Entity), With<Control>>,
     control_parents: Query<&ControlParent>,
@@ -136,6 +141,7 @@ fn drag_start(
     scale: Res<RenderInformation>,
     mut history: EventWriter<HistoryLogEvent>,
 ) {
+    let mut root = commands.get_entity(root.single().unwrap()).unwrap();
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
 
@@ -146,28 +152,30 @@ fn drag_start(
 
     let scale = scale.scale;
 
-    commands
-        .spawn((ShadowMarker, *start_transform, Visibility::default()))
-        .with_children(|parent| {
-            for arrow in arrows.as_ref().iter() {
-                parent
-                    .spawn((
-                        Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.normalized, Vec3::Y),
-                        Control(arrow.normalized),
-                        Picking3dInteractable,
-                        Visibility::default(),
-                    ))
-                    .with_children(|parent| {
-                        draw_arrow(
-                            parent,
-                            materials.add(arrow.shadow_color),
-                            materials.add(arrow.shadow_color),
-                            &mut meshes,
-                            scale,
-                        );
-                    });
-            }
-        });
+    root.with_children(|ui| {
+        ui.spawn((ShadowMarker, *start_transform, Visibility::default()))
+            .with_children(|parent| {
+                for arrow in arrows.as_ref().iter() {
+                    parent
+                        .spawn((
+                            Transform::from_xyz(0.0, 0.0, 0.0)
+                                .looking_to(arrow.normalized, Vec3::Y),
+                            Control(arrow.normalized),
+                            Picking3dInteractable,
+                            Visibility::default(),
+                        ))
+                        .with_children(|parent| {
+                            draw_arrow(
+                                parent,
+                                materials.add(arrow.shadow_color),
+                                materials.add(arrow.shadow_color),
+                                &mut meshes,
+                                scale,
+                            );
+                        });
+                }
+            });
+    });
 
     history.write(HistoryLogEvent::Begin(
         control_parent.0,

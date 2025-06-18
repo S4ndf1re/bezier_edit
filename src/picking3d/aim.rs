@@ -1,13 +1,12 @@
 use bevy::prelude::*;
+use bevy_mod_openxr::action_binding::OxrSendActionBindings;
+use bevy_mod_openxr::action_set_syncing::OxrActionSetSyncSet;
 use bevy_mod_openxr::{
-    action_binding::{OxrSendActionBindings, OxrSuggestActionBinding},
-    action_set_attaching::OxrAttachActionSet,
-    action_set_syncing::{OxrActionSetSyncSet, OxrSyncActionSet},
-    openxr_session_running,
-    resources::OxrInstance,
+    action_binding::OxrSuggestActionBinding, action_set_attaching::OxrAttachActionSet,
+    action_set_syncing::OxrSyncActionSet, openxr_session_running, resources::OxrInstance,
     session::OxrSession,
 };
-use bevy_mod_xr::session::{XrSessionCreated, session_available};
+use bevy_mod_xr::session::{session_available, XrSessionCreated};
 use openxr::Posef;
 
 pub struct AimTrackingPlugin;

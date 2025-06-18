@@ -1,5 +1,6 @@
+use crate::thumbstick3d::AccumulatedThumbstickInfo;
+use crate::RootTransform;
 use bevy::app::App;
-use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;
 use std::ops::Range;
@@ -13,6 +14,7 @@ struct CameraSettings {
     pub yaw_speed: f32,
 }
 
+#[cfg(not(feature = "vr_enable"))]
 impl Default for CameraSettings {
     fn default() -> Self {
         // Limiting pitch stops some unexpected rotation past 90° up or down.
@@ -24,6 +26,22 @@ impl Default for CameraSettings {
             pitch_speed: 0.003,
             pitch_range: -pitch_limit..pitch_limit,
             yaw_speed: 0.004,
+        }
+    }
+}
+
+#[cfg(feature = "vr_enable")]
+impl Default for CameraSettings {
+    fn default() -> Self {
+        // Limiting pitch stops some unexpected rotation past 90° up or down.
+        let pitch_limit = FRAC_PI_2 - 0.01;
+        Self {
+            // These values are completely arbitrary, chosen because they seem to produce
+            // "sensible" results for this example. Adjust as required.
+            orbit_distance: 10.0,
+            pitch_speed: 0.03,
+            pitch_range: -pitch_limit..pitch_limit,
+            yaw_speed: 0.04,
         }
     }
 }
@@ -63,9 +81,7 @@ fn orbit(
 
 #[cfg(feature = "vr_enable")]
 fn orbit(
-    mut camera: Single<&mut Transform, With<XrTrackingRoot>>,
-    // mut position_event: EventWriter<SnapToPosition>,
-    // mut rotation_event: EventWriter<SnapToRotation>,
+    mut root: Single<&mut Transform, With<RootTransform>>,
     camera_settings: Res<CameraSettings>,
     accumulated_thumbstick_info: Res<AccumulatedThumbstickInfo>,
 ) {
@@ -73,11 +89,12 @@ fn orbit(
         accumulated_thumbstick_info.x(),
         accumulated_thumbstick_info.y(),
     );
+    println!("Delta: {delta}");
 
     let delta_pitch = delta.y * camera_settings.pitch_speed;
     let delta_yaw = delta.x * camera_settings.yaw_speed;
 
-    let (yaw, pitch, roll) = camera.rotation.to_euler(EulerRot::YXZ);
+    let (yaw, pitch, roll) = root.rotation.to_euler(EulerRot::YXZ);
 
     let pitch = (pitch + delta_pitch).clamp(
         camera_settings.pitch_range.start,
@@ -85,11 +102,11 @@ fn orbit(
     );
 
     let yaw = yaw + delta_yaw;
-    camera.rotation = camera.rotation * Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
+    root.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
 
     // Adjust target distance
-    let target = Vec3::ZERO;
-    camera.translation = target - camera.forward() * camera_settings.orbit_distance;
+    // let target = Vec3::ZERO;
+    // camera.translation = target - camera.forward() * camera_settings.orbit_distance;
 }
 
 impl Plugin for AdvancedOrbitControls {

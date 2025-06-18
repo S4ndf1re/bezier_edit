@@ -6,7 +6,8 @@ use bevy::{
     prelude::*,
     sprite::Anchor,
 };
-use bevy_lunex::{UiStateTrait, prelude::*};
+use bevy_lunex::{prelude::*, UiStateTrait};
+use bevy_xr_utils::tracking_utils::XrTrackedView;
 use struct_patch::Patch;
 
 #[derive(Component)]
@@ -297,14 +298,27 @@ fn build_ui(
         });
 }
 
+#[cfg(not(feature = "vr_enable"))]
 fn follow_camera(
-    camera: Query<&Transform, (With<Camera>, Without<UiRoot3d>)>,
+    camera: Query<&Transform, (With<Camera>, Without<UiLayoutRoot>)>,
     mut ui: Query<&mut Transform, (With<UiLayoutRoot>, Without<Camera>)>,
 ) {
     let camera = camera.single().unwrap();
     for mut ui in ui.iter_mut() {
         ui.look_at(-camera.translation, Vec3::Y);
     }
+}
+
+#[cfg(feature = "vr_enable")]
+fn follow_camera(
+    camera: Query<&Transform, (With<XrTrackedView>, Without<UiLayoutRoot>)>,
+    mut ui: Query<&mut Transform, (With<UiLayoutRoot>, Without<XrTrackedView>)>,
+) {
+    // if let Ok(camera) = camera.single() {
+    //     for mut ui in ui.iter_mut() {
+    //         ui.look_at(-camera.translation, Vec3::Y);
+    //     }
+    // }
 }
 
 fn handle_ui_state_change(
@@ -335,7 +349,7 @@ impl Plugin for UiPlugin {
             ..default()
         });
         app.add_systems(Startup, build_ui);
-        app.add_systems(Update, follow_camera);
+        app.add_systems(Update, follow_camera.chain());
         app.add_systems(PostUpdate, handle_ui_state_change);
     }
 }

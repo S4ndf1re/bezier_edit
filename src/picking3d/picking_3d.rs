@@ -4,8 +4,8 @@ use crate::picking3d::events::{
 };
 use crate::picking3d::picking_state::PickingState;
 use crate::picking3d::pointer_state::Pointer3dState;
-use bevy::math::Vec3;
 use bevy::math::bounding::{BoundingSphere, IntersectsVolume};
+use bevy::math::Vec3;
 use bevy::prelude::{
     App, ChildOf, Commands, Component, Entity, EventWriter, GlobalTransform, IntoScheduleConfigs,
     Plugin, PostUpdate, Query, Res, ResMut, Single, Startup, Transform, Update, Visibility, With,
@@ -168,7 +168,7 @@ fn test_all_hovered(
     }
 }
 
-fn create_hand_trackers(mut commands: Commands) {
+pub fn create_hand_trackers(mut commands: Commands) {
     // Add left grip tracking
     commands.spawn((
         Transform::from_xyz(0.0, 0.0, 0.0),
@@ -223,14 +223,14 @@ pub fn setup_actions(mut commands: Commands) {
 
     let controller_left_binding = commands
         .spawn(XRUtilsBinding {
-            profile: "/interaction_profiles/hp/mixed_reality_controller".into(),
+            profile: "/interaction_profiles/oculus/touch_controller".into(),
             binding: "/user/hand/left/input/trigger/value".into(),
         })
         .id();
 
     let controller_right_binding = commands
         .spawn(XRUtilsBinding {
-            profile: "/interaction_profiles/hp/mixed_reality_controller".into(),
+            profile: "/interaction_profiles/oculus/touch_controller".into(),
             binding: "/user/hand/right/input/trigger/value".into(),
         })
         .id();
@@ -385,12 +385,12 @@ fn suggest_action_bindings_hp_headset(
 ) {
     bindings.write(OxrSuggestActionBinding {
         action: actions.left.as_raw(),
-        interaction_profile: "/interaction_profiles/hp/mixed_reality_controller".into(),
+        interaction_profile: "/interaction_profiles/oculus/touch_controller".into(),
         bindings: vec!["/user/hand/left/input/grip/pose".into()],
     });
     bindings.write(OxrSuggestActionBinding {
         action: actions.right.as_raw(),
-        interaction_profile: "/interaction_profiles/hp/mixed_reality_controller".into(),
+        interaction_profile: "/interaction_profiles/oculus/touch_controller".into(),
         bindings: vec!["/user/hand/right/input/grip/pose".into()],
     });
 }
