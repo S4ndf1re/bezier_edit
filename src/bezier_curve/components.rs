@@ -19,3 +19,6 @@ pub struct BezierRender;
 #[derive(Component)]
 #[require(Mesh3d)]
 pub struct RenderLine(pub Entity, pub Entity);
+
+#[derive(Component)]
+pub struct CurveBox;

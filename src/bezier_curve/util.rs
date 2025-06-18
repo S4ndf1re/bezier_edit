@@ -8,7 +8,26 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use crate::nurbs::bezier_plane::{ControlPoints2D, derive_2d, eval_2d_bezier_curves};
 use crate::nurbs::point::Point;
 
-use super::bezier_curve_renderer::{CurvatureDisplayMode, Resolution};
+use super::bezier_curve_renderer::Resolution;
+
+#[derive(Clone, Copy, Ord, Eq, PartialEq, PartialOrd)]
+pub enum CurvatureDisplayMode {
+    None,
+    U,
+    V,
+    Both,
+}
+
+impl CurvatureDisplayMode {
+    pub fn next(self) -> Self {
+        match self {
+            Self::None => Self::U,
+            Self::U => Self::V,
+            Self::V => Self::Both,
+            Self::Both => Self::None,
+        }
+    }
+}
 
 pub struct ComputationResultBezierSurface {
     pub u: u32,
@@ -178,7 +197,7 @@ fn curvature_to_color(
             1.0 / magnitude
         };
 
-        let max_radius: f64 = 20.0 * scale;
+        let max_radius: f64 = 10.0 * scale;
         #[allow(clippy::collapsible_else_if)]
         let hue = if direction >= 0.0 {
             if radius > max_radius {

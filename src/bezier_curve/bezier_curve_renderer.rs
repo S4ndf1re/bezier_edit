@@ -19,7 +19,7 @@ use num::ToPrimitive;
 use std::collections::HashMap;
 
 use super::components::*;
-use super::util::create_mesh_from_control_points;
+use super::util::{CurvatureDisplayMode, create_mesh_from_control_points};
 
 pub type Resolution = (u32, u32);
 
@@ -31,25 +31,6 @@ pub struct ConstraintState {
 #[derive(Event)]
 pub struct ToggleC1Enable;
 
-#[derive(Clone, Copy, Ord, Eq, PartialEq, PartialOrd)]
-pub enum CurvatureDisplayMode {
-    None,
-    U,
-    V,
-    Both,
-}
-
-impl CurvatureDisplayMode {
-    pub fn next(self) -> Self {
-        match self {
-            Self::None => Self::U,
-            Self::U => Self::V,
-            Self::V => Self::Both,
-            Self::Both => Self::None,
-        }
-    }
-}
-
 #[derive(Resource)]
 pub struct RenderInformation {
     pub scale: f32,
@@ -57,6 +38,23 @@ pub struct RenderInformation {
     pub resolution: Resolution,
     pub fast_resolution: Resolution,
     pub curvature_mode: CurvatureDisplayMode,
+    pub u_box_count: u32,
+    pub v_box_count: u32,
+    pub u_box_dim: (f32, f32, f32),
+    pub v_box_dim: (f32, f32, f32),
+}
+
+impl RenderInformation {
+    pub fn to_uv_sample(&self) -> Vec<(f64, f64)> {
+        let u_step = 1.0 / self.u_box_count as f64;
+        let v_step = 1.0 / self.u_box_count as f64;
+
+        (0..self.u_box_count - 1)
+            .flat_map(|u| {
+                (1..self.v_box_count - 1).map(move |v| ((u as f64) * u_step, (v as f64) * v_step))
+            })
+            .collect::<Vec<_>>()
+    }
 }
 
 impl Default for RenderInformation {
@@ -67,6 +65,10 @@ impl Default for RenderInformation {
             resolution: (300, 300),
             fast_resolution: (50, 50),
             curvature_mode: CurvatureDisplayMode::None,
+            u_box_count: 10,
+            v_box_count: 10,
+            u_box_dim: (0.19, 0.19, 0.19),
+            v_box_dim: (0.19, 0.19, 0.19),
         }
     }
 }
@@ -428,7 +430,6 @@ pub fn generate_default_curve(
     }
 
     for p in c1_control_points {
-        // TODO, determine the position based on the initial grid using c1 conditions
         commands
             .spawn((
                 C1ControlPoint(p.0, p.1, p.2, p.3),
