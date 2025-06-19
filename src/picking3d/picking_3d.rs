@@ -4,12 +4,14 @@ use crate::picking3d::events::{
 };
 use crate::picking3d::picking_state::PickingState;
 use crate::picking3d::pointer_state::Pointer3dState;
+use bevy::color::palettes::tailwind::GRAY_600;
 use bevy::math::bounding::{BoundingSphere, IntersectsVolume};
 use bevy::math::Vec3;
+use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::{
-    App, ChildOf, Commands, Component, Entity, EventWriter, GlobalTransform, IntoScheduleConfigs,
-    Plugin, PostUpdate, Query, Res, ResMut, Single, Startup, Transform, Update, Visibility, With,
-    Without,
+    App, Assets, ChildOf, Color, Commands, Component, Entity, EventWriter, GlobalTransform,
+    IntoScheduleConfigs, Mesh, Mesh3d, Plugin, PostUpdate, Query, Res, ResMut, Single, Sphere,
+    Startup, Transform, Update, Visibility, With, Without,
 };
 use bevy_mod_openxr::action_binding::{OxrSendActionBindings, OxrSuggestActionBinding};
 use bevy_mod_xr::actions::ActionType;
@@ -168,7 +170,11 @@ fn test_all_hovered(
     }
 }
 
-pub fn create_hand_trackers(mut commands: Commands) {
+pub fn create_hand_trackers(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
     // Add left grip tracking
     commands.spawn((
         Transform::from_xyz(0.0, 0.0, 0.0),
@@ -183,8 +189,16 @@ pub fn create_hand_trackers(mut commands: Commands) {
         XrTracker,
     ));
 
+    let sphere = meshes.add(Sphere::new(0.03));
+    let material = materials.add(Color::from(GRAY_600));
     // Add head tracking
-    commands.spawn((Transform::from_xyz(0.0, 0.0, 0.0), XrTrackedView, XrTracker));
+    commands.spawn((
+        Transform::from_xyz(0.0, 0.0, 0.0),
+        XrTrackedView,
+        XrTracker,
+        Mesh3d(sphere),
+        MeshMaterial3d(material),
+    ));
 }
 
 pub fn setup_actions(mut commands: Commands) {

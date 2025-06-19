@@ -1,9 +1,14 @@
-use crate::thumbstick3d::AccumulatedThumbstickInfo;
 use crate::RootTransform;
 use bevy::app::App;
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;
 use std::ops::Range;
+
+#[cfg(feature = "vr_enable")]
+use crate::thumbstick3d::AccumulatedThumbstickInfo;
+
+#[cfg(not(feature = "vr_enable"))]
+use bevy::input::mouse::AccumulatedMouseMotion;
 
 #[derive(Debug, Resource)]
 struct CameraSettings {
@@ -50,7 +55,7 @@ pub struct AdvancedOrbitControls;
 
 #[cfg(not(feature = "vr_enable"))]
 fn orbit(
-    mut camera: Single<&mut Transform, With<Camera>>,
+    mut root: Single<&mut Transform, With<RootTransform>>,
     camera_settings: Res<CameraSettings>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mouse_motion: Res<AccumulatedMouseMotion>,
@@ -64,7 +69,7 @@ fn orbit(
     let delta_pitch = delta.y * camera_settings.pitch_speed;
     let delta_yaw = delta.x * camera_settings.yaw_speed;
 
-    let (yaw, pitch, roll) = camera.rotation.to_euler(EulerRot::YXZ);
+    let (yaw, pitch, roll) = root.rotation.to_euler(EulerRot::YXZ);
 
     let pitch = (pitch + delta_pitch).clamp(
         camera_settings.pitch_range.start,
@@ -72,11 +77,11 @@ fn orbit(
     );
 
     let yaw = yaw + delta_yaw;
-    camera.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
+    root.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
 
     // Adjust target distance
-    let target = Vec3::ZERO;
-    camera.translation = target - camera.forward() * camera_settings.orbit_distance;
+    // let target = Vec3::ZERO;
+    // camera.translation = target - camera.forward() * camera_settings.orbit_distance;
 }
 
 #[cfg(feature = "vr_enable")]
@@ -89,7 +94,6 @@ fn orbit(
         accumulated_thumbstick_info.x(),
         accumulated_thumbstick_info.y(),
     );
-    println!("Delta: {delta}");
 
     let delta_pitch = delta.y * camera_settings.pitch_speed;
     let delta_yaw = delta.x * camera_settings.yaw_speed;

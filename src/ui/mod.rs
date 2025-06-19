@@ -85,7 +85,7 @@ fn spawn_lock_buttons(
                 ]),
                 Text3d::new("Lock"),
                 Text3dStyling {
-                    size: 10.0,
+                    size: 64.0,
                     color: Srgba::new(1., 1., 1., 1.),
                     align: TextAlign::Center,
                     font: Arc::from("Rajdhani"),
@@ -142,7 +142,7 @@ fn spawn_lock_buttons(
                 ]),
                 Text3d::new("Unlock"),
                 Text3dStyling {
-                    size: 10.0,
+                    size: 64.0,
                     color: Srgba::new(1., 1., 1., 1.),
                     align: TextAlign::Center,
                     font: Arc::from("Rajdhani"),
@@ -188,7 +188,7 @@ fn spawn_uv_control(
                     UText,
                     Text3d::new("U: None"),
                     Text3dStyling {
-                        size: 10.0,
+                        size: 64.0,
                         color: Srgba::new(1., 1., 1., 1.),
                         align: TextAlign::Center,
                         font: Arc::from("Rajdhani"),
@@ -226,7 +226,7 @@ fn spawn_uv_control(
                     VText,
                     Text3d::new("V: None"),
                     Text3dStyling {
-                        size: 10.0,
+                        size: 64.0,
                         color: Srgba::new(1., 1., 1., 1.),
                         align: TextAlign::Center,
                         font: Arc::from("Rajdhani"),
@@ -311,14 +311,15 @@ fn follow_camera(
 
 #[cfg(feature = "vr_enable")]
 fn follow_camera(
-    camera: Query<&Transform, (With<XrTrackedView>, Without<UiLayoutRoot>)>,
+    camera: Query<&GlobalTransform, (With<XrTrackedView>, Without<UiLayoutRoot>)>,
     mut ui: Query<&mut Transform, (With<UiLayoutRoot>, Without<XrTrackedView>)>,
 ) {
-    // if let Ok(camera) = camera.single() {
-    //     for mut ui in ui.iter_mut() {
-    //         ui.look_at(-camera.translation, Vec3::Y);
-    //     }
-    // }
+    if let Ok(camera) = camera.single() {
+        for mut ui in ui.iter_mut() {
+            let diff = camera.translation() - ui.translation;
+            ui.look_to(-diff, Vec3::Y);
+        }
+    }
 }
 
 fn handle_ui_state_change(

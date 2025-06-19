@@ -1,3 +1,5 @@
+use crate::bezier_curve::bezier_curve_renderer::RenderInformation;
+use bevy::color::palettes::tailwind::{BLUE_600, RED_600};
 use bevy::prelude::*;
 use bevy_mod_openxr::action_binding::OxrSendActionBindings;
 use bevy_mod_openxr::action_set_syncing::OxrActionSetSyncSet;
@@ -7,7 +9,7 @@ use bevy_mod_openxr::{
     session::OxrSession,
 };
 use bevy_mod_xr::session::{session_available, XrSessionCreated};
-use openxr::Posef;
+use openxr::{Haptic, Posef};
 
 pub struct AimTrackingPlugin;
 
@@ -35,6 +37,7 @@ struct ControllerAimActions {
     set: openxr::ActionSet,
     left: openxr::Action<Posef>,
     right: openxr::Action<Posef>,
+    left_trigger: openxr::Action<Haptic>,
 }
 fn sync_actions(actions: Res<ControllerAimActions>, mut sync: EventWriter<OxrSyncActionSet>) {
     sync.write(OxrSyncActionSet(actions.set.clone()));
@@ -64,10 +67,26 @@ fn create_actions(instance: Res<OxrInstance>, mut cmds: Commands) {
         .create_action("right_aim", "Right Hand Aim Pose", &[])
         .unwrap();
 
-    cmds.insert_resource(ControllerAimActions { set, left, right })
+    let left_trigger = set
+        .create_action("left_trigger", "Left Hand Trigger", &[])
+        .unwrap();
+
+    cmds.insert_resource(ControllerAimActions {
+        set,
+        left,
+        right,
+        left_trigger,
+    })
 }
 
-fn spawn_hands(actions: Res<ControllerAimActions>, mut cmds: Commands, session: Res<OxrSession>) {
+fn spawn_hands(
+    actions: Res<ControllerAimActions>,
+    mut cmds: Commands,
+    session: Res<OxrSession>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    scaleinfo: Res<RenderInformation>,
+) {
     let left_space = session
         .create_action_space(&actions.left, openxr::Path::NULL, Isometry3d::IDENTITY)
         .unwrap();
@@ -76,8 +95,28 @@ fn spawn_hands(actions: Res<ControllerAimActions>, mut cmds: Commands, session: 
         .create_action_space(&actions.right, openxr::Path::NULL, Isometry3d::IDENTITY)
         .unwrap();
 
-    cmds.spawn((left_space, Aim));
-    cmds.spawn((right_space, Aim));
+    let cuboid = meshes.add(Cuboid::new(
+        0.01 * scaleinfo.scale,
+        0.01 * scaleinfo.scale,
+        10.0 * scaleinfo.scale,
+    ));
+    let red = Color::from(RED_600);
+    let blue = Color::from(BLUE_600);
+
+    cmds.spawn((left_space, Aim)).with_children(|ui| {
+        ui.spawn((
+            Mesh3d(cuboid.clone()),
+            MeshMaterial3d(materials.add(red)),
+            Transform::from_xyz(0.0, 0.0, -5.0 * scaleinfo.scale),
+        ));
+    });
+    cmds.spawn((right_space, Aim)).with_children(|ui| {
+        ui.spawn((
+            Mesh3d(cuboid.clone()),
+            MeshMaterial3d(materials.add(blue)),
+            Transform::from_xyz(0.0, 0.0, -5.0 * scaleinfo.scale),
+        ));
+    });
 }
 
 #[derive(Component)]

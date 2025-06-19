@@ -238,6 +238,7 @@ fn drag_controller(
     camera: Query<(&Camera, &GlobalTransform)>,
     mut control_parents: Query<(&ControlParent, &mut Transform)>,
     mut redraw_writer: EventWriter<RedrawEvent>,
+    root: Query<&GlobalTransform, With<RootTransform>>,
 ) {
     let (control, child_of) = control_query.get(trigger.target()).unwrap();
 
@@ -259,7 +260,11 @@ fn drag_controller(
 
         let start = mouse_start.get_point(1.0);
         let end = mouse_end.get_point(1.0);
-        end - start
+        root.single()
+            .unwrap()
+            .affine()
+            .inverse()
+            .transform_point3(end - start)
     };
 
     let axis = control.0;
@@ -284,6 +289,7 @@ fn drag_controller3d(
     mut all_other_transforms: Query<&mut Transform, (Without<Control>, Without<ControlParent>)>,
     mut control_parents: Query<(&ControlParent, &mut Transform)>,
     mut redraw_writer: EventWriter<RedrawEvent>,
+    root: Query<&GlobalTransform, With<RootTransform>>,
 ) {
     // NOTE: Make sure that the draw event is triggered only once. Otherwise this difference adding happens multiple times for the same event........
     let (control, child_of) = control_query.get(trigger.target()).unwrap();
@@ -291,6 +297,12 @@ fn drag_controller3d(
     let parent = child_of.parent();
 
     let diff = trigger.event.delta;
+    let diff = root
+        .single()
+        .unwrap()
+        .affine()
+        .inverse()
+        .transform_point3(diff);
 
     let axis = control.0;
     let direction = (axis.dot(diff)) / (axis.length() * diff.length());

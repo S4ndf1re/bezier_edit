@@ -26,6 +26,7 @@ use bezier_curve::bezier_curve_renderer::*;
 use history::plugin::HistoryPlugin;
 use picking3d::picking_3d::ObjectPicking3d;
 
+use crate::picking3d::aim::AimTrackingPlugin;
 use crate::thumbstick3d::ThumbstickPlugin;
 use translation_control::translation_controller::TranslationController;
 use ui::UiPlugin;
@@ -94,7 +95,7 @@ fn create_app() -> App {
         .add_plugins(TranslationController)
         .add_plugins(UiPlugin)
         .init_resource::<ControlStorage>()
-        .add_systems(Startup, setup);
+        .add_systems(Startup, setup.before(generate_default_curve));
 
     app
 }
@@ -122,6 +123,7 @@ fn create_app() -> App {
     .init_resource::<ControlStorage>()
     .add_plugins(ObjectPicking3d)
     .add_plugins(TranslationController)
+    .add_plugins(AimTrackingPlugin)
     .add_plugins(UiPlugin)
     .add_systems(Startup, (setup.before(generate_default_curve),))
     .insert_resource(ClearColor(Color::NONE));
