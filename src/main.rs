@@ -7,10 +7,10 @@ mod nurbs;
 pub mod picking3d;
 pub mod solver;
 mod thirdparty_copy;
-mod thumbstick3d;
 mod translation_control;
 mod ui;
 pub mod util;
+pub mod vr_control;
 
 use crate::advanced_orbit_controls::AdvancedOrbitControls;
 use crate::thirdparty_copy::transform_util_copy::{SnapToPosition, SnapToRotation};
@@ -26,8 +26,6 @@ use bezier_curve::bezier_curve_renderer::*;
 use history::plugin::HistoryPlugin;
 use picking3d::picking_3d::ObjectPicking3d;
 
-use crate::picking3d::aim::AimTrackingPlugin;
-use crate::thumbstick3d::ThumbstickPlugin;
 use translation_control::translation_controller::TranslationController;
 use ui::UiPlugin;
 
