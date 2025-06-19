@@ -5,7 +5,7 @@ use std::f32::consts::FRAC_PI_2;
 use std::ops::Range;
 
 #[cfg(feature = "vr_enable")]
-use crate::thumbstick3d::AccumulatedThumbstickInfo;
+use crate::vr_control::thumbstick3d::AccumulatedThumbstickInfo;
 
 #[cfg(not(feature = "vr_enable"))]
 use bevy::input::mouse::AccumulatedMouseMotion;

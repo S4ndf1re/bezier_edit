@@ -7,10 +7,10 @@ mod nurbs;
 pub mod picking3d;
 pub mod solver;
 mod thirdparty_copy;
-mod thumbstick3d;
 mod translation_control;
 mod ui;
 pub mod util;
+pub mod vr_control;
 
 use crate::advanced_orbit_controls::AdvancedOrbitControls;
 use crate::thirdparty_copy::transform_util_copy::{SnapToPosition, SnapToRotation};
@@ -26,8 +26,7 @@ use bezier_curve::bezier_curve_renderer::*;
 use history::plugin::HistoryPlugin;
 use picking3d::picking_3d::ObjectPicking3d;
 
-use crate::picking3d::aim::AimTrackingPlugin;
-use crate::thumbstick3d::ThumbstickPlugin;
+use crate::vr_control::VrControlPlugin;
 use translation_control::translation_controller::TranslationController;
 use ui::UiPlugin;
 
@@ -118,12 +117,11 @@ fn create_app() -> App {
     .add_plugins(thirdparty_copy::transform_util_copy::TransformUtilitiesPlugin)
     .add_plugins(HistoryPlugin)
     .add_plugins(BezierRenderPlugin)
-    .add_plugins(ThumbstickPlugin)
     .add_plugins(AdvancedOrbitControls)
     .init_resource::<ControlStorage>()
     .add_plugins(ObjectPicking3d)
     .add_plugins(TranslationController)
-    .add_plugins(AimTrackingPlugin)
+    .add_plugins(VrControlPlugin)
     .add_plugins(UiPlugin)
     .add_systems(Startup, (setup.before(generate_default_curve),))
     .insert_resource(ClearColor(Color::NONE));

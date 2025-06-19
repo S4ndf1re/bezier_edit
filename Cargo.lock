@@ -1384,6 +1384,8 @@ dependencies = [
  "num",
  "openxr",
  "rayon",
+ "serde",
+ "serde_json",
  "struct-patch",
  "struct-patch-derive",
  "variantly",
