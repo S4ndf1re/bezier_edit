@@ -1,8 +1,6 @@
 use crate::RootTransform;
 use bevy::app::App;
 use bevy::prelude::*;
-use std::f32::consts::FRAC_PI_2;
-use std::ops::Range;
 
 #[cfg(feature = "vr_enable")]
 use crate::vr_control::thumbstick3d::AccumulatedThumbstickInfo;
@@ -12,10 +10,8 @@ use bevy::input::mouse::AccumulatedMouseMotion;
 
 #[derive(Debug, Resource)]
 struct CameraSettings {
-    pub orbit_distance: f32,
     pub pitch_speed: f32,
     // Clamp pitch to this range
-    pub pitch_range: Range<f32>,
     pub yaw_speed: f32,
 }
 
@@ -23,13 +19,10 @@ struct CameraSettings {
 impl Default for CameraSettings {
     fn default() -> Self {
         // Limiting pitch stops some unexpected rotation past 90° up or down.
-        let pitch_limit = FRAC_PI_2 - 0.01;
         Self {
             // These values are completely arbitrary, chosen because they seem to produce
             // "sensible" results for this example. Adjust as required.
-            orbit_distance: 10.0,
             pitch_speed: 0.003,
-            pitch_range: -pitch_limit..pitch_limit,
             yaw_speed: 0.004,
         }
     }
@@ -87,13 +80,6 @@ fn orbit(
 
     let delta_pitch = delta.y * camera_settings.pitch_speed;
     let delta_yaw = delta.x * camera_settings.yaw_speed;
-
-    let (yaw, pitch, roll) = root.rotation.to_euler(EulerRot::YXZ);
-
-    let pitch = (pitch + delta_pitch).clamp(
-        camera_settings.pitch_range.start,
-        camera_settings.pitch_range.end,
-    );
 
     root.rotation = Quat::from_axis_angle(Vec3::Z, delta_pitch)
         * Quat::from_axis_angle(Vec3::Y, delta_yaw)

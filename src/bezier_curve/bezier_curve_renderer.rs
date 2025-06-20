@@ -1,6 +1,6 @@
 use super::components::*;
 use super::render_info::RenderInformation;
-use super::util::{CurvatureDisplayMode, create_mesh_from_control_points};
+use super::util::create_mesh_from_control_points;
 use crate::RootTransform;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{
@@ -19,7 +19,6 @@ use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::tailwind::*;
 use bevy::prelude::*;
 use bevy::render::mesh::PrimitiveTopology;
-use bevy_mod_openxr::helper_traits::ToPosef;
 use num::ToPrimitive;
 use std::collections::HashMap;
 
@@ -251,7 +250,6 @@ fn generate_pointcloud(
     for (u, v) in scale_info.to_uv_sample() {
         let point = eval_2d_bezier_curves(&multi_curves, u, v);
         let (u_diff, v_diff) = derive_2d(&multi_curves, u, v, 1);
-        let normal = &u_diff.cross(&v_diff) * -1.0;
 
         let mesh = Cuboid::new(
             scale_info.box_dim.0 * scale_info.scale,

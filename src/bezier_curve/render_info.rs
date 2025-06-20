@@ -21,7 +21,7 @@ impl RenderInformation {
 
         (0..=self.u_box_count)
             .flat_map(|u| {
-                (1..=self.v_box_count).map(move |v| ((u as f64) * u_step, (v as f64) * v_step))
+                (0..=self.v_box_count).map(move |v| ((u as f64) * u_step, (v as f64) * v_step))
             })
             .collect::<Vec<_>>()
     }
@@ -37,7 +37,7 @@ impl Default for RenderInformation {
             curvature_mode: CurvatureDisplayMode::None,
             u_box_count: 10,
             v_box_count: 10,
-            box_dim: (0.19, 0.19, 0.19),
+            box_dim: (0.25, 0.10, 0.25),
         }
     }
 }

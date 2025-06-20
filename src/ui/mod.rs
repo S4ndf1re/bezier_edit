@@ -6,8 +6,7 @@ use bevy::{
     prelude::*,
     sprite::Anchor,
 };
-use bevy_lunex::{prelude::*, UiStateTrait};
-use bevy_xr_utils::tracking_utils::XrTrackedView;
+use bevy_lunex::{UiStateTrait, prelude::*};
 use struct_patch::Patch;
 
 #[derive(Component)]
