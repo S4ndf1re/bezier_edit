@@ -1,8 +1,10 @@
 use super::components::*;
-use super::util::{create_mesh_from_control_points, CurvatureDisplayMode};
+use super::render_info::RenderInformation;
+use super::util::{CurvatureDisplayMode, create_mesh_from_control_points};
+use crate::RootTransform;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{
-    derive_2d, determine_u_v, eval_2d_bezier_curves, ControlPoints2D,
+    ControlPoints2D, derive_2d, determine_u_v, eval_2d_bezier_curves,
 };
 use crate::nurbs::point::Point;
 use crate::picking3d::events;
@@ -12,12 +14,12 @@ use crate::solver::{C1Constraint, Constraints, Solver};
 use crate::translation_control::translation_controller::EnableTranslationControl;
 use crate::ui::UiStateChangeset;
 use crate::util::update_material_on;
-use crate::RootTransform;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::tailwind::*;
 use bevy::prelude::*;
 use bevy::render::mesh::PrimitiveTopology;
+use bevy_mod_openxr::helper_traits::ToPosef;
 use num::ToPrimitive;
 use std::collections::HashMap;
 
@@ -30,48 +32,6 @@ pub struct ConstraintState {
 
 #[derive(Event)]
 pub struct ToggleC1Enable;
-
-#[derive(Resource)]
-pub struct RenderInformation {
-    pub scale: f32,
-    pub height: f32,
-    pub resolution: Resolution,
-    pub fast_resolution: Resolution,
-    pub curvature_mode: CurvatureDisplayMode,
-    pub u_box_count: u32,
-    pub v_box_count: u32,
-    pub u_box_dim: (f32, f32, f32),
-    pub v_box_dim: (f32, f32, f32),
-}
-
-impl RenderInformation {
-    pub fn to_uv_sample(&self) -> Vec<(f64, f64)> {
-        let u_step = 1.0 / self.u_box_count as f64;
-        let v_step = 1.0 / self.u_box_count as f64;
-
-        (0..self.u_box_count - 1)
-            .flat_map(|u| {
-                (1..self.v_box_count - 1).map(move |v| ((u as f64) * u_step, (v as f64) * v_step))
-            })
-            .collect::<Vec<_>>()
-    }
-}
-
-impl Default for RenderInformation {
-    fn default() -> Self {
-        Self {
-            scale: 1.0,
-            height: 0.0,
-            resolution: (300, 300),
-            fast_resolution: (50, 50),
-            curvature_mode: CurvatureDisplayMode::None,
-            u_box_count: 10,
-            v_box_count: 10,
-            u_box_dim: (0.19, 0.19, 0.19),
-            v_box_dim: (0.19, 0.19, 0.19),
-        }
-    }
-}
 
 #[derive(Event)]
 pub enum RedrawEvent {
@@ -218,6 +178,7 @@ fn generate_pointcloud(
     control_points: Query<(&Transform, &RenderPoint)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    boxes: Query<Entity, With<CurveBox>>,
     images: ResMut<Assets<Image>>,
     scale_info: Res<RenderInformation>,
 ) {
@@ -262,16 +223,56 @@ fn generate_pointcloud(
         commands.entity(p).despawn();
     }
 
+    {
+        let mut root = commands.get_entity(root.single().unwrap()).unwrap();
+        root.with_children(|ui| {
+            ui.spawn((
+                Transform::default(),
+                ResultSurface,
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(materials.add(mat)),
+            ))
+            .observe(bezier_surface_picking);
+        });
+    }
+
+    // Despawn old, respawn new
+    for p in boxes.iter() {
+        commands.entity(p).despawn();
+    }
+
+    let mat = StandardMaterial {
+        base_color: Color::from(RED_400),
+        double_sided: true,
+        cull_mode: None,
+        ..Default::default()
+    };
     let mut root = commands.get_entity(root.single().unwrap()).unwrap();
-    root.with_children(|ui| {
-        ui.spawn((
-            Transform::default(),
-            ResultSurface,
-            Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(materials.add(mat)),
-        ))
-        .observe(bezier_surface_picking);
-    });
+    for (u, v) in scale_info.to_uv_sample() {
+        let point = eval_2d_bezier_curves(&multi_curves, u, v);
+        let (u_diff, v_diff) = derive_2d(&multi_curves, u, v, 1);
+        let normal = &u_diff.cross(&v_diff) * -1.0;
+
+        let mesh = Cuboid::new(
+            scale_info.box_dim.0 * scale_info.scale,
+            scale_info.box_dim.1 * scale_info.scale,
+            scale_info.box_dim.2 * scale_info.scale,
+        );
+        root.with_children(|ui| {
+            ui.spawn((
+                Transform::from_translation(Vec3::from(point)).aligned_by(
+                    Vec3::Z,
+                    Vec3::from(u_diff),
+                    Vec3::X,
+                    Vec3::from(v_diff),
+                ),
+                CurveBox,
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(materials.add(mat.clone())),
+            ))
+            .observe(bezier_surface_picking);
+        });
+    }
 }
 
 #[allow(clippy::complexity)]

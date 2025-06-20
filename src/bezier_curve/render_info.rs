@@ -1,0 +1,43 @@
+use bevy::prelude::*;
+
+use super::{bezier_curve_renderer::Resolution, util::CurvatureDisplayMode};
+
+#[derive(Resource)]
+pub struct RenderInformation {
+    pub scale: f32,
+    pub height: f32,
+    pub resolution: Resolution,
+    pub fast_resolution: Resolution,
+    pub curvature_mode: CurvatureDisplayMode,
+    pub u_box_count: u32,
+    pub v_box_count: u32,
+    pub box_dim: (f32, f32, f32),
+}
+
+impl RenderInformation {
+    pub fn to_uv_sample(&self) -> Vec<(f64, f64)> {
+        let u_step = 1.0 / self.u_box_count as f64;
+        let v_step = 1.0 / self.u_box_count as f64;
+
+        (0..=self.u_box_count)
+            .flat_map(|u| {
+                (1..=self.v_box_count).map(move |v| ((u as f64) * u_step, (v as f64) * v_step))
+            })
+            .collect::<Vec<_>>()
+    }
+}
+
+impl Default for RenderInformation {
+    fn default() -> Self {
+        Self {
+            scale: 1.0,
+            height: 0.0,
+            resolution: (300, 300),
+            fast_resolution: (50, 50),
+            curvature_mode: CurvatureDisplayMode::None,
+            u_box_count: 10,
+            v_box_count: 10,
+            box_dim: (0.19, 0.19, 0.19),
+        }
+    }
+}

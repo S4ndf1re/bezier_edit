@@ -1,10 +1,11 @@
-use crate::bezier_curve::bezier_curve_renderer::{RedrawEvent, RenderInformation};
+use crate::RootTransform;
+use crate::bezier_curve::bezier_curve_renderer::RedrawEvent;
+use crate::bezier_curve::render_info::RenderInformation;
 use crate::history::plugin::HistoryLogEvent;
 use crate::picking3d::events::{MoveIn, MoveOut, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
-use crate::RootTransform;
 use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;

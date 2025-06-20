@@ -36,7 +36,7 @@ impl ControlStorage {
         self.arrows.push(direction);
     }
 
-    pub fn iter(&self) -> Iter<ControlDirection> {
+    pub fn iter(&self) -> Iter<'_, ControlDirection> {
         self.arrows.iter()
     }
 }

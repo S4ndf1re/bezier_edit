@@ -1,4 +1,4 @@
-use crate::bezier_curve::bezier_curve_renderer::RenderInformation;
+use crate::bezier_curve::render_info::RenderInformation;
 use crate::picking3d::events::{
     Click, Drag, DragEnd, DragStart, HoveredBy, MoveIn, MoveOut, Pointer3d,
 };
