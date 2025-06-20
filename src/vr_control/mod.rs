@@ -1,6 +1,7 @@
 pub mod config;
 pub mod thumbstick3d;
 pub mod trigger;
+pub mod vibrate;
 
 use bevy::prelude::*;
 use bevy_mod_openxr::{
@@ -11,20 +12,23 @@ use bevy_mod_openxr::{
     resources::OxrInstance,
     session::OxrSession,
 };
-use bevy_mod_xr::session::{session_available, XrSessionCreated, XrTracker};
+use bevy_mod_xr::session::{XrSessionCreated, XrTracker, session_available};
 use bevy_xr_utils::tracking_utils::{TrackingUtilitiesPlugin, XrTrackedView};
 use config::Config;
-use openxr::Posef;
+use openxr::{Haptic, Posef};
 use thumbstick3d::ThumbstickPlugin;
 use trigger::TriggerPlugin;
+use vibrate::VibrationPlugin;
 
 struct ControllerActionSet {
     set: openxr::ActionSet,
     aim: openxr::Action<Posef>,
     trigger: openxr::Action<f32>,
+    squeeze: openxr::Action<f32>,
     grip: openxr::Action<Posef>,
     thumbstick_x: openxr::Action<f32>,
     thumbstick_y: openxr::Action<f32>,
+    output: openxr::Action<Haptic>,
 }
 
 #[derive(Resource)]
@@ -118,6 +122,10 @@ fn create_actions(instance: Res<OxrInstance>, mut cmds: Commands) {
         .create_action("trigger_left", "Left Hand Trigger", &[])
         .unwrap();
 
+    let squeeze = set
+        .create_action("squeeze_left", "Left Hand Squeeze", &[])
+        .unwrap();
+
     let grip = set
         .create_action("pose_left", "Left Hand Pose", &[])
         .unwrap();
@@ -130,13 +138,19 @@ fn create_actions(instance: Res<OxrInstance>, mut cmds: Commands) {
         .create_action("thumbstick_y_left", "Left Hand Thumbstick_y", &[])
         .unwrap();
 
+    let output = set
+        .create_action("output_left", "Left Hand Output", &[])
+        .unwrap();
+
     let left = ControllerActionSet {
         set,
         aim,
         trigger,
+        squeeze,
         grip,
         thumbstick_x,
         thumbstick_y,
+        output,
     };
 
     let set = instance
@@ -148,6 +162,10 @@ fn create_actions(instance: Res<OxrInstance>, mut cmds: Commands) {
 
     let trigger = set
         .create_action("trigger_right", "Right Hand Trigger", &[])
+        .unwrap();
+
+    let squeeze = set
+        .create_action("squeeze_right", "Right Hand Squeeze", &[])
         .unwrap();
 
     let grip = set
@@ -162,13 +180,19 @@ fn create_actions(instance: Res<OxrInstance>, mut cmds: Commands) {
         .create_action("thumbstick_y_right", "Right Hand Thumbstick_y", &[])
         .unwrap();
 
+    let output = set
+        .create_action("output_right", "Right Hand Output", &[])
+        .unwrap();
+
     let right = ControllerActionSet {
         set,
         aim,
         trigger,
+        squeeze,
         grip,
         thumbstick_x,
         thumbstick_y,
+        output,
     };
 
     cmds.insert_resource(ControllerActions { left, right })
@@ -228,6 +252,7 @@ impl Plugin for VrControlPlugin {
         app.add_systems(Startup, create_actions.run_if(session_available));
         app.add_plugins(ThumbstickPlugin);
         app.add_plugins(TriggerPlugin);
+        app.add_plugins(VibrationPlugin);
         app.add_plugins(TrackingUtilitiesPlugin);
     }
 }

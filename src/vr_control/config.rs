@@ -1,5 +1,5 @@
 use std::{
-    fs::{read_to_string, File},
+    fs::{File, read_to_string},
     io::Write,
 };
 
@@ -11,8 +11,10 @@ pub struct ControllerConfig {
     pub aim: String,
     pub grip: String,
     pub trigger: String,
+    pub squeeze: String,
     pub thumbstick_x: String,
     pub thumbstick_y: String,
+    pub output: String,
 }
 
 #[derive(Serialize, Deserialize, Resource)]
@@ -30,15 +32,19 @@ impl Default for Config {
                 aim: "/user/hand/left/input/aim/pose".to_owned(),
                 grip: "/user/hand/left/input/grip/pose".to_owned(),
                 trigger: "/user/hand/left/input/trigger/value".to_owned(),
+                squeeze: "/user/hand/left/input/squeeze/value".to_owned(),
                 thumbstick_x: "/user/hand/left/input/thumbstick/x".to_owned(),
                 thumbstick_y: "/user/hand/left/input/thumbstick/y".to_owned(),
+                output: "/user/hand/right/output/haptic".to_owned(),
             },
             right: ControllerConfig {
                 aim: "/user/hand/right/input/aim/pose".to_owned(),
                 grip: "/user/hand/right/input/grip/pose".to_owned(),
                 trigger: "/user/hand/right/input/trigger/value".to_owned(),
+                squeeze: "/user/hand/left/input/squeeze/value".to_owned(),
                 thumbstick_x: "/user/hand/right/input/thumbstick/x".to_owned(),
                 thumbstick_y: "/user/hand/right/input/thumbstick/y".to_owned(),
+                output: "/user/hand/right/output/haptic".to_owned(),
             },
         }
     }
