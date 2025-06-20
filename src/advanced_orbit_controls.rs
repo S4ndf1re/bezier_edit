@@ -69,19 +69,9 @@ fn orbit(
     let delta_pitch = delta.y * camera_settings.pitch_speed;
     let delta_yaw = delta.x * camera_settings.yaw_speed;
 
-    let (yaw, pitch, roll) = root.rotation.to_euler(EulerRot::YXZ);
-
-    let pitch = (pitch + delta_pitch).clamp(
-        camera_settings.pitch_range.start,
-        camera_settings.pitch_range.end,
-    );
-
-    let yaw = yaw + delta_yaw;
-    root.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
-
-    // Adjust target distance
-    // let target = Vec3::ZERO;
-    // camera.translation = target - camera.forward() * camera_settings.orbit_distance;
+    root.rotation = Quat::from_axis_angle(Vec3::Z, delta_pitch)
+        * Quat::from_axis_angle(Vec3::Y, delta_yaw)
+        * root.rotation;
 }
 
 #[cfg(feature = "vr_enable")]
@@ -105,12 +95,9 @@ fn orbit(
         camera_settings.pitch_range.end,
     );
 
-    let yaw = yaw + delta_yaw;
-    root.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, roll);
-
-    // Adjust target distance
-    // let target = Vec3::ZERO;
-    // camera.translation = target - camera.forward() * camera_settings.orbit_distance;
+    root.rotation = Quat::from_axis_angle(Vec3::Z, delta_pitch)
+        * Quat::from_axis_angle(Vec3::Y, delta_yaw)
+        * root.rotation;
 }
 
 impl Plugin for AdvancedOrbitControls {
