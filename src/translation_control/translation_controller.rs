@@ -2,10 +2,11 @@ use crate::RootTransform;
 use crate::bezier_curve::bezier_curve_renderer::RedrawEvent;
 use crate::bezier_curve::render_info::RenderInformation;
 use crate::history::plugin::HistoryLogEvent;
-use crate::picking3d::events::{MoveIn, MoveOut, Pointer3d};
+use crate::picking3d::events::{HoveredBy, MoveIn, MoveOut, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
+use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
 use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;
@@ -56,7 +57,21 @@ fn draw_arrow(
         .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()))
         .observe(update_material_on::<Pointer3d<MoveIn>>(mat_hover.clone()))
-        .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()));
+        .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()))
+        .observe(
+            |trigger: Trigger<Pointer3d<MoveIn>>,
+             mut writer_left: EventWriter<VibrateLeftEvent>,
+             mut writer_right: EventWriter<VibrateRightEvent>| {
+                match trigger.controler {
+                    HoveredBy::Left => {
+                        writer_left.write(VibrateLeftEvent::new(Vibration::default()));
+                    }
+                    HoveredBy::Right => {
+                        writer_right.write(VibrateRightEvent::new(Vibration::default()));
+                    }
+                };
+            },
+        );
 
     child_builder
         .spawn((

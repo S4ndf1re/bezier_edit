@@ -7,14 +7,48 @@ use super::ControllerActions;
 pub struct Vibration {
     pub amplitude: f32,
     pub frequency: f32,
-    pub duration_ms: i64,
+    pub duration_nano: i64,
+}
+
+impl Default for Vibration {
+    fn default() -> Self {
+        Self {
+            amplitude: 0.5,
+            frequency: openxr::FREQUENCY_UNSPECIFIED,
+            duration_nano: openxr::Duration::MIN_HAPTIC.as_nanos(),
+        }
+    }
+}
+
+impl Vibration {
+    pub fn duration_millis(mut self, millis: i64) -> Self {
+        self.duration_nano = millis * 1000 * 1000;
+        self
+    }
+
+    pub fn duration_micros(mut self, micros: i64) -> Self {
+        self.duration_nano = micros * 1000;
+        self
+    }
 }
 
 #[derive(Event)]
 pub struct VibrateLeftEvent(Vibration);
 
+impl VibrateLeftEvent {
+    pub fn new(vibration: Vibration) -> Self {
+        Self(vibration)
+    }
+}
+
 #[derive(Event)]
 pub struct VibrateRightEvent(Vibration);
+
+impl VibrateRightEvent {
+    pub fn new(vibration: Vibration) -> Self {
+        Self(vibration)
+    }
+}
 
 fn listen_left_events(
     mut reader: EventReader<VibrateLeftEvent>,
@@ -23,7 +57,7 @@ fn listen_left_events(
 ) {
     for event in reader.read() {
         let vibration = HapticVibration::new()
-            .duration(Duration::from_nanos(event.0.duration_ms * 1000 * 1000))
+            .duration(Duration::from_nanos(event.0.duration_nano))
             .frequency(event.0.frequency)
             .amplitude(event.0.amplitude);
 
@@ -41,7 +75,7 @@ fn listen_right_events(
 ) {
     for event in reader.read() {
         let vibration = HapticVibration::new()
-            .duration(Duration::from_nanos(event.0.duration_ms * 1000 * 1000))
+            .duration(Duration::from_nanos(event.0.duration_nano))
             .frequency(event.0.frequency)
             .amplitude(event.0.amplitude);
 
