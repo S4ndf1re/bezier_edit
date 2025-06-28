@@ -5,20 +5,20 @@ use bevy_mod_openxr::session::OxrSession;
 use super::ControllerActions;
 
 #[derive(Default, Resource)]
-pub struct Trigger {
+pub struct ControllerTrigger {
     pub left: f32,
     pub right: f32,
 }
 
 #[derive(Default, Resource)]
-pub struct Squeeze {
+pub struct ControllerSqueeze {
     pub left: f32,
     pub right: f32,
 }
 
 fn update_trigger_events(
     actions: Res<ControllerActions>,
-    mut trigger: ResMut<Trigger>,
+    mut trigger: ResMut<ControllerTrigger>,
     session: Res<OxrSession>,
 ) {
     trigger.left = 0.0;
@@ -43,7 +43,7 @@ fn update_trigger_events(
 
 fn update_squeeze_events(
     actions: Res<ControllerActions>,
-    mut squeeze: ResMut<Squeeze>,
+    mut squeeze: ResMut<ControllerSqueeze>,
     session: Res<OxrSession>,
 ) {
     squeeze.left = 0.0;
@@ -70,7 +70,7 @@ pub struct TriggerPlugin;
 
 impl Plugin for TriggerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Trigger>();
+        app.init_resource::<ControllerTrigger>();
         app.add_systems(
             PostUpdate,
             update_trigger_events.run_if(openxr_session_running),

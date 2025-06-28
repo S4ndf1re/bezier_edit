@@ -9,6 +9,8 @@ use bevy::{
 use bevy_lunex::{UiStateTrait, prelude::*};
 use struct_patch::Patch;
 
+use crate::bezier_curve::render_info::RenderInformation;
+
 #[derive(Component)]
 struct UText;
 
@@ -203,7 +205,10 @@ fn spawn_uv_control(
                     Mesh3d::default(),
                     // OnHoverSetCursor::new(SystemCursorIcon::Pointer),
                     Pickable::IGNORE,
-                ));
+                ))
+                .with_children(|ui| {
+                    // TODO: Add background based on u, v selection
+                });
             });
     });
 
@@ -276,7 +281,7 @@ fn build_ui(
     mut commands: Commands,
     ui_state: ResMut<UiState>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    // asset_server: Res<AssetServer>,
+    scale_info: Res<RenderInformation>,
 ) {
     // Spawn it 3 times
     // Spawn the floating UI panel
@@ -287,7 +292,7 @@ fn build_ui(
             // Use this constructor to init 3D settings
             UiLayoutRoot::new_3d(),
             // Provide default size instead of camera
-            Dimension::from((0.818, 0.965)),
+            Dimension::from((0.818 * scale_info.scale, 0.965 * scale_info.scale)),
             // The location of the UI panel
             Transform::from_xyz(0.0, 1.0, 0.0),
         ))

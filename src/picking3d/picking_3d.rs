@@ -4,11 +4,16 @@ use crate::picking3d::events::{
 };
 use crate::picking3d::picking_state::PickingState;
 use crate::picking3d::pointer_state::Pointer3dState;
-use crate::vr_control::trigger::Trigger;
-use crate::vr_control::{GripLeft, GripRight};
+use crate::vr_control::trigger::{ControllerSqueeze, ControllerTrigger};
+use crate::vr_control::{AimLeft, AimRight, GripLeft, GripRight};
+use bevy::color::palettes::css::POWDER_BLUE;
+use bevy::log::tracing::instrument::WithSubscriber;
 use bevy::math::Vec3;
 use bevy::math::bounding::{BoundingSphere, IntersectsVolume};
 use bevy::prelude::*;
+
+#[derive(Component)]
+pub struct AimLineMarker(HoveredBy);
 
 /// Component to shift picking center according the the later found global transpose
 #[derive(Component, Clone, Copy)]
@@ -159,7 +164,7 @@ fn tick(mut pointer_state: ResMut<Pointer3dState>) {
 #[allow(clippy::too_many_arguments)]
 fn handle_input_grab(
     mut commands: Commands,
-    trigger: Res<Trigger>,
+    trigger: Res<ControllerTrigger>,
     mut pointer_state: ResMut<Pointer3dState>,
     transform_query: Query<&GlobalTransform>,
     left_tracked: Single<(&GlobalTransform, Entity), With<GripLeft>>,
@@ -275,6 +280,53 @@ fn handle_input_grab(
             picking_state.set_dragging(true, &hover_by);
         }
         pointer_state.set_state(current_state, &hover_by);
+    }
+}
+
+#[allow(clippy::complexity)]
+pub fn show_aim(
+    mut commands: Commands,
+    squeeze: Res<ControllerSqueeze>,
+    aim_query_left: Query<&Transform, With<AimLeft>>,
+    aim_query_right: Query<&Transform, With<AimRight>>,
+    aim_line: Query<(Entity, &AimLineMarker)>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut mesh_ray_cast: MeshRayCast,
+    scale: Res<RenderInformation>,
+) {
+    for line in aim_line {
+        commands.get_entity(line.0).unwrap().despawn();
+    }
+
+    for (squeeze, aim_query, hovered_by) in [
+        (squeeze.left, aim_query_left.single(), HoveredBy::Left),
+        (squeeze.right, aim_query_right.single(), HoveredBy::Right),
+    ] {
+        if squeeze >= 0.2
+            && let Ok(aim) = aim_query
+        {
+            let ray = Ray3d::new(aim.translation, aim.forward());
+            let hits = mesh_ray_cast.cast_ray(ray, &Default::default());
+            let length = if !hits.is_empty() {
+                hits[0].1.distance
+            } else {
+                1000.0 // simulate infinity
+            };
+
+            let material = materials.add(Color::from(POWDER_BLUE));
+            let mesh = meshes.add(Cuboid::new(0.01 * scale.scale, 0.01 * scale.scale, length));
+
+            commands
+                .spawn((AimLineMarker(hovered_by), *aim))
+                .with_children(|ui| {
+                    ui.spawn((
+                        Transform::from_xyz(-0.005, -0.005, -length / 2.0),
+                        Mesh3d(mesh),
+                        MeshMaterial3d(material),
+                    ));
+                });
+        }
     }
 }
 
