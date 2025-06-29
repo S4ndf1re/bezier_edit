@@ -1,3 +1,5 @@
+pub mod slider;
+
 use std::sync::Arc;
 
 use bevy::{
@@ -7,6 +9,7 @@ use bevy::{
     sprite::Anchor,
 };
 use bevy_lunex::{UiStateTrait, prelude::*};
+use slider::{SliderPlugin, UiSlider};
 use struct_patch::Patch;
 
 use crate::bezier_curve::render_info::RenderInformation;
@@ -42,7 +45,6 @@ fn spawn_background<'a>(
             unlit: true,
             ..Default::default()
         })),
-        Transform::from_xyz(0.0, 0.0, 0.0),
         UiMeshPlane3d,
     ))
 }
@@ -275,6 +277,20 @@ fn spawn_layouted(
             .pack(),
     ))
     .with_children(|ui| spawn_uv_control(ui, ui_state, materials));
+
+    ui.spawn((
+        Name::new("Layout Third"),
+        UiLayout::window()
+            .pos(Rl((0.0, 60.0)))
+            .size((Rw(100.0), Rh(20.0)))
+            .anchor(Anchor::TopLeft)
+            .pack(),
+    ))
+    .with_children(|ui| {
+        let mut slider = UiSlider::new(0.0, 1.0);
+        slider.set(0.4);
+        ui.spawn(slider);
+    });
 }
 
 fn build_ui(
@@ -347,6 +363,7 @@ pub struct UiPlugin;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(UiLunexPlugins); // , UiLunexDebugPlugin::<0, 0>));
+        app.add_plugins(SliderPlugin);
         app.add_event::<UiStateChangeset>();
         app.init_resource::<UiState>();
         app.insert_resource(LoadFonts {
