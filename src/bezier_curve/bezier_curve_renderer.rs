@@ -1,6 +1,9 @@
 use super::components::*;
 use super::render_info::RenderInformation;
-use super::util::create_mesh_from_control_points;
+use super::surface_click::{
+    SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
+};
+use super::util::{collect_control_points, create_mesh_from_control_points};
 use crate::RootTransform;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{
@@ -137,37 +140,6 @@ fn enable_gizmo3d(
 //         + camera.up() * trigger.delta.y * -0.012;
 // }
 
-fn collect_control_points(control_points: Query<(&Transform, &RenderPoint)>) -> ControlPoints2D {
-    let mut points = HashMap::<usize, Vec<(usize, Point)>>::new();
-    for (transform, render_point) in control_points.iter() {
-        let curve = points.entry(render_point.0).or_default();
-        curve.push((
-            render_point.1,
-            Point::new(
-                transform.translation.x as f64,
-                transform.translation.y as f64,
-                transform.translation.z as f64,
-                Some(1.0),
-            ),
-        ));
-    }
-
-    // First get all points in order for each sub curve
-    let mut multi_curves = Vec::<(usize, Vec<Point>)>::new();
-    for (i, points) in points.iter_mut() {
-        points.sort_by(|a, b| a.0.cmp(&b.0));
-        let points = points.iter().map(|p| p.1).collect::<Vec<_>>();
-        multi_curves.push((*i, points));
-    }
-
-    // Then order the subcurves by index
-    multi_curves.sort_by(|a, b| a.0.cmp(&b.0));
-    let multi_curves: Vec<Vec<Point>> =
-        multi_curves.iter().map(|p| p.1.clone()).collect::<Vec<_>>();
-
-    multi_curves
-}
-
 #[allow(clippy::complexity)]
 fn generate_pointcloud(
     root: Query<Entity, With<RootTransform>>,
@@ -270,104 +242,6 @@ fn generate_pointcloud(
             ))
             .observe(bezier_surface_picking);
         });
-    }
-}
-
-#[allow(clippy::complexity)]
-pub fn bezier_surface_picking(
-    trigger: Trigger<Pointer<Click>>,
-    root: Query<Entity, With<RootTransform>>,
-    control_points: Query<(&Transform, &RenderPoint)>,
-    old_click: Query<Entity, With<SurfaceClick>>,
-    scale_res: Res<RenderInformation>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut commands: Commands,
-    mut ui_state_writer: EventWriter<UiStateChangeset>,
-) {
-    let scale = scale_res.scale;
-
-    for old in old_click.iter() {
-        let _ = commands.get_entity(old).map(|mut e| {
-            e.despawn();
-        });
-    }
-
-    let control_points = collect_control_points(control_points);
-
-    let material = materials.add(Color::from(RED_400));
-    let sphere = meshes.add(Sphere::new(0.07 * scale).mesh().ico(5).unwrap());
-    let normal_pointer = meshes.add(Cuboid::new(0.07 * scale, 0.07 * scale, 0.5 * scale));
-
-    let mut root = commands.get_entity(root.single().unwrap()).unwrap();
-    if let Some(click_coords) = trigger.hit.position {
-        // Currently the volume vaule is completely arbitrary
-        let possible_hits = determine_u_v(
-            &control_points,
-            &Point::new(
-                click_coords.x as f64,
-                click_coords.y as f64,
-                click_coords.z as f64,
-                None,
-            ),
-            0.0000001,
-        );
-
-        let mut u = 0.0;
-        let mut v = 0.0;
-        if let Some(hits) = possible_hits {
-            for hit in hits {
-                u = hit.0;
-                v = hit.1;
-                let evaluated = eval_2d_bezier_curves(&control_points, hit.0, hit.1);
-                let (u_diff, v_diff) = derive_2d(&control_points, hit.0, hit.1, 1);
-                let normal = &u_diff.cross(&v_diff);
-
-                root.with_children(|ui| {
-                    ui.spawn((
-                        SurfaceClick(hit.0, hit.1),
-                        MeshMaterial3d(material.clone()),
-                        Mesh3d(sphere.clone()),
-                        Transform::from_xyz(
-                            evaluated.x as f32,
-                            evaluated.y as f32,
-                            evaluated.z as f32,
-                        )
-                        .looking_to(Into::<Vec3>::into(-1.0 * normal), Vec3::Y),
-                    ))
-                    .with_children(|parent| {
-                        parent.spawn((
-                            Transform::from_xyz(0.0, 0.0, -0.25 * scale),
-                            MeshMaterial3d(material.clone()),
-                            Mesh3d(normal_pointer.clone()),
-                        ));
-                    });
-                });
-            }
-            ui_state_writer.write(UiStateChangeset {
-                u: Some(u),
-                v: Some(v),
-            });
-        }
-    }
-}
-
-#[allow(clippy::complexity)]
-pub fn update_surface_click(
-    mut set: ParamSet<(
-        Query<(&SurfaceClick, &mut Transform)>,
-        Query<(&Transform, &RenderPoint)>,
-    )>,
-) {
-    let points = collect_control_points(set.p1());
-
-    for (surface, mut transform) in set.p0() {
-        let point = eval_2d_bezier_curves(&points, surface.0, surface.1);
-        let (u_diff, v_diff) = derive_2d(&points, surface.0, surface.1, 1);
-        let normal = &u_diff.cross(&v_diff);
-
-        transform.translation = Vec3::new(point.x as f32, point.y as f32, point.z as f32);
-        transform.look_to(Into::<Vec3>::into(-1.0 * normal), Vec3::Y);
     }
 }
 
@@ -611,8 +485,12 @@ impl Plugin for BezierRenderPlugin {
             Update,
             (generate_pointcloud, update_lines, update_surface_click),
         ); // , listen_to_mouse_left_button));
-        app.add_systems(PostUpdate, handle_c1_points_events);
+        app.add_systems(
+            PostUpdate,
+            (handle_c1_points_events, handle_state_change_event),
+        );
         app.init_resource::<ConstraintState>();
         app.add_event::<ToggleC1Enable>();
+        app.add_event::<SurfaceClickChangeset>();
     }
 }

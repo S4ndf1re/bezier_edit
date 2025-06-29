@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::fmt::Display;
+
 use bevy::asset::RenderAssetUsages;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
@@ -9,9 +12,11 @@ use crate::nurbs::bezier_plane::{ControlPoints2D, derive_2d, eval_2d_bezier_curv
 use crate::nurbs::point::Point;
 
 use super::bezier_curve_renderer::Resolution;
+use super::components::RenderPoint;
 
-#[derive(Clone, Copy, Ord, Eq, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Ord, Eq, PartialEq, PartialOrd, Default)]
 pub enum CurvatureDisplayMode {
+    #[default]
     None,
     U,
     V,
@@ -25,6 +30,17 @@ impl CurvatureDisplayMode {
             Self::U => Self::V,
             Self::V => Self::Both,
             Self::Both => Self::None,
+        }
+    }
+}
+
+impl Display for CurvatureDisplayMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CurvatureDisplayMode::None => write!(f, "None"),
+            CurvatureDisplayMode::U => write!(f, "U"),
+            CurvatureDisplayMode::V => write!(f, "V"),
+            CurvatureDisplayMode::Both => write!(f, "Both"),
         }
     }
 }
@@ -225,4 +241,37 @@ fn curvature_to_color(
 
         (color.red as f64, color.green as f64, color.blue as f64)
     }
+}
+
+pub fn collect_control_points(
+    control_points: Query<(&Transform, &RenderPoint)>,
+) -> ControlPoints2D {
+    let mut points = HashMap::<usize, Vec<(usize, Point)>>::new();
+    for (transform, render_point) in control_points.iter() {
+        let curve = points.entry(render_point.0).or_default();
+        curve.push((
+            render_point.1,
+            Point::new(
+                transform.translation.x as f64,
+                transform.translation.y as f64,
+                transform.translation.z as f64,
+                Some(1.0),
+            ),
+        ));
+    }
+
+    // First get all points in order for each sub curve
+    let mut multi_curves = Vec::<(usize, Vec<Point>)>::new();
+    for (i, points) in points.iter_mut() {
+        points.sort_by(|a, b| a.0.cmp(&b.0));
+        let points = points.iter().map(|p| p.1).collect::<Vec<_>>();
+        multi_curves.push((*i, points));
+    }
+
+    // Then order the subcurves by index
+    multi_curves.sort_by(|a, b| a.0.cmp(&b.0));
+    let multi_curves: Vec<Vec<Point>> =
+        multi_curves.iter().map(|p| p.1.clone()).collect::<Vec<_>>();
+
+    multi_curves
 }

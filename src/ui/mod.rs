@@ -9,16 +9,16 @@ use bevy::{
     sprite::Anchor,
 };
 use bevy_lunex::{UiStateTrait, prelude::*};
-use slider::{SliderPlugin, UiSlider};
+use slider::{SliderPlugin, SliderValueChangeEvent, UiSlider};
 use struct_patch::Patch;
 
-use crate::bezier_curve::render_info::RenderInformation;
+use crate::bezier_curve::{render_info::RenderInformation, surface_click::SurfaceClickChangeset};
 
 #[derive(Component)]
-struct UText;
+struct USlider;
 
 #[derive(Component)]
-struct VText;
+struct VSlider;
 
 #[derive(Resource, Default, Patch)]
 #[patch(name = "UiStateChangeset", attribute(derive(Event, Clone)))]
@@ -171,85 +171,33 @@ fn spawn_lock_buttons(
 fn spawn_uv_control(
     ui: &mut RelatedSpawnerCommands<'_, ChildOf>,
     #[allow(unused)] ui_state: ResMut<UiState>,
-    materials: &mut Assets<StandardMaterial>,
 ) {
     ui.spawn((
         Name::new("U-Value"),
         UiLayout::window()
-            .pos(Rl((25.0, 50.0)))
-            .size((Rw(40.0), Rh(40.0)))
-            .anchor(Anchor::BottomCenter)
+            .pos(Rl((50.0, 00.0)))
+            .size((Rw(90.0), Rh(40.0)))
+            .anchor(Anchor::TopCenter)
             .pack(),
     ))
     .with_children(|ui| {
-        ui.spawn((UiLayout::solid().size(Rl(100.0)).pack(), UiMeshPlane3d))
-            .with_children(|ui| {
-                ui.spawn((
-                    Name::new("U-Value text"),
-                    UiLayout::new(vec![(UiBase::id(), UiLayout::window().full())]),
-                    UiColor::new(vec![(UiBase::id(), Color::WHITE)]),
-                    UText,
-                    Text3d::new("U: None"),
-                    Text3dStyling {
-                        size: 64.0,
-                        color: Srgba::new(1., 1., 1., 1.),
-                        align: TextAlign::Center,
-                        font: Arc::from("Rajdhani"),
-                        weight: Weight::BOLD,
-                        ..Default::default()
-                    },
-                    MeshMaterial3d(materials.add(StandardMaterial {
-                        base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
-                        alpha_mode: AlphaMode::Blend,
-                        unlit: true,
-                        ..Default::default()
-                    })),
-                    Mesh3d::default(),
-                    // OnHoverSetCursor::new(SystemCursorIcon::Pointer),
-                    Pickable::IGNORE,
-                ))
-                .with_children(|ui| {
-                    // TODO: Add background based on u, v selection
-                });
-            });
+        let mut slider = UiSlider::new("U".to_owned(), 0.0, 1.0);
+        slider.set(0.5);
+        ui.spawn((slider, USlider));
     });
 
     ui.spawn((
         Name::new("V-Value"),
         UiLayout::window()
-            .pos(Rl((75.0, 50.0)))
-            .size((Rw(40.0), Rh(40.0)))
-            .anchor(Anchor::BottomCenter)
+            .pos(Rl((50.0, 50.0)))
+            .size((Rw(90.0), Rh(40.0)))
+            .anchor(Anchor::TopCenter)
             .pack(),
     ))
     .with_children(|ui| {
-        ui.spawn((UiLayout::window().full().pack(), UiMeshPlane3d))
-            .with_children(|ui| {
-                ui.spawn((
-                    Name::new("V-Value Text"),
-                    UiLayout::new(vec![(UiBase::id(), UiLayout::window().full())]),
-                    UiColor::new(vec![(UiBase::id(), Color::WHITE)]),
-                    VText,
-                    Text3d::new("V: None"),
-                    Text3dStyling {
-                        size: 64.0,
-                        color: Srgba::new(1., 1., 1., 1.),
-                        align: TextAlign::Center,
-                        font: Arc::from("Rajdhani"),
-                        weight: Weight::BOLD,
-                        ..Default::default()
-                    },
-                    MeshMaterial3d(materials.add(StandardMaterial {
-                        base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
-                        alpha_mode: AlphaMode::Blend,
-                        unlit: true,
-                        ..Default::default()
-                    })),
-                    Mesh3d::default(),
-                    // OnHoverSetCursor::new(SystemCursorIcon::Pointer),
-                    Pickable::IGNORE,
-                ));
-            });
+        let mut slider = UiSlider::new("V".to_owned(), 0.0, 1.0);
+        slider.set(0.5);
+        ui.spawn((slider, VSlider));
     });
 }
 
@@ -276,7 +224,7 @@ fn spawn_layouted(
             .anchor(Anchor::TopLeft)
             .pack(),
     ))
-    .with_children(|ui| spawn_uv_control(ui, ui_state, materials));
+    .with_children(|ui| spawn_uv_control(ui, ui_state));
 
     ui.spawn((
         Name::new("Layout Third"),
@@ -286,11 +234,7 @@ fn spawn_layouted(
             .anchor(Anchor::TopLeft)
             .pack(),
     ))
-    .with_children(|ui| {
-        let mut slider = UiSlider::new(0.0, 1.0);
-        slider.set(0.4);
-        ui.spawn(slider);
-    });
+    .with_children(|ui| {});
 }
 
 fn build_ui(
@@ -345,17 +289,43 @@ fn follow_camera(
 fn handle_ui_state_change(
     mut event_reader: EventReader<UiStateChangeset>,
     mut state: ResMut<UiState>,
-    mut u_text: Query<&mut Text3d, (With<UText>, Without<VText>)>,
-    mut v_text: Query<&mut Text3d, (With<VText>, Without<UText>)>,
+    u_sliders: Query<Entity, (With<USlider>, Without<VSlider>)>,
+    v_sliders: Query<Entity, (With<VSlider>, Without<USlider>)>,
+    mut commands: Commands,
 ) {
     for evt in event_reader.read() {
         state.apply(evt.clone());
-        let mut u_text = u_text.single_mut().unwrap();
-        let mut v_text = v_text.single_mut().unwrap();
 
-        *u_text = Text3d::new(format!("U: {:.2}", state.u));
-        *v_text = Text3d::new(format!("V: {:.2}", state.v));
+        for u_slider in u_sliders {
+            if let Ok(mut slider) = commands.get_entity(u_slider) {
+                slider.trigger(SliderValueChangeEvent::new(state.u as f32));
+            }
+        }
+
+        for v_slider in v_sliders {
+            if let Ok(mut slider) = commands.get_entity(v_slider) {
+                slider.trigger(SliderValueChangeEvent::new(state.v as f32));
+            }
+        }
     }
+}
+
+fn handle_ui_updates(
+    mut writer: EventWriter<SurfaceClickChangeset>,
+    u_slider: Query<&UiSlider, (Changed<UiSlider>, With<USlider>, Without<VSlider>)>,
+    v_slider: Query<&UiSlider, (Changed<UiSlider>, With<VSlider>, Without<USlider>)>,
+) {
+    let mut patch = SurfaceClickChangeset { u: None, v: None };
+
+    for slider in u_slider {
+        patch.u = Some(slider.get() as f64);
+    }
+
+    for slider in v_slider {
+        patch.v = Some(slider.get() as f64);
+    }
+
+    writer.write(patch);
 }
 
 pub struct UiPlugin;
@@ -372,6 +342,6 @@ impl Plugin for UiPlugin {
         });
         app.add_systems(Startup, build_ui);
         app.add_systems(Update, follow_camera.chain());
-        app.add_systems(PostUpdate, handle_ui_state_change);
+        app.add_systems(PostUpdate, (handle_ui_state_change, handle_ui_updates));
     }
 }

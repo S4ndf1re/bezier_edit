@@ -10,8 +10,50 @@ use bevy_lunex::{Rl, UiColor, UiDepth, UiLayout, UiMeshPlane3d, prelude::*};
 
 use crate::picking3d::picking_3d::Picking3dInteractable;
 
+#[derive(Event)]
+pub struct SliderValueChangeEvent {
+    new_value: f32,
+}
+impl SliderValueChangeEvent {
+    pub fn new(new_value: f32) -> Self {
+        Self { new_value }
+    }
+}
+
 #[derive(Component)]
 struct SliderBackground;
+
+fn slider_value_change(
+    trigger: Trigger<SliderValueChangeEvent>,
+    mut slider: Query<(&mut UiSlider, &Children)>,
+    slider_background: Query<Entity, With<SliderBackground>>,
+    mut commands: Commands,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut text3d: Query<&mut Text3d>,
+) {
+    if let Ok((mut slider, children)) = slider.get_mut(trigger.target()) {
+        slider.set(trigger.new_value);
+
+        for child in children {
+            if let Ok(entity) = slider_background.get(*child) {
+                commands.get_entity(entity).unwrap().despawn();
+            }
+        }
+
+        commands
+            .get_entity(trigger.target())
+            .unwrap()
+            .with_children(|ui| {
+                spawn_background(ui, slider.as_ref(), &mut materials);
+            });
+
+        if let Some(entity) = slider.slider_text
+            && let Ok(mut text) = text3d.get_mut(entity)
+        {
+            *text = Text3d::new(format!("{}: {:.2}", slider.text_prefix, slider.get()));
+        }
+    }
+}
 
 fn slider_drag(
     trigger: Trigger<Pointer<Drag>>,
@@ -42,7 +84,7 @@ fn slider_drag(
         if let Some(entity) = slider.slider_text
             && let Ok(mut text) = text3d.get_mut(entity)
         {
-            *text = Text3d::new(format!("{:.2}", slider.get()))
+            *text = Text3d::new(format!("{}: {:.2}", slider.text_prefix, slider.get()));
         }
     }
 }
@@ -124,7 +166,7 @@ fn spawn_children<'s>(
                     .anchor(Anchor::Center)
                     .pack(),
                 UiColor::from(Color::WHITE),
-                Text3d::new(format!("{value:.2}")),
+                Text3d::new(format!("{}: {value:.2}", slider.text_prefix)),
                 Text3dStyling {
                     size: 64.0,
                     color: Srgba::new(1., 1., 1., 1.),
@@ -162,7 +204,8 @@ fn on_add(
                 .with_children(|ui| {
                     spawn_children(ui, slider.as_mut(), &mut materials);
                 })
-                .observe(slider_drag);
+                .observe(slider_drag)
+                .observe(slider_value_change);
         }
     }
 }
@@ -170,6 +213,7 @@ fn on_add(
 #[derive(Component)]
 #[require(Visibility)]
 pub struct UiSlider {
+    text_prefix: String,
     min_value: f32,
     max_value: f32,
     value: f32,
@@ -177,8 +221,9 @@ pub struct UiSlider {
 }
 
 impl UiSlider {
-    pub fn new(min_value: f32, max_value: f32) -> Self {
+    pub fn new(text_prefix: String, min_value: f32, max_value: f32) -> Self {
         Self {
+            text_prefix,
             min_value,
             max_value,
             value: 0.0,

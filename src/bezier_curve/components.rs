@@ -1,9 +1,6 @@
 use bevy::prelude::*;
 
 #[derive(Component)]
-pub struct SurfaceClick(pub f64, pub f64);
-
-#[derive(Component)]
 pub struct RenderPoint(pub usize, pub usize);
 
 #[derive(Component)]
