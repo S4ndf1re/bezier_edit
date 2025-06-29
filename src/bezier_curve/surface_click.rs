@@ -102,6 +102,7 @@ pub fn bezier_surface_picking(
             ui_state_writer.write(UiStateChangeset {
                 u: Some(u),
                 v: Some(v),
+                ..Default::default()
             });
         }
     }

@@ -1,3 +1,4 @@
+pub mod button;
 pub mod slider;
 
 use std::sync::Arc;
@@ -9,10 +10,14 @@ use bevy::{
     sprite::Anchor,
 };
 use bevy_lunex::{UiStateTrait, prelude::*};
+use button::{ButtonPlugin, UiButton};
 use slider::{SliderPlugin, SliderValueChangeEvent, UiSlider};
 use struct_patch::Patch;
 
-use crate::bezier_curve::{render_info::RenderInformation, surface_click::SurfaceClickChangeset};
+use crate::bezier_curve::{
+    render_info::RenderInformation, surface_click::SurfaceClickChangeset,
+    util::CurvatureDisplayMode,
+};
 
 #[derive(Component)]
 struct USlider;
@@ -21,10 +26,11 @@ struct USlider;
 struct VSlider;
 
 #[derive(Resource, Default, Patch)]
-#[patch(name = "UiStateChangeset", attribute(derive(Event, Clone)))]
+#[patch(name = "UiStateChangeset", attribute(derive(Event, Clone, Default)))]
 pub struct UiState {
     u: f64,
     v: f64,
+    curvature_mode: CurvatureDisplayMode,
 }
 
 fn spawn_background<'a>(
@@ -49,10 +55,7 @@ fn spawn_background<'a>(
     ))
 }
 
-fn spawn_lock_buttons(
-    ui: &mut RelatedSpawnerCommands<'_, ChildOf>,
-    materials: &mut Assets<StandardMaterial>,
-) {
+fn spawn_lock_buttons(ui: &mut RelatedSpawnerCommands<'_, ChildOf>) {
     ui.spawn((
         Name::new("Button Background Lock"),
         UiLayout::window()
@@ -60,55 +63,10 @@ fn spawn_lock_buttons(
             .size((Rw(40.0), Rh(90.0)))
             .anchor(Anchor::Center)
             .pack(),
-        OnHoverSetCursor::new(bevy::window::SystemCursorIcon::Pointer),
     ))
     .with_children(|ui| {
-        ui.spawn((
-            UiLayout::solid().size(Rl(100.0)).pack(),
-            UiHover::new().forward_speed(20.0).backward_speed(4.0),
-            UiMeshPlane3d,
-        ))
-        .with_children(|ui| {
-            ui.spawn((
-                Name::new("Button Lock"),
-                UiLayout::new(vec![
-                    (UiBase::id(), UiLayout::window().full()),
-                    (
-                        UiHover::id(),
-                        UiLayout::window()
-                            .anchor(Anchor::Center)
-                            .pos(Rl(50.0))
-                            .size(Rl(120.0)),
-                    ),
-                ]),
-                UiHover::new().forward_speed(20.0).backward_speed(4.0),
-                UiColor::new(vec![
-                    (UiBase::id(), Color::WHITE),
-                    (UiHover::id(), RED_600.with_alpha(1.2).into()),
-                ]),
-                Text3d::new("Lock"),
-                Text3dStyling {
-                    size: 64.0,
-                    color: Srgba::new(1., 1., 1., 1.),
-                    align: TextAlign::Center,
-                    font: Arc::from("Rajdhani"),
-                    weight: Weight::BOLD,
-                    ..Default::default()
-                },
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
-                    alpha_mode: AlphaMode::Blend,
-                    unlit: true,
-                    ..Default::default()
-                })),
-                Mesh3d::default(),
-                // OnHoverSetCursor::new(SystemCursorIcon::Pointer),
-                Pickable::IGNORE,
-            ));
-        });
-    })
-    .observe(hover_set::<Pointer<Over>, true>)
-    .observe(hover_set::<Pointer<Out>, false>);
+        ui.spawn(UiButton::new("Lock".to_owned()));
+    });
 
     ui.spawn((
         Name::new("Button Background Unlock"),
@@ -117,55 +75,10 @@ fn spawn_lock_buttons(
             .size((Rw(40.0), Rh(90.0)))
             .anchor(Anchor::Center)
             .pack(),
-        OnHoverSetCursor::new(bevy::window::SystemCursorIcon::Pointer),
     ))
     .with_children(|ui| {
-        ui.spawn((
-            UiLayout::window().full().pack(),
-            UiHover::new().forward_speed(20.0).backward_speed(4.0),
-            UiMeshPlane3d,
-        ))
-        .with_children(|ui| {
-            ui.spawn((
-                Name::new("Button Unlock"),
-                UiLayout::new(vec![
-                    (UiBase::id(), UiLayout::window().full()),
-                    (
-                        UiHover::id(),
-                        UiLayout::window()
-                            .anchor(Anchor::Center)
-                            .pos(Rl(50.0))
-                            .size(Rl(120.0)),
-                    ),
-                ]),
-                UiHover::new().forward_speed(20.0).backward_speed(4.0),
-                UiColor::new(vec![
-                    (UiBase::id(), Color::WHITE),
-                    (UiHover::id(), RED_600.with_alpha(1.2).into()),
-                ]),
-                Text3d::new("Unlock"),
-                Text3dStyling {
-                    size: 64.0,
-                    color: Srgba::new(1., 1., 1., 1.),
-                    align: TextAlign::Center,
-                    font: Arc::from("Rajdhani"),
-                    weight: Weight::BOLD,
-                    ..Default::default()
-                },
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
-                    alpha_mode: AlphaMode::Blend,
-                    unlit: true,
-                    ..Default::default()
-                })),
-                Mesh3d::default(),
-                // OnHoverSetCursor::new(SystemCursorIcon::Pointer),
-                Pickable::IGNORE,
-            ));
-        });
-    })
-    .observe(hover_set::<Pointer<Over>, true>)
-    .observe(hover_set::<Pointer<Out>, false>);
+        ui.spawn(UiButton::new("Unlock".to_owned()));
+    });
 }
 
 fn spawn_uv_control(
@@ -201,11 +114,7 @@ fn spawn_uv_control(
     });
 }
 
-fn spawn_layouted(
-    ui: &mut RelatedSpawnerCommands<'_, ChildOf>,
-    ui_state: ResMut<UiState>,
-    materials: &mut Assets<StandardMaterial>,
-) {
+fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: ResMut<UiState>) {
     ui.spawn((
         Name::new("Layout First"),
         UiLayout::window()
@@ -214,7 +123,7 @@ fn spawn_layouted(
             .anchor(Anchor::TopLeft)
             .pack(),
     ))
-    .with_children(|ui| spawn_lock_buttons(ui, materials));
+    .with_children(spawn_lock_buttons);
 
     ui.spawn((
         Name::new("Layout Second"),
@@ -258,7 +167,7 @@ fn build_ui(
         ))
         .with_children(|ui| {
             spawn_background(ui, materials.as_mut()); // spawn_text(ui, materials.as_mut());
-            spawn_layouted(ui, ui_state, materials.as_mut());
+            spawn_layouted(ui, ui_state);
         });
 }
 
@@ -334,7 +243,7 @@ pub struct UiPlugin;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(UiLunexPlugins); // , UiLunexDebugPlugin::<0, 0>));
-        app.add_plugins(SliderPlugin);
+        app.add_plugins((SliderPlugin, ButtonPlugin));
         app.add_event::<UiStateChangeset>();
         app.init_resource::<UiState>();
         app.insert_resource(LoadFonts {
