@@ -7,7 +7,6 @@ use crate::picking3d::pointer_state::Pointer3dState;
 use crate::vr_control::trigger::{ControllerSqueeze, ControllerTrigger};
 use crate::vr_control::{AimLeft, AimRight, GripLeft, GripRight};
 use bevy::color::palettes::css::POWDER_BLUE;
-use bevy::log::tracing::instrument::WithSubscriber;
 use bevy::math::Vec3;
 use bevy::math::bounding::{BoundingSphere, IntersectsVolume};
 use bevy::prelude::*;
@@ -33,7 +32,7 @@ struct MoveMarker {
 fn check_intersections(
     mut commands: Commands,
     // mut event_writer: EventWriter<Intersection>,
-    controls_points: Query<
+    pickable: Query<
         (&GlobalTransform, Entity, Option<&Picking3dTranslation>),
         (
             With<Picking3dInteractable>,
@@ -43,14 +42,25 @@ fn check_intersections(
     >,
     left_tracked: Single<(&GlobalTransform, Entity), With<GripLeft>>,
     right_tracked: Single<(&GlobalTransform, Entity), With<GripRight>>,
+    aim_lines: Query<(&GlobalTransform, &AimLineMarker)>,
     res_scale: Res<RenderInformation>,
     mut state: ResMut<PickingState>,
+    mut mesh_ray_casting: MeshRayCast,
 ) {
     let scale = res_scale.scale;
     let bb_sphere_left = BoundingSphere::new(left_tracked.0.translation(), 0.1 * scale);
     let bb_sphere_right = BoundingSphere::new(right_tracked.0.translation(), 0.1 * scale);
+    let mut left_aim = None;
+    let mut right_aim = None;
 
-    for p in controls_points {
+    for aim in aim_lines {
+        match aim.1.0 {
+            HoveredBy::Left => left_aim = Some(aim),
+            HoveredBy::Right => right_aim = Some(aim),
+        }
+    }
+
+    for p in pickable {
         let test = if p.2.is_some() {
             BoundingSphere::new(p.0.transform_point(p.2.unwrap().0), 0.1 * scale)
         } else {
@@ -79,7 +89,7 @@ fn check_intersections(
                 commands.trigger_targets(
                     Pointer3d {
                         position: right_tracked.0.translation(),
-                        hit_entity: p.1,
+                        hit_entity: right_tracked.1,
                         event: MoveIn,
                         controler: HoveredBy::Right,
                     },
@@ -89,6 +99,35 @@ fn check_intersections(
             state.ensure_inserted(p.1, HoveredBy::Right);
         }
     }
+
+    for (aim, tracked, hovered_by) in [
+        (left_aim, left_tracked.1, HoveredBy::Left),
+        (right_aim, right_tracked.1, HoveredBy::Right),
+    ] {
+        if let Some(aim) = aim {
+            let ray = Ray3d::new(aim.0.translation(), aim.0.forward());
+            let collisions = mesh_ray_casting
+                .cast_ray(ray, &Default::default())
+                .iter()
+                .filter(|hit| pickable.get(hit.0).is_ok())
+                .collect::<Vec<_>>();
+
+            if let Some(collision) = collisions.first() {
+                if !state.contains_entity_and_controller(&collision.0, &hovered_by) {
+                    commands.trigger_targets(
+                        Pointer3d {
+                            position: collision.1.point,
+                            hit_entity: tracked,
+                            event: MoveIn,
+                            controler: hovered_by,
+                        },
+                        collision.0,
+                    );
+                }
+                state.ensure_inserted(collision.0, hovered_by);
+            }
+        }
+    }
 }
 
 /// Test if all previously hovered elements are no longer hovered.
@@ -96,7 +135,7 @@ fn check_intersections(
 #[allow(clippy::complexity)]
 fn test_all_hovered(
     mut commands: Commands,
-    controls_points: Query<
+    pickable: Query<
         (&GlobalTransform, Entity, Option<&Picking3dTranslation>),
         (
             With<Picking3dInteractable>,
@@ -106,17 +145,28 @@ fn test_all_hovered(
     >,
     left_tracked: Single<(&GlobalTransform, Entity), With<GripLeft>>,
     right_tracked: Single<(&GlobalTransform, Entity), With<GripRight>>,
+    aim_lines: Query<(&GlobalTransform, &AimLineMarker)>,
     res_scale: Res<RenderInformation>,
     mut res_picked: ResMut<PickingState>,
+    mut mesh_ray_casting: MeshRayCast,
 ) {
     let scale = res_scale.scale;
     let bb_sphere_left = BoundingSphere::new(left_tracked.0.translation(), 0.1 * scale);
     let bb_sphere_right = BoundingSphere::new(right_tracked.0.translation(), 0.1 * scale);
+    let mut left_aim = None;
+    let mut right_aim = None;
+
+    for aim in aim_lines {
+        match aim.1.0 {
+            HoveredBy::Left => left_aim = Some(aim),
+            HoveredBy::Right => right_aim = Some(aim),
+        }
+    }
 
     let mut to_remove = Vec::new();
 
     for entity in &mut res_picked.iter_all() {
-        let p = controls_points.get(*entity);
+        let p = pickable.get(*entity);
         if p.is_err() {
             to_remove.push((*entity, HoveredBy::Left));
             to_remove.push((*entity, HoveredBy::Right));
@@ -130,11 +180,43 @@ fn test_all_hovered(
             BoundingSphere::new(p.0.translation(), 0.1 * scale)
         };
 
-        if !bb_sphere_left.intersects(&test) {
+        let mut is_first_ray_hit = false;
+        if let Some(aim) = left_aim {
+            let ray = Ray3d::new(aim.0.translation(), aim.0.forward());
+
+            let collisions = mesh_ray_casting
+                .cast_ray(ray, &Default::default())
+                .iter()
+                .filter(|hit| pickable.get(hit.0).is_ok())
+                .collect::<Vec<_>>();
+
+            if let Some(hit) = collisions.first()
+                && hit.0 == p.1
+            {
+                is_first_ray_hit = true;
+            }
+        }
+        if !bb_sphere_left.intersects(&test) && !is_first_ray_hit {
             to_remove.push((p.1, HoveredBy::Left));
         }
 
-        if !bb_sphere_right.intersects(&test) {
+        let mut is_first_ray_hit = false;
+        if let Some(aim) = right_aim {
+            let ray = Ray3d::new(aim.0.translation(), aim.0.forward());
+
+            let collisions = mesh_ray_casting
+                .cast_ray(ray, &Default::default())
+                .iter()
+                .filter(|hit| pickable.get(hit.0).is_ok())
+                .collect::<Vec<_>>();
+
+            if let Some(hit) = collisions.first()
+                && hit.0 == p.1
+            {
+                is_first_ray_hit = true;
+            }
+        }
+        if !bb_sphere_right.intersects(&test) && !is_first_ray_hit {
             to_remove.push((p.1, HoveredBy::Right));
         }
     }
