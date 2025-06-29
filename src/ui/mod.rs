@@ -310,6 +310,7 @@ fn handle_ui_state_change(
     }
 }
 
+#[allow(clippy::complexity)]
 fn handle_ui_updates(
     mut writer: EventWriter<SurfaceClickChangeset>,
     u_slider: Query<&UiSlider, (Changed<UiSlider>, With<USlider>, Without<VSlider>)>,
