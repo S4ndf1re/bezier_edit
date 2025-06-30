@@ -14,6 +14,9 @@ use bevy::prelude::*;
 #[derive(Component)]
 pub struct AimLineMarker(HoveredBy);
 
+#[derive(Component)]
+pub struct AimLineRayMarker;
+
 /// Component to shift picking center according the the later found global transpose
 #[derive(Component, Clone, Copy)]
 pub struct Picking3dTranslation(pub Vec3);
@@ -33,7 +36,7 @@ fn check_intersections(
     mut commands: Commands,
     // mut event_writer: EventWriter<Intersection>,
     pickable: Query<
-        (&GlobalTransform, Entity, Option<&Picking3dTranslation>),
+        (&GlobalTransform, Entity),
         (
             With<Picking3dInteractable>,
             Without<GripLeft>,
@@ -61,11 +64,7 @@ fn check_intersections(
     }
 
     for p in pickable {
-        let test = if p.2.is_some() {
-            BoundingSphere::new(p.0.transform_point(p.2.unwrap().0), 0.1 * scale)
-        } else {
-            BoundingSphere::new(p.0.translation(), 0.1 * scale)
-        };
+        let test = BoundingSphere::new(p.0.translation(), 0.1 * scale);
 
         if bb_sphere_left.intersects(&test) {
             // event_writer.write(Intersection::Left(p.1));
@@ -106,21 +105,15 @@ fn check_intersections(
     ] {
         if let Some(aim) = aim {
             let ray = Ray3d::new(aim.0.translation(), aim.0.forward());
-            let collisions = mesh_ray_casting
-                .cast_ray(
-                    ray,
-                    &MeshRayCastSettings {
-                        filter: &|entity| pickable.get(entity).is_ok(),
-                        ..Default::default()
-                    }
-                    .with_visibility(RayCastVisibility::Any)
-                    .never_early_exit(),
-                )
-                .iter()
-                // .filter(|hit| pickable.get(hit.0).is_ok())
-                .collect::<Vec<_>>();
-
-            println!("Collisions: {:?}", collisions);
+            let collisions = mesh_ray_casting.cast_ray(
+                ray,
+                &MeshRayCastSettings {
+                    filter: &|entity| pickable.get(entity).is_ok(),
+                    ..Default::default()
+                }
+                .with_visibility(RayCastVisibility::Any)
+                .always_early_exit(),
+            );
 
             for collision in collisions.iter() {
                 if !state.contains_entity_and_controller(&collision.0, &hovered_by) {
@@ -194,19 +187,15 @@ fn test_all_hovered(
         if let Some(aim) = left_aim {
             let ray = Ray3d::new(aim.0.translation(), aim.0.forward());
 
-            let collisions = mesh_ray_casting
-                .cast_ray(
-                    ray,
-                    &MeshRayCastSettings {
-                        filter: &|entity| pickable.get(entity).is_ok(),
-                        ..Default::default()
-                    }
-                    .with_visibility(RayCastVisibility::Any)
-                    .never_early_exit(),
-                )
-                .iter()
-                // .filter(|hit| pickable.get(hit.0).is_ok())
-                .collect::<Vec<_>>();
+            let collisions = mesh_ray_casting.cast_ray(
+                ray,
+                &MeshRayCastSettings {
+                    filter: &|entity| pickable.get(entity).is_ok(),
+                    ..Default::default()
+                }
+                .with_visibility(RayCastVisibility::Any)
+                .never_early_exit(),
+            );
 
             if let Some(hit) = collisions.iter().position(|entity| entity.0 == p.1) {
                 is_first_ray_hit = true;
@@ -220,19 +209,15 @@ fn test_all_hovered(
         if let Some(aim) = right_aim {
             let ray = Ray3d::new(aim.0.translation(), aim.0.forward());
 
-            let collisions = mesh_ray_casting
-                .cast_ray(
-                    ray,
-                    &MeshRayCastSettings {
-                        filter: &|entity| pickable.get(entity).is_ok(),
-                        ..Default::default()
-                    }
-                    .with_visibility(RayCastVisibility::Any)
-                    .never_early_exit(),
-                )
-                .iter()
-                // .filter(|hit| pickable.get(hit.0).is_ok())
-                .collect::<Vec<_>>();
+            let collisions = mesh_ray_casting.cast_ray(
+                ray,
+                &MeshRayCastSettings {
+                    filter: &|entity| pickable.get(entity).is_ok(),
+                    ..Default::default()
+                }
+                .with_visibility(RayCastVisibility::Any)
+                .never_early_exit(),
+            );
 
             if let Some(hit) = collisions.iter().position(|entity| entity.0 == p.1) {
                 is_first_ray_hit = true;
@@ -336,8 +321,6 @@ fn handle_input_grab(
                     commands.spawn((
                         ChildOf(tracked.1),
                         Transform::from_translation(dist),
-                        // Mesh3d::from(meshes.add(Sphere::new(0.01))),
-                        // MeshMaterial3d::from(materials.add(Color::from(BLUE_300))),
                         Visibility::default(),
                         MoveMarker {
                             entity: *entity,
@@ -387,6 +370,78 @@ fn handle_input_grab(
     }
 }
 
+pub fn update_aim_line(
+    mut aim_ray: Query<(Entity, &ChildOf), (With<AimLineRayMarker>, Without<AimLineMarker>)>,
+    aim_query_left: Query<&GlobalTransform, With<AimLeft>>,
+    aim_query_right: Query<&GlobalTransform, With<AimRight>>,
+    mut aim_line: Query<
+        (&mut Transform, &AimLineMarker),
+        (Without<AimLineRayMarker>, Without<Mesh3d>),
+    >,
+    mut set: ParamSet<(
+        ResMut<Assets<Mesh>>,
+        MeshRayCast,
+        Query<(&mut Transform, &mut Mesh3d)>,
+    )>,
+    scale: Res<RenderInformation>,
+) {
+    for (ray_entity, ray) in aim_ray.iter_mut() {
+        if let Ok(mut line) = aim_line.get_mut(ray.parent()) {
+            if line.1.0 == HoveredBy::Left
+                && let Ok(left) = aim_query_left.single()
+            {
+                *line.0 = left.compute_transform();
+                let ray = Ray3d::new(left.translation(), left.forward());
+                let length = {
+                    let mut mesh_ray_cast = set.p1();
+                    let hits = mesh_ray_cast.cast_ray(ray, &Default::default());
+                    if !hits.is_empty() {
+                        hits[0].1.distance
+                    } else {
+                        1000.0 // simulate infinity
+                    }
+                };
+
+                let mesh3d = Mesh3d::from(set.p0().add(Cylinder::new(0.01 * scale.scale, length)));
+                if let Ok((mut transform, mut mesh)) = set.p2().get_mut(ray_entity) {
+                    *mesh = mesh3d;
+                    *transform = Transform::from_xyz(
+                        -0.005 * scale.scale,
+                        -0.005 * scale.scale,
+                        -length / 2.0,
+                    );
+                }
+            }
+
+            if line.1.0 == HoveredBy::Right
+                && let Ok(right) = aim_query_right.single()
+            {
+                *line.0 = right.compute_transform();
+                let ray = Ray3d::new(right.translation(), right.forward());
+                let length = {
+                    let mut mesh_ray_cast = set.p1();
+                    let hits = mesh_ray_cast.cast_ray(ray, &Default::default());
+                    if !hits.is_empty() {
+                        hits[0].1.distance
+                    } else {
+                        1000.0 // simulate infinity
+                    }
+                };
+
+                let mesh3d = Mesh3d::from(set.p0().add(Cylinder::new(0.01 * scale.scale, length)));
+                if let Ok((mut transform, mut mesh)) = set.p2().get_mut(ray_entity) {
+                    *mesh = mesh3d;
+                    *transform = Transform::from_xyz(
+                        -0.005 * scale.scale,
+                        -0.005 * scale.scale,
+                        -length / 2.0,
+                    );
+                }
+            }
+        }
+    }
+}
+
 #[allow(clippy::complexity)]
 pub fn show_aim(
     mut commands: Commands,
@@ -399,7 +454,11 @@ pub fn show_aim(
     scale: Res<RenderInformation>,
 ) {
     for line in aim_line {
-        commands.get_entity(line.0).unwrap().despawn();
+        if line.1.0 == HoveredBy::Left && squeeze.left <= 0.2
+            || line.1.0 == HoveredBy::Right && squeeze.right <= 0.2
+        {
+            commands.get_entity(line.0).unwrap().despawn();
+        }
     }
 
     for (squeeze, aim_query, hovered_by) in [
@@ -408,23 +467,24 @@ pub fn show_aim(
     ] {
         if squeeze >= 0.2
             && let Ok(aim) = aim_query
+            && aim_line
+                .iter()
+                .position(|line| line.1.0 == hovered_by)
+                .is_none()
         {
             let ray = Ray3d::new(aim.translation(), aim.forward());
             let length = {
                 let mut mesh_ray_cast = set.p1();
                 let hits = mesh_ray_cast.cast_ray(ray, &Default::default());
-                // if !hits.is_empty() {
-                //     hits[0].1.distance
-                // } else {
-                //     1000.0 // simulate infinity
-                // }
-                1000.0
+                if !hits.is_empty() {
+                    hits[0].1.distance
+                } else {
+                    1000.0 // simulate infinity
+                }
             };
 
             let material = materials.add(Color::from(POWDER_BLUE));
-            let mesh = set
-                .p0()
-                .add(Cuboid::new(0.01 * scale.scale, 0.01 * scale.scale, length));
+            let mesh = set.p0().add(Cylinder::new(0.01 * scale.scale, length));
 
             commands
                 .spawn((
@@ -434,9 +494,14 @@ pub fn show_aim(
                 ))
                 .with_children(|ui| {
                     ui.spawn((
-                        Transform::from_xyz(-0.005, -0.005, -length / 2.0),
+                        Transform::from_xyz(
+                            -0.005 * scale.scale,
+                            -0.005 * scale.scale,
+                            -length / 2.0,
+                        ),
                         Mesh3d(mesh),
                         MeshMaterial3d(material),
+                        AimLineRayMarker,
                     ));
                 });
         }
@@ -447,10 +512,11 @@ pub struct ObjectPicking3d;
 
 impl Plugin for ObjectPicking3d {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (handle_input_grab, show_aim))
+        app.add_systems(Update, (handle_input_grab, update_aim_line))
             .add_systems(PostUpdate, check_intersections)
             .add_systems(PostUpdate, test_all_hovered)
             .add_systems(PostUpdate, tick)
+            .add_systems(PostUpdate, show_aim)
             .add_event::<Pointer3d<Click>>()
             .add_event::<Pointer3d<MoveIn>>()
             .add_event::<Pointer3d<MoveOut>>()
