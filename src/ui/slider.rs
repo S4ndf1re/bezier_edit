@@ -60,41 +60,16 @@ fn slider_value_change(
     }
 }
 
-#[allow(clippy::complexity)]
 fn slider_drag(
     trigger: Trigger<Pointer<Drag>>,
-    camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut slider: Query<(&mut UiSlider, &Children)>,
     slider_background: Query<Entity, With<SliderBackground>>,
     mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut text3d: Query<&mut Text3d>,
-    root: Query<&GlobalTransform, With<UiLayoutRoot>>,
 ) {
-    let (camera, camera_transform) = camera.single().unwrap();
-
     if let Ok((mut slider, children)) = slider.get_mut(trigger.target()) {
-        let diff = {
-            let mouse_start = camera
-                .viewport_to_world(
-                    camera_transform,
-                    trigger.pointer_location.position - trigger.delta,
-                )
-                .unwrap();
-
-            let mouse_end = camera
-                .viewport_to_world(camera_transform, trigger.pointer_location.position)
-                .unwrap();
-
-            let start = mouse_start.get_point(1.0);
-            let end = mouse_end.get_point(1.0);
-            end - start
-        };
-
-        let axis = root.single().unwrap().right().as_vec3();
-        let direction = (diff.dot(axis)) / (diff.length() * axis.length());
-
-        let delta_x = direction * diff.length() * 10.0;
+        let delta_x = trigger.event().delta.x * 0.01;
         let old_value = slider.get();
         slider.set(old_value + delta_x);
 

@@ -1,4 +1,5 @@
 use super::components::*;
+use super::curvature_display_mode::{ChangeCurvatureDisplayModeEvent, handle_change_curvature};
 use super::render_info::RenderInformation;
 use super::surface_click::{
     SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
@@ -6,16 +7,13 @@ use super::surface_click::{
 use super::util::{collect_control_points, create_mesh_from_control_points};
 use crate::RootTransform;
 use crate::history::plugin::HistoryUndoEvent;
-use crate::nurbs::bezier_plane::{
-    ControlPoints2D, derive_2d, determine_u_v, eval_2d_bezier_curves,
-};
+use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
 use crate::nurbs::point::Point;
 use crate::picking3d::events;
 use crate::picking3d::events::Pointer3d;
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::solver::{C1Constraint, Constraints, Solver};
 use crate::translation_control::translation_controller::EnableTranslationControl;
-use crate::ui::UiStateChangeset;
 use crate::util::update_material_on;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
@@ -23,7 +21,6 @@ use bevy::color::palettes::tailwind::*;
 use bevy::prelude::*;
 use bevy::render::mesh::PrimitiveTopology;
 use num::ToPrimitive;
-use std::collections::HashMap;
 
 pub type Resolution = (u32, u32);
 
@@ -456,8 +453,8 @@ fn handle_keyboard(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut toggle_writer: EventWriter<ToggleC1Enable>,
     mut history: EventWriter<HistoryUndoEvent>,
-    mut renderinfo: ResMut<RenderInformation>,
-    mut redraw: EventWriter<RedrawEvent>,
+    mut change_curvature: EventWriter<ChangeCurvatureDisplayModeEvent>,
+    renderinfo: Res<RenderInformation>,
 ) {
     if keyboard.just_released(KeyCode::Space) {
         toggle_writer.write(ToggleC1Enable);
@@ -468,8 +465,9 @@ fn handle_keyboard(
     }
 
     if keyboard.just_released(KeyCode::KeyC) {
-        renderinfo.curvature_mode = renderinfo.curvature_mode.next();
-        redraw.write(RedrawEvent::HighQuality);
+        change_curvature.write(ChangeCurvatureDisplayModeEvent(
+            renderinfo.curvature_mode.next(),
+        ));
     }
 }
 
@@ -487,10 +485,15 @@ impl Plugin for BezierRenderPlugin {
         ); // , listen_to_mouse_left_button));
         app.add_systems(
             PostUpdate,
-            (handle_c1_points_events, handle_state_change_event),
+            (
+                handle_c1_points_events,
+                handle_state_change_event,
+                handle_change_curvature,
+            ),
         );
         app.init_resource::<ConstraintState>();
         app.add_event::<ToggleC1Enable>();
         app.add_event::<SurfaceClickChangeset>();
+        app.add_event::<ChangeCurvatureDisplayModeEvent>();
     }
 }

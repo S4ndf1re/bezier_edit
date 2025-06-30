@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use super::{bezier_curve_renderer::Resolution, util::CurvatureDisplayMode};
+use super::{bezier_curve_renderer::Resolution, curvature_display_mode::CurvatureDisplayMode};
 
 #[derive(Resource)]
 pub struct RenderInformation {

@@ -15,7 +15,10 @@ use super::{
 };
 
 #[derive(Component, Patch)]
-#[patch(name = "SurfaceClickChangeset", attribute(derive(Event, Clone)))]
+#[patch(
+    name = "SurfaceClickChangeset",
+    attribute(derive(Event, Clone, Default))
+)]
 pub struct SurfaceClick {
     pub u: f64,
     pub v: f64,

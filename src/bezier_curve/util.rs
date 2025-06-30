@@ -13,37 +13,7 @@ use crate::nurbs::point::Point;
 
 use super::bezier_curve_renderer::Resolution;
 use super::components::RenderPoint;
-
-#[derive(Clone, Copy, Ord, Eq, PartialEq, PartialOrd, Default)]
-pub enum CurvatureDisplayMode {
-    #[default]
-    None,
-    U,
-    V,
-    Both,
-}
-
-impl CurvatureDisplayMode {
-    pub fn next(self) -> Self {
-        match self {
-            Self::None => Self::U,
-            Self::U => Self::V,
-            Self::V => Self::Both,
-            Self::Both => Self::None,
-        }
-    }
-}
-
-impl Display for CurvatureDisplayMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CurvatureDisplayMode::None => write!(f, "None"),
-            CurvatureDisplayMode::U => write!(f, "U"),
-            CurvatureDisplayMode::V => write!(f, "V"),
-            CurvatureDisplayMode::Both => write!(f, "Both"),
-        }
-    }
-}
+use super::curvature_display_mode::CurvatureDisplayMode;
 
 pub struct ComputationResultBezierSurface {
     pub u: u32,

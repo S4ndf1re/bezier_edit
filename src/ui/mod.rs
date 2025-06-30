@@ -10,13 +10,14 @@ use bevy::{
     sprite::Anchor,
 };
 use bevy_lunex::{UiStateTrait, prelude::*};
-use button::{ButtonPlugin, UiButton};
-use slider::{SliderPlugin, SliderValueChangeEvent, UiSlider};
+use button::{ButtonPlugin, ChangeTextEvent, UiButton};
+use slider::{ChangeSliderValueEvent, SliderPlugin, SliderValueChangedEvent, UiSlider};
 use struct_patch::Patch;
 
 use crate::bezier_curve::{
-    render_info::RenderInformation, surface_click::SurfaceClickChangeset,
-    util::CurvatureDisplayMode,
+    curvature_display_mode::{ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode},
+    render_info::RenderInformation,
+    surface_click::SurfaceClickChangeset,
 };
 
 #[derive(Component)]
@@ -65,7 +66,7 @@ fn spawn_lock_buttons(ui: &mut RelatedSpawnerCommands<'_, ChildOf>) {
             .pack(),
     ))
     .with_children(|ui| {
-        ui.spawn(UiButton::new("Lock".to_owned()));
+        ui.spawn(UiButton::new("Lock".to_owned(), 6, Rl(100.0)));
     });
 
     ui.spawn((
@@ -77,14 +78,11 @@ fn spawn_lock_buttons(ui: &mut RelatedSpawnerCommands<'_, ChildOf>) {
             .pack(),
     ))
     .with_children(|ui| {
-        ui.spawn(UiButton::new("Unlock".to_owned()));
+        ui.spawn(UiButton::new("Unlock".to_owned(), 6, Rl(100.0)));
     });
 }
 
-fn spawn_uv_control(
-    ui: &mut RelatedSpawnerCommands<'_, ChildOf>,
-    #[allow(unused)] ui_state: ResMut<UiState>,
-) {
+fn spawn_uv_control(ui: &mut RelatedSpawnerCommands<'_, ChildOf>) {
     ui.spawn((
         Name::new("U-Value"),
         UiLayout::window()
@@ -94,9 +92,19 @@ fn spawn_uv_control(
             .pack(),
     ))
     .with_children(|ui| {
-        let mut slider = UiSlider::new("U".to_owned(), 0.0, 1.0);
+        let mut slider = UiSlider::new("U".to_owned(), 0.0, 1.0, Rl((40.0, 100.0)));
         slider.set(0.5);
-        ui.spawn((slider, USlider));
+        ui.spawn((slider, USlider)).observe(
+            |trigger: Trigger<SliderValueChangedEvent>,
+             mut state: ResMut<UiState>,
+             mut writer: EventWriter<SurfaceClickChangeset>| {
+                state.u = trigger.value as f64;
+                writer.write(SurfaceClickChangeset {
+                    u: Some(state.u),
+                    ..Default::default()
+                });
+            },
+        );
     });
 
     ui.spawn((
@@ -108,9 +116,19 @@ fn spawn_uv_control(
             .pack(),
     ))
     .with_children(|ui| {
-        let mut slider = UiSlider::new("V".to_owned(), 0.0, 1.0);
+        let mut slider = UiSlider::new("V".to_owned(), 0.0, 1.0, Rl((40.0, 100.0)));
         slider.set(0.5);
-        ui.spawn((slider, VSlider));
+        ui.spawn((slider, VSlider)).observe(
+            |trigger: Trigger<SliderValueChangedEvent>,
+             mut state: ResMut<UiState>,
+             mut writer: EventWriter<SurfaceClickChangeset>| {
+                state.v = trigger.value as f64;
+                writer.write(SurfaceClickChangeset {
+                    v: Some(state.v),
+                    ..Default::default()
+                });
+            },
+        );
     });
 }
 
@@ -133,7 +151,7 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: ResMut
             .anchor(Anchor::TopLeft)
             .pack(),
     ))
-    .with_children(|ui| spawn_uv_control(ui, ui_state));
+    .with_children(spawn_uv_control);
 
     ui.spawn((
         Name::new("Layout Third"),
@@ -143,7 +161,25 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: ResMut
             .anchor(Anchor::TopLeft)
             .pack(),
     ))
-    .with_children(|ui| {});
+    .with_children(|ui| {
+        ui.spawn(UiButton::new(
+            format!("{}", &ui_state.curvature_mode),
+            4,
+            Rl((50.0, 100.0)),
+        ))
+        .observe(
+            |trigger: Trigger<Pointer<Click>>,
+             mut commands: Commands,
+             mut state: ResMut<UiState>,
+             mut writer: EventWriter<ChangeCurvatureDisplayModeEvent>| {
+                state.curvature_mode = state.curvature_mode.next();
+                if let Ok(mut entity) = commands.get_entity(trigger.target()) {
+                    entity.trigger(ChangeTextEvent::new(format!("{}", state.curvature_mode)));
+                }
+                writer.write(ChangeCurvatureDisplayModeEvent(state.curvature_mode));
+            },
+        );
+    });
 }
 
 fn build_ui(
@@ -207,35 +243,16 @@ fn handle_ui_state_change(
 
         for u_slider in u_sliders {
             if let Ok(mut slider) = commands.get_entity(u_slider) {
-                slider.trigger(SliderValueChangeEvent::new(state.u as f32));
+                slider.trigger(ChangeSliderValueEvent::new(state.u as f32));
             }
         }
 
         for v_slider in v_sliders {
             if let Ok(mut slider) = commands.get_entity(v_slider) {
-                slider.trigger(SliderValueChangeEvent::new(state.v as f32));
+                slider.trigger(ChangeSliderValueEvent::new(state.v as f32));
             }
         }
     }
-}
-
-#[allow(clippy::complexity)]
-fn handle_ui_updates(
-    mut writer: EventWriter<SurfaceClickChangeset>,
-    u_slider: Query<&UiSlider, (Changed<UiSlider>, With<USlider>, Without<VSlider>)>,
-    v_slider: Query<&UiSlider, (Changed<UiSlider>, With<VSlider>, Without<USlider>)>,
-) {
-    let mut patch = SurfaceClickChangeset { u: None, v: None };
-
-    for slider in u_slider {
-        patch.u = Some(slider.get() as f64);
-    }
-
-    for slider in v_slider {
-        patch.v = Some(slider.get() as f64);
-    }
-
-    writer.write(patch);
 }
 
 pub struct UiPlugin;
@@ -252,6 +269,6 @@ impl Plugin for UiPlugin {
         });
         app.add_systems(Startup, build_ui);
         app.add_systems(Update, follow_camera.chain());
-        app.add_systems(PostUpdate, (handle_ui_state_change, handle_ui_updates));
+        app.add_systems(PostUpdate, handle_ui_state_change);
     }
 }
