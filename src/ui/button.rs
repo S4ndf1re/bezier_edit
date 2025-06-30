@@ -5,7 +5,10 @@ use bevy::{
 };
 use bevy_lunex::{UiStateTrait, prelude::*};
 
-use crate::picking3d::picking_3d::Picking3dInteractable;
+use crate::picking3d::{self, events::Pointer3d, picking_3d::Picking3dInteractable};
+
+#[derive(Event)]
+pub struct ButtonClickedEvent;
 
 #[derive(Event)]
 pub struct ChangeTextEvent {
@@ -32,6 +35,18 @@ fn handle_change_text(
     }
 }
 
+fn button_clicked(trigger: Trigger<Pointer<Click>>, mut commands: Commands) {
+    if let Ok(mut entity) = commands.get_entity(trigger.target()) {
+        entity.trigger(ButtonClickedEvent);
+    }
+}
+
+fn button_clicked3d(trigger: Trigger<Pointer3d<picking3d::events::Click>>, mut commands: Commands) {
+    if let Ok(mut entity) = commands.get_entity(trigger.target()) {
+        entity.trigger(ButtonClickedEvent);
+    }
+}
+
 fn spawn_children<'s>(
     ui: &mut RelatedSpawnerCommands<'s, ChildOf>,
     button: &mut UiButton,
@@ -41,6 +56,7 @@ fn spawn_children<'s>(
         UiLayout::window().full().pack(),
         UiHover::new().forward_speed(20.0).backward_speed(4.0),
         UiMeshPlane3d,
+        Picking3dInteractable,
     ))
     .with_children(|ui| {
         ui.spawn((
@@ -117,6 +133,8 @@ fn on_add(
                 })
                 .observe(hover_set::<Pointer<Over>, true>)
                 .observe(hover_set::<Pointer<Out>, false>)
+                .observe(button_clicked)
+                .observe(button_clicked3d)
                 .observe(handle_change_text);
         }
     }

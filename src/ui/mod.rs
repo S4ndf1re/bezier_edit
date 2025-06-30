@@ -1,23 +1,22 @@
 pub mod button;
 pub mod slider;
 
-use std::sync::Arc;
-
 use bevy::{
-    color::palettes::tailwind::{GRAY_900, RED_600},
-    ecs::relationship::RelatedSpawnerCommands,
-    prelude::*,
+    color::palettes::tailwind::GRAY_900, ecs::relationship::RelatedSpawnerCommands, prelude::*,
     sprite::Anchor,
 };
 use bevy_lunex::{UiStateTrait, prelude::*};
-use button::{ButtonPlugin, ChangeTextEvent, UiButton};
+use button::{ButtonClickedEvent, ButtonPlugin, ChangeTextEvent, UiButton};
 use slider::{ChangeSliderValueEvent, SliderPlugin, SliderValueChangedEvent, UiSlider};
 use struct_patch::Patch;
 
-use crate::bezier_curve::{
-    curvature_display_mode::{ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode},
-    render_info::RenderInformation,
-    surface_click::SurfaceClickChangeset,
+use crate::{
+    bezier_curve::{
+        curvature_display_mode::{ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode},
+        render_info::RenderInformation,
+        surface_click::SurfaceClickChangeset,
+    },
+    history::plugin::HistoryUndoEvent,
 };
 
 #[derive(Component)]
@@ -162,23 +161,48 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: ResMut
             .pack(),
     ))
     .with_children(|ui| {
-        ui.spawn(UiButton::new(
-            format!("{}", &ui_state.curvature_mode),
-            4,
-            Rl((50.0, 100.0)),
-        ))
-        .observe(
-            |trigger: Trigger<Pointer<Click>>,
-             mut commands: Commands,
-             mut state: ResMut<UiState>,
-             mut writer: EventWriter<ChangeCurvatureDisplayModeEvent>| {
-                state.curvature_mode = state.curvature_mode.next();
-                if let Ok(mut entity) = commands.get_entity(trigger.target()) {
-                    entity.trigger(ChangeTextEvent::new(format!("{}", state.curvature_mode)));
-                }
-                writer.write(ChangeCurvatureDisplayModeEvent(state.curvature_mode));
-            },
-        );
+        ui.spawn(
+            UiLayout::window()
+                .size(Rl((40.0, 100.0)))
+                .pos(Rl((5.0, 0.0)))
+                .anchor(Anchor::TopLeft)
+                .pack(),
+        )
+        .with_children(|ui| {
+            ui.spawn(UiButton::new(
+                format!("{}", &ui_state.curvature_mode),
+                4,
+                Rl(100.0),
+            ))
+            .observe(
+                |trigger: Trigger<ButtonClickedEvent>,
+                 mut commands: Commands,
+                 mut state: ResMut<UiState>,
+                 mut writer: EventWriter<ChangeCurvatureDisplayModeEvent>| {
+                    state.curvature_mode = state.curvature_mode.next();
+                    if let Ok(mut entity) = commands.get_entity(trigger.target()) {
+                        entity.trigger(ChangeTextEvent::new(format!("{}", state.curvature_mode)));
+                    }
+                    writer.write(ChangeCurvatureDisplayModeEvent(state.curvature_mode));
+                },
+            );
+        });
+
+        ui.spawn(
+            UiLayout::window()
+                .size(Rl((40.0, 100.0)))
+                .pos(Rl((55.0, 0.0)))
+                .anchor(Anchor::TopLeft)
+                .pack(),
+        )
+        .with_children(|ui| {
+            ui.spawn(UiButton::new("Undo".to_owned(), 4, Rl(100.0)))
+                .observe(
+                    |_: Trigger<ButtonClickedEvent>, mut writer: EventWriter<HistoryUndoEvent>| {
+                        writer.write(HistoryUndoEvent);
+                    },
+                );
+        });
     });
 }
 

@@ -8,7 +8,7 @@ use bevy::{
 };
 use bevy_lunex::{Rl, UiColor, UiDepth, UiLayout, UiMeshPlane3d, prelude::*};
 
-use crate::picking3d::picking_3d::Picking3dInteractable;
+use crate::picking3d::{self, events::Pointer3d, picking_3d::Picking3dInteractable};
 
 #[derive(Event)]
 pub struct ChangeSliderValueEvent {
@@ -62,14 +62,79 @@ fn slider_value_change(
 
 fn slider_drag(
     trigger: Trigger<Pointer<Drag>>,
+    camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut slider: Query<(&mut UiSlider, &Children)>,
     slider_background: Query<Entity, With<SliderBackground>>,
     mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut text3d: Query<&mut Text3d>,
+    root: Query<&GlobalTransform, With<UiLayoutRoot>>,
+) {
+    let (camera, camera_transform) = camera.single().unwrap();
+    if let Ok((mut slider, children)) = slider.get_mut(trigger.target()) {
+        let diff = {
+            let mouse_start = camera
+                .viewport_to_world(
+                    camera_transform,
+                    trigger.pointer_location.position - trigger.delta,
+                )
+                .unwrap();
+
+            let mouse_end = camera
+                .viewport_to_world(camera_transform, trigger.pointer_location.position)
+                .unwrap();
+
+            let start = mouse_start.get_point(1.0);
+            let end = mouse_end.get_point(1.0);
+            end - start
+        };
+
+        let axis = root.single().unwrap().right().as_vec3();
+        let direction = (diff.dot(axis)) / (diff.length() * axis.length());
+
+        let delta_x = direction * diff.length();
+        let old_value = slider.get();
+        slider.set(old_value + delta_x);
+
+        for child in children {
+            if let Ok(entity) = slider_background.get(*child) {
+                commands.get_entity(entity).unwrap().despawn();
+            }
+        }
+
+        commands
+            .get_entity(trigger.target())
+            .unwrap()
+            .with_children(|ui| {
+                spawn_background(ui, slider.as_ref(), &mut materials);
+            })
+            .trigger(SliderValueChangedEvent {
+                value: slider.get(),
+            });
+
+        if let Some(entity) = slider.slider_text
+            && let Ok(mut text) = text3d.get_mut(entity)
+        {
+            *text = Text3d::new(format!("{}: {:.2}", slider.text_prefix, slider.get()));
+        }
+    }
+}
+
+fn slider_drag3d(
+    trigger: Trigger<Pointer3d<picking3d::events::Drag>>,
+    mut slider: Query<(&mut UiSlider, &Children)>,
+    slider_background: Query<Entity, With<SliderBackground>>,
+    mut commands: Commands,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut text3d: Query<&mut Text3d>,
+    root: Query<&GlobalTransform, With<UiLayoutRoot>>,
 ) {
     if let Ok((mut slider, children)) = slider.get_mut(trigger.target()) {
-        let delta_x = trigger.event().delta.x * 0.01;
+        let diff = trigger.event.delta;
+        let axis = root.single().unwrap().right().as_vec3();
+        let direction = (diff.dot(axis)) / (diff.length() * axis.length());
+
+        let delta_x = direction * diff.length();
         let old_value = slider.get();
         slider.set(old_value + delta_x);
 
@@ -164,6 +229,7 @@ fn spawn_children<'s>(
         UiDepth::Add(20.0),
         UiMeshPlane3d,
         Visibility::default(),
+        Picking3dInteractable,
     ))
     .with_children(|ui| {
         let text_entity = ui
@@ -213,6 +279,7 @@ fn on_add(
                     spawn_children(ui, slider.as_mut(), &mut materials);
                 })
                 .observe(slider_drag)
+                .observe(slider_drag3d)
                 .observe(slider_value_change);
         }
     }
