@@ -11,20 +11,25 @@ use bevy_lunex::{Rl, UiColor, UiDepth, UiLayout, UiMeshPlane3d, prelude::*};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 
 #[derive(Event)]
-pub struct SliderValueChangeEvent {
+pub struct ChangeSliderValueEvent {
     new_value: f32,
 }
-impl SliderValueChangeEvent {
+impl ChangeSliderValueEvent {
     pub fn new(new_value: f32) -> Self {
         Self { new_value }
     }
+}
+
+#[derive(Event)]
+pub struct SliderValueChangedEvent {
+    pub value: f32,
 }
 
 #[derive(Component)]
 struct SliderBackground;
 
 fn slider_value_change(
-    trigger: Trigger<SliderValueChangeEvent>,
+    trigger: Trigger<ChangeSliderValueEvent>,
     mut slider: Query<(&mut UiSlider, &Children)>,
     slider_background: Query<Entity, With<SliderBackground>>,
     mut commands: Commands,
@@ -55,16 +60,41 @@ fn slider_value_change(
     }
 }
 
+#[allow(clippy::complexity)]
 fn slider_drag(
     trigger: Trigger<Pointer<Drag>>,
+    camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut slider: Query<(&mut UiSlider, &Children)>,
     slider_background: Query<Entity, With<SliderBackground>>,
     mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut text3d: Query<&mut Text3d>,
+    root: Query<&GlobalTransform, With<UiLayoutRoot>>,
 ) {
+    let (camera, camera_transform) = camera.single().unwrap();
+
     if let Ok((mut slider, children)) = slider.get_mut(trigger.target()) {
-        let delta_x = trigger.event().delta.x * 0.01;
+        let diff = {
+            let mouse_start = camera
+                .viewport_to_world(
+                    camera_transform,
+                    trigger.pointer_location.position - trigger.delta,
+                )
+                .unwrap();
+
+            let mouse_end = camera
+                .viewport_to_world(camera_transform, trigger.pointer_location.position)
+                .unwrap();
+
+            let start = mouse_start.get_point(1.0);
+            let end = mouse_end.get_point(1.0);
+            end - start
+        };
+
+        let axis = root.single().unwrap().right().as_vec3();
+        let direction = (diff.dot(axis)) / (diff.length() * axis.length());
+
+        let delta_x = direction * diff.length() * 10.0;
         let old_value = slider.get();
         slider.set(old_value + delta_x);
 
@@ -79,6 +109,9 @@ fn slider_drag(
             .unwrap()
             .with_children(|ui| {
                 spawn_background(ui, slider.as_ref(), &mut materials);
+            })
+            .trigger(SliderValueChangedEvent {
+                value: slider.get(),
             });
 
         if let Some(entity) = slider.slider_text
@@ -162,7 +195,7 @@ fn spawn_children<'s>(
             .spawn((
                 UiLayout::window()
                     .pos(Rl((50.0, 50.0)))
-                    .size(Rl((20.0, 100.0)))
+                    .size(slider.size)
                     .anchor(Anchor::Center)
                     .pack(),
                 UiColor::from(Color::WHITE),
@@ -218,16 +251,23 @@ pub struct UiSlider {
     max_value: f32,
     value: f32,
     slider_text: Option<Entity>,
+    size: UiValue<Vec2>,
 }
 
 impl UiSlider {
-    pub fn new(text_prefix: String, min_value: f32, max_value: f32) -> Self {
+    pub fn new(
+        text_prefix: String,
+        min_value: f32,
+        max_value: f32,
+        size: impl Into<UiValue<Vec2>>,
+    ) -> Self {
         Self {
             text_prefix,
             min_value,
             max_value,
             value: 0.0,
             slider_text: None,
+            size: size.into(),
         }
     }
 
@@ -250,5 +290,7 @@ pub struct SliderPlugin;
 impl Plugin for SliderPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(PostUpdate, on_add);
+        app.add_event::<ChangeSliderValueEvent>();
+        app.add_event::<SliderValueChangedEvent>();
     }
 }
