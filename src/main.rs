@@ -26,6 +26,7 @@ use bezier_curve::bezier_curve_renderer::*;
 use history::plugin::HistoryPlugin;
 use picking3d::picking_3d::ObjectPicking3d;
 
+use crate::bezier_curve::render_info::RenderInformation;
 use crate::vr_control::VrControlPlugin;
 use translation_control::translation_controller::TranslationController;
 use ui::UiPlugin;

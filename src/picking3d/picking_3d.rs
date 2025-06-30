@@ -7,8 +7,8 @@ use crate::picking3d::pointer_state::Pointer3dState;
 use crate::vr_control::trigger::{ControllerSqueeze, ControllerTrigger};
 use crate::vr_control::{AimLeft, AimRight, GripLeft, GripRight};
 use bevy::color::palettes::css::POWDER_BLUE;
-use bevy::math::Vec3;
 use bevy::math::bounding::{BoundingSphere, IntersectsVolume};
+use bevy::math::Vec3;
 use bevy::prelude::*;
 
 #[derive(Component)]
@@ -373,8 +373,7 @@ pub fn show_aim(
     aim_query_right: Query<&Transform, With<AimRight>>,
     aim_line: Query<(Entity, &AimLineMarker)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut mesh_ray_cast: MeshRayCast,
+    mut set: ParamSet<(ResMut<Assets<Mesh>>, MeshRayCast)>,
     scale: Res<RenderInformation>,
 ) {
     for line in aim_line {
@@ -389,15 +388,20 @@ pub fn show_aim(
             && let Ok(aim) = aim_query
         {
             let ray = Ray3d::new(aim.translation, aim.forward());
-            let hits = mesh_ray_cast.cast_ray(ray, &Default::default());
-            let length = if !hits.is_empty() {
-                hits[0].1.distance
-            } else {
-                1000.0 // simulate infinity
+            let length = {
+                let mut mesh_ray_cast = set.p1();
+                let hits = mesh_ray_cast.cast_ray(ray, &Default::default());
+                if !hits.is_empty() {
+                    hits[0].1.distance
+                } else {
+                    1000.0 // simulate infinity
+                }
             };
 
             let material = materials.add(Color::from(POWDER_BLUE));
-            let mesh = meshes.add(Cuboid::new(0.01 * scale.scale, 0.01 * scale.scale, length));
+            let mesh = set
+                .p0()
+                .add(Cuboid::new(0.01 * scale.scale, 0.01 * scale.scale, length));
 
             commands
                 .spawn((AimLineMarker(hovered_by), *aim))
@@ -416,7 +420,7 @@ pub struct ObjectPicking3d;
 
 impl Plugin for ObjectPicking3d {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, handle_input_grab)
+        app.add_systems(Update, (handle_input_grab, show_aim))
             .add_systems(PostUpdate, check_intersections)
             .add_systems(PostUpdate, test_all_hovered)
             .add_systems(PostUpdate, tick)
