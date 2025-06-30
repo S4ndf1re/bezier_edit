@@ -296,13 +296,28 @@ fn handle_input_grab(
             && pointer_state.is_grabbing(&hover_by)
             && !pointer_state.is_just_toggled(&hover_by)
         {
+            // End Drag here, new state is false, old one was true for >n ticks
+            for entity in picking_state.iter(&hover_by) {
+                let entity_global_position = transform_query.get(*entity);
+                if entity_global_position.is_err() {
+                    continue;
+                }
+                let entity_global_position = entity_global_position.unwrap();
+                commands.trigger_targets(
+                    Pointer3d {
+                        controler: hover_by,
+                        hit_entity: tracked.1,
+                        event: DragEnd,
+                        position: entity_global_position.translation(),
+                    },
+                    *entity,
+                );
+            }
             picking_state.set_dragging(false, &hover_by);
 
             for (_, _, entity) in moved_marked_query.iter() {
                 commands.get_entity(entity).unwrap().despawn();
             }
-
-            // End Drag here, new state is false, old one was true for >n ticks
         } else if current_state
             && pointer_state.is_grabbing(&hover_by)
             && !pointer_state.is_just_toggled(&hover_by)
@@ -402,7 +417,11 @@ pub fn update_aim_line(
                     }
                 };
 
-                let mesh3d = Mesh3d::from(set.p0().add(Cylinder::new(0.01 * scale.scale, length)));
+                let mesh3d = Mesh3d::from(set.p0().add(Cuboid::new(
+                    0.01 * scale.scale,
+                    0.01 * scale.scale,
+                    length,
+                )));
                 if let Ok((mut transform, mut mesh)) = set.p2().get_mut(ray_entity) {
                     *mesh = mesh3d;
                     *transform = Transform::from_xyz(
@@ -428,7 +447,11 @@ pub fn update_aim_line(
                     }
                 };
 
-                let mesh3d = Mesh3d::from(set.p0().add(Cylinder::new(0.01 * scale.scale, length)));
+                let mesh3d = Mesh3d::from(set.p0().add(Cuboid::new(
+                    0.01 * scale.scale,
+                    0.01 * scale.scale,
+                    length,
+                )));
                 if let Ok((mut transform, mut mesh)) = set.p2().get_mut(ray_entity) {
                     *mesh = mesh3d;
                     *transform = Transform::from_xyz(
@@ -484,7 +507,9 @@ pub fn show_aim(
             };
 
             let material = materials.add(Color::from(POWDER_BLUE));
-            let mesh = set.p0().add(Cylinder::new(0.01 * scale.scale, length));
+            let mesh = set
+                .p0()
+                .add(Cuboid::new(0.01 * scale.scale, 0.01 * scale.scale, length));
 
             commands
                 .spawn((

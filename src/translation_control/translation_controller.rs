@@ -1,4 +1,3 @@
-use crate::RootTransform;
 use crate::bezier_curve::bezier_curve_renderer::RedrawEvent;
 use crate::bezier_curve::render_info::RenderInformation;
 use crate::history::plugin::HistoryLogEvent;
@@ -7,6 +6,7 @@ use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
+use crate::RootTransform;
 use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;
@@ -135,6 +135,7 @@ fn show_transitional_controls(
                         .observe(drag_controller)
                         .observe(drag_controller3d)
                         .observe(drag_start)
+                        .observe(drag_start3d)
                         .observe(drag_end_trigger_redraw)
                         .observe(drag_end3d_trigger_redraw);
                 }
@@ -146,6 +147,62 @@ fn show_transitional_controls(
 #[allow(clippy::too_many_arguments)]
 fn drag_start(
     trigger: Trigger<Pointer<DragStart>>,
+    root: Query<Entity, With<RootTransform>>,
+    mut commands: Commands,
+    arrow_query: Query<(&ChildOf, Entity), With<Control>>,
+    control_parents: Query<&ControlParent>,
+    all_transforms: Query<&Transform, Without<ControlParent>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    arrows: Res<ControlStorage>,
+    scale: Res<RenderInformation>,
+    mut history: EventWriter<HistoryLogEvent>,
+) {
+    let mut root = commands.get_entity(root.single().unwrap()).unwrap();
+    let dragged_entity = trigger.target();
+    let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
+
+    let dragged_parent = dragged_childof.parent();
+
+    let control_parent = control_parents.get(dragged_parent).unwrap();
+    let start_transform = all_transforms.get(control_parent.0).unwrap();
+
+    let scale = scale.scale;
+
+    root.with_children(|ui| {
+        ui.spawn((ShadowMarker, *start_transform, Visibility::default()))
+            .with_children(|parent| {
+                for arrow in arrows.as_ref().iter() {
+                    parent
+                        .spawn((
+                            Transform::from_xyz(0.0, 0.0, 0.0)
+                                .looking_to(arrow.normalized, Vec3::Y),
+                            Control(arrow.normalized),
+                            Picking3dInteractable,
+                            Visibility::default(),
+                        ))
+                        .with_children(|parent| {
+                            draw_arrow(
+                                parent,
+                                materials.add(arrow.shadow_color),
+                                materials.add(arrow.shadow_color),
+                                &mut meshes,
+                                scale,
+                            );
+                        });
+                }
+            });
+    });
+
+    history.write(HistoryLogEvent::Begin(
+        control_parent.0,
+        Some(*start_transform),
+    ));
+}
+
+#[allow(clippy::too_many_arguments)]
+fn drag_start3d(
+    trigger: Trigger<Pointer3d<crate::picking3d::events::DragStart>>,
     root: Query<Entity, With<RootTransform>>,
     mut commands: Commands,
     arrow_query: Query<(&ChildOf, Entity), With<Control>>,
@@ -232,6 +289,7 @@ fn drag_end3d_trigger_redraw(
     query: Query<Entity, With<ShadowMarker>>,
     mut history: EventWriter<HistoryLogEvent>,
 ) {
+    info!("Dragging ended");
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
 
