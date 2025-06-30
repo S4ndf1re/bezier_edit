@@ -1,5 +1,5 @@
 use std::{
-    fs::{File, read_to_string},
+    fs::{read_to_string, File},
     io::Write,
 };
 
@@ -41,7 +41,7 @@ impl Default for Config {
                 aim: "/user/hand/right/input/aim/pose".to_owned(),
                 grip: "/user/hand/right/input/grip/pose".to_owned(),
                 trigger: "/user/hand/right/input/trigger/value".to_owned(),
-                squeeze: "/user/hand/left/input/squeeze/value".to_owned(),
+                squeeze: "/user/hand/right/input/squeeze/value".to_owned(),
                 thumbstick_x: "/user/hand/right/input/thumbstick/x".to_owned(),
                 thumbstick_y: "/user/hand/right/input/thumbstick/y".to_owned(),
                 output: "/user/hand/right/output/haptic".to_owned(),

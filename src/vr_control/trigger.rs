@@ -71,6 +71,7 @@ pub struct TriggerPlugin;
 impl Plugin for TriggerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ControllerTrigger>();
+        app.init_resource::<ControllerSqueeze>();
         app.add_systems(
             PostUpdate,
             update_trigger_events.run_if(openxr_session_running),
