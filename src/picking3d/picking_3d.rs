@@ -107,12 +107,22 @@ fn check_intersections(
         if let Some(aim) = aim {
             let ray = Ray3d::new(aim.0.translation(), aim.0.forward());
             let collisions = mesh_ray_casting
-                .cast_ray(ray, &Default::default())
+                .cast_ray(
+                    ray,
+                    &MeshRayCastSettings {
+                        filter: &|entity| pickable.get(entity).is_ok(),
+                        ..Default::default()
+                    }
+                    .with_visibility(RayCastVisibility::Any)
+                    .never_early_exit(),
+                )
                 .iter()
-                .filter(|hit| pickable.get(hit.0).is_ok())
+                // .filter(|hit| pickable.get(hit.0).is_ok())
                 .collect::<Vec<_>>();
 
-            if let Some(collision) = collisions.first() {
+            println!("Collisions: {:?}", collisions);
+
+            for collision in collisions.iter() {
                 if !state.contains_entity_and_controller(&collision.0, &hovered_by) {
                     commands.trigger_targets(
                         Pointer3d {
@@ -185,14 +195,20 @@ fn test_all_hovered(
             let ray = Ray3d::new(aim.0.translation(), aim.0.forward());
 
             let collisions = mesh_ray_casting
-                .cast_ray(ray, &Default::default())
+                .cast_ray(
+                    ray,
+                    &MeshRayCastSettings {
+                        filter: &|entity| pickable.get(entity).is_ok(),
+                        ..Default::default()
+                    }
+                    .with_visibility(RayCastVisibility::Any)
+                    .never_early_exit(),
+                )
                 .iter()
-                .filter(|hit| pickable.get(hit.0).is_ok())
+                // .filter(|hit| pickable.get(hit.0).is_ok())
                 .collect::<Vec<_>>();
 
-            if let Some(hit) = collisions.first()
-                && hit.0 == p.1
-            {
+            if let Some(hit) = collisions.iter().position(|entity| entity.0 == p.1) {
                 is_first_ray_hit = true;
             }
         }
@@ -205,14 +221,20 @@ fn test_all_hovered(
             let ray = Ray3d::new(aim.0.translation(), aim.0.forward());
 
             let collisions = mesh_ray_casting
-                .cast_ray(ray, &Default::default())
+                .cast_ray(
+                    ray,
+                    &MeshRayCastSettings {
+                        filter: &|entity| pickable.get(entity).is_ok(),
+                        ..Default::default()
+                    }
+                    .with_visibility(RayCastVisibility::Any)
+                    .never_early_exit(),
+                )
                 .iter()
-                .filter(|hit| pickable.get(hit.0).is_ok())
+                // .filter(|hit| pickable.get(hit.0).is_ok())
                 .collect::<Vec<_>>();
 
-            if let Some(hit) = collisions.first()
-                && hit.0 == p.1
-            {
+            if let Some(hit) = collisions.iter().position(|entity| entity.0 == p.1) {
                 is_first_ray_hit = true;
             }
         }
@@ -369,8 +391,8 @@ fn handle_input_grab(
 pub fn show_aim(
     mut commands: Commands,
     squeeze: Res<ControllerSqueeze>,
-    aim_query_left: Query<&Transform, With<AimLeft>>,
-    aim_query_right: Query<&Transform, With<AimRight>>,
+    aim_query_left: Query<&GlobalTransform, With<AimLeft>>,
+    aim_query_right: Query<&GlobalTransform, With<AimRight>>,
     aim_line: Query<(Entity, &AimLineMarker)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut set: ParamSet<(ResMut<Assets<Mesh>>, MeshRayCast)>,
@@ -387,15 +409,16 @@ pub fn show_aim(
         if squeeze >= 0.2
             && let Ok(aim) = aim_query
         {
-            let ray = Ray3d::new(aim.translation, aim.forward());
+            let ray = Ray3d::new(aim.translation(), aim.forward());
             let length = {
                 let mut mesh_ray_cast = set.p1();
                 let hits = mesh_ray_cast.cast_ray(ray, &Default::default());
-                if !hits.is_empty() {
-                    hits[0].1.distance
-                } else {
-                    1000.0 // simulate infinity
-                }
+                // if !hits.is_empty() {
+                //     hits[0].1.distance
+                // } else {
+                //     1000.0 // simulate infinity
+                // }
+                1000.0
             };
 
             let material = materials.add(Color::from(POWDER_BLUE));
@@ -404,7 +427,11 @@ pub fn show_aim(
                 .add(Cuboid::new(0.01 * scale.scale, 0.01 * scale.scale, length));
 
             commands
-                .spawn((AimLineMarker(hovered_by), *aim))
+                .spawn((
+                    AimLineMarker(hovered_by),
+                    aim.compute_transform(),
+                    Visibility::default(),
+                ))
                 .with_children(|ui| {
                     ui.spawn((
                         Transform::from_xyz(-0.005, -0.005, -length / 2.0),

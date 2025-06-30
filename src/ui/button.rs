@@ -3,7 +3,7 @@ use std::sync::Arc;
 use bevy::{
     color::palettes::tailwind::RED_600, ecs::relationship::RelatedSpawnerCommands, prelude::*,
 };
-use bevy_lunex::{UiStateTrait, prelude::*};
+use bevy_lunex::{prelude::*, UiStateTrait};
 
 use crate::picking3d::{self, events::Pointer3d, picking_3d::Picking3dInteractable};
 
@@ -52,63 +52,66 @@ fn spawn_children<'s>(
     button: &mut UiButton,
     materials: &mut ResMut<Assets<StandardMaterial>>,
 ) {
-    ui.spawn((
-        UiLayout::window().full().pack(),
-        UiHover::new().forward_speed(20.0).backward_speed(4.0),
-        UiMeshPlane3d,
-        Picking3dInteractable,
-    ))
-    .with_children(|ui| {
-        ui.spawn((
-            UiLayout::window()
-                .pos(Rl(50.0))
-                .size(button.size)
-                .anchor(Anchor::Center)
-                .pack(),
+    let id = ui
+        .spawn((
+            UiLayout::window().full().pack(),
             UiHover::new().forward_speed(20.0).backward_speed(4.0),
             UiMeshPlane3d,
+            Picking3dInteractable,
         ))
         .with_children(|ui| {
-            let entity = ui
-                .spawn((
-                    UiLayout::new(vec![
-                        (UiBase::id(), UiLayout::window().full()),
-                        (
-                            UiHover::id(),
-                            UiLayout::window()
-                                .anchor(Anchor::Center)
-                                .pos(Rl(50.0))
-                                .size(Rl(120.0)),
-                        ),
-                    ]),
-                    UiHover::new().forward_speed(20.0).backward_speed(4.0),
-                    UiColor::new(vec![
-                        (UiBase::id(), Color::WHITE),
-                        (UiHover::id(), RED_600.with_alpha(1.2).into()),
-                    ]),
-                    Text3d::new(button.text.clone()),
-                    Text3dStyling {
-                        size: 64.0,
-                        color: Srgba::new(1., 1., 1., 1.),
-                        align: TextAlign::Center,
-                        font: Arc::from("Rajdhani"),
-                        weight: Weight::BOLD,
-                        ..Default::default()
-                    },
-                    MeshMaterial3d(materials.add(StandardMaterial {
-                        base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
-                        alpha_mode: AlphaMode::Blend,
-                        unlit: true,
-                        ..Default::default()
-                    })),
-                    Mesh3d::default(),
-                    // OnHoverSetCursor::new(SystemCursorIcon::Pointer),
-                    Pickable::IGNORE,
-                ))
-                .id();
-            button.text_entity = Some(entity);
-        });
-    });
+            ui.spawn((
+                UiLayout::window()
+                    .pos(Rl(50.0))
+                    .size(button.size)
+                    .anchor(Anchor::Center)
+                    .pack(),
+                UiHover::new().forward_speed(20.0).backward_speed(4.0),
+                UiMeshPlane3d,
+            ))
+            .with_children(|ui| {
+                let entity = ui
+                    .spawn((
+                        UiLayout::new(vec![
+                            (UiBase::id(), UiLayout::window().full()),
+                            (
+                                UiHover::id(),
+                                UiLayout::window()
+                                    .anchor(Anchor::Center)
+                                    .pos(Rl(50.0))
+                                    .size(Rl(120.0)),
+                            ),
+                        ]),
+                        UiHover::new().forward_speed(20.0).backward_speed(4.0),
+                        UiColor::new(vec![
+                            (UiBase::id(), Color::WHITE),
+                            (UiHover::id(), RED_600.with_alpha(1.2).into()),
+                        ]),
+                        Text3d::new(button.text.clone()),
+                        Text3dStyling {
+                            size: 64.0,
+                            color: Srgba::new(1., 1., 1., 1.),
+                            align: TextAlign::Center,
+                            font: Arc::from("Rajdhani"),
+                            weight: Weight::BOLD,
+                            ..Default::default()
+                        },
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
+                            alpha_mode: AlphaMode::Blend,
+                            unlit: true,
+                            ..Default::default()
+                        })),
+                        Mesh3d::default(),
+                        // OnHoverSetCursor::new(SystemCursorIcon::Pointer),
+                        Pickable::IGNORE,
+                    ))
+                    .id();
+                button.text_entity = Some(entity);
+            });
+        })
+        .id();
+    println!("Button Entity: {}", id);
 }
 
 fn on_add(
@@ -118,10 +121,11 @@ fn on_add(
 ) {
     for slider in added.iter_mut() {
         let entity = slider.0;
+        println!("Button Entity: {}", entity);
         let mut slider = slider.1;
 
         if let Ok(mut entity) = commands.get_entity(entity) {
-            entity
+            let id = entity
                 .insert((
                     UiLayout::solid().size(Rl(100.0)).pack(),
                     UiMeshPlane3d,
@@ -133,9 +137,13 @@ fn on_add(
                 })
                 .observe(hover_set::<Pointer<Over>, true>)
                 .observe(hover_set::<Pointer<Out>, false>)
+                .observe(hover_set::<Pointer3d<picking3d::events::MoveIn>, true>)
+                .observe(hover_set::<Pointer3d<picking3d::events::MoveOut>, false>)
                 .observe(button_clicked)
                 .observe(button_clicked3d)
-                .observe(handle_change_text);
+                .observe(handle_change_text)
+                .id();
+            println!("Button Entity: {}", id);
         }
     }
 }
