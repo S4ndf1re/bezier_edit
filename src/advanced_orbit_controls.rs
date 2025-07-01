@@ -60,8 +60,8 @@ fn orbit(
     let delta_yaw = delta.x * camera_settings.yaw_speed;
 
     root.rotation = Quat::from_axis_angle(Vec3::Z, delta_pitch)
-        * Quat::from_axis_angle(Vec3::Y, delta_yaw)
-        * root.rotation;
+        * root.rotation
+        * Quat::from_axis_angle(Vec3::Y, delta_yaw);
 }
 
 #[cfg(feature = "vr_enable")]

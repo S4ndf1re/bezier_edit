@@ -7,8 +7,8 @@ use crate::picking3d::pointer_state::Pointer3dState;
 use crate::vr_control::trigger::{ControllerSqueeze, ControllerTrigger};
 use crate::vr_control::{AimLeft, AimRight, GripLeft, GripRight};
 use bevy::color::palettes::css::POWDER_BLUE;
-use bevy::math::bounding::{BoundingSphere, IntersectsVolume};
 use bevy::math::Vec3;
+use bevy::math::bounding::{BoundingSphere, IntersectsVolume};
 use bevy::prelude::*;
 
 #[derive(Component)]
@@ -194,7 +194,7 @@ fn test_all_hovered(
                     ..Default::default()
                 }
                 .with_visibility(RayCastVisibility::Any)
-                .never_early_exit(),
+                .always_early_exit(),
             );
 
             if let Some(hit) = collisions.iter().position(|entity| entity.0 == p.1) {
@@ -216,7 +216,7 @@ fn test_all_hovered(
                     ..Default::default()
                 }
                 .with_visibility(RayCastVisibility::Any)
-                .never_early_exit(),
+                .always_early_exit(),
             );
 
             if let Some(hit) = collisions.iter().position(|entity| entity.0 == p.1) {

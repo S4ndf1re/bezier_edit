@@ -12,7 +12,7 @@ use bevy_mod_openxr::{
     resources::OxrInstance,
     session::OxrSession,
 };
-use bevy_mod_xr::session::{session_available, XrSessionCreated, XrTracker};
+use bevy_mod_xr::session::{XrSessionCreated, XrTracker, session_available};
 use bevy_xr_utils::tracking_utils::{TrackingUtilitiesPlugin, XrTrackedView};
 use config::Config;
 use openxr::{Haptic, Posef};
@@ -97,7 +97,6 @@ fn suggest_action_bindings(
             bindings: vec![config.trigger.clone().into()],
         });
 
-        println!("Creating squeeze binding to {}", config.squeeze.clone());
         bindings.write(OxrSuggestActionBinding {
             action: action.squeeze.as_raw(),
             interaction_profile: interaction_profile.clone().into(),
