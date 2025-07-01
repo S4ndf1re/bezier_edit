@@ -284,9 +284,9 @@ fn build_ui(
             // Use this constructor to init 3D settings
             UiLayoutRoot::new_3d(),
             // Provide default size instead of camera
-            Dimension::from((0.818 * scale_info.scale, 1.5 * scale_info.scale)),
+            Dimension::from((1.0 * scale_info.scale, 2.0 * scale_info.scale)),
             // The location of the UI panel
-            Transform::from_xyz(0.0, 1.0, 0.0),
+            Transform::from_xyz(0.0, 2.0, -3.0 * scale_info.scale),
         ))
         .with_children(|ui| {
             spawn_background(ui, materials.as_mut()); // spawn_text(ui, materials.as_mut());
@@ -301,7 +301,8 @@ fn follow_camera(
 ) {
     let camera = camera.single().unwrap();
     for mut ui in ui.iter_mut() {
-        ui.look_at(-camera.translation, Vec3::Y);
+        let diff = ui.translation - camera.translation;
+        ui.look_to(diff, Vec3::Y);
     }
 }
 
