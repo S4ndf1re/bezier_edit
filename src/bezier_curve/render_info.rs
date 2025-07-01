@@ -1,15 +1,50 @@
+use std::fmt::Display;
+
 use bevy::prelude::*;
 
 use super::{
-    bezier_curve_renderer::{RedrawBoxesEvent, Resolution},
+    bezier_curve_renderer::{RedrawBoxesEvent, RedrawEvent, Resolution},
     curvature_display_mode::CurvatureDisplayMode,
 };
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum SurfaceMeshMode {
+    #[default]
+    Mesh,
+    Lines,
+}
+
+impl SurfaceMeshMode {
+    pub fn next(&self) -> Self {
+        match self {
+            SurfaceMeshMode::Mesh => SurfaceMeshMode::Lines,
+            SurfaceMeshMode::Lines => SurfaceMeshMode::Mesh,
+        }
+    }
+}
+
+impl Display for SurfaceMeshMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SurfaceMeshMode::Mesh => write!(f, "Mesh"),
+            SurfaceMeshMode::Lines => write!(f, "Lines"),
+        }
+    }
+}
+
+#[derive(Event)]
+pub struct ChangeSurfaceMeshMode(pub SurfaceMeshMode);
 
 #[derive(Event, Default)]
 pub struct UpdateBoxDimEvent {
     pub u_box_count: Option<u32>,
     pub v_box_count: Option<u32>,
     pub box_dim: Option<(f32, f32, f32)>,
+}
+
+pub enum UVEither {
+    U(f64),
+    V(f64),
 }
 
 #[derive(Resource)]
@@ -22,10 +57,15 @@ pub struct RenderInformation {
     pub u_box_count: u32,
     pub v_box_count: u32,
     pub box_dim: (f32, f32, f32),
+    pub surface_mesh_mode: SurfaceMeshMode,
 }
 
 impl RenderInformation {
     pub fn to_uv_sample(&self) -> Vec<(f64, f64)> {
+        if self.u_box_count == 0 || self.v_box_count == 0 {
+            return vec![];
+        }
+
         let u_step = 1.0 / self.u_box_count as f64;
         let v_step = 1.0 / self.v_box_count as f64;
 
@@ -34,6 +74,26 @@ impl RenderInformation {
                 (0..=self.v_box_count).map(move |v| ((u as f64) * u_step, (v as f64) * v_step))
             })
             .collect::<Vec<_>>()
+    }
+
+    pub fn to_line_uv(&self) -> Vec<UVEither> {
+        if self.u_box_count == 0 || self.v_box_count == 0 {
+            return vec![];
+        }
+
+        let u_step = 1.0 / self.u_box_count as f64;
+        let v_step = 1.0 / self.v_box_count as f64;
+
+        let mut result = Vec::new();
+        for i in 0..=self.u_box_count {
+            result.push(UVEither::U((i as f64) * u_step));
+        }
+
+        for i in 0..=self.v_box_count {
+            result.push(UVEither::V((i as f64) * v_step));
+        }
+
+        result
     }
 }
 
@@ -48,6 +108,7 @@ impl Default for RenderInformation {
             u_box_count: 0,
             v_box_count: 0,
             box_dim: (0.25, 0.10, 0.25),
+            surface_mesh_mode: SurfaceMeshMode::default(),
         }
     }
 }
@@ -56,6 +117,7 @@ pub fn handle_box_dim_event(
     mut reader: EventReader<UpdateBoxDimEvent>,
     mut info: ResMut<RenderInformation>,
     mut redraw_writer: EventWriter<RedrawBoxesEvent>,
+    mut redraw_all: EventWriter<RedrawEvent>,
 ) {
     let mut redraw = false;
     for evt in reader.read() {
@@ -75,7 +137,26 @@ pub fn handle_box_dim_event(
         }
     }
 
-    if redraw {
+    if redraw && info.surface_mesh_mode != SurfaceMeshMode::Lines {
         redraw_writer.write(RedrawBoxesEvent);
+    } else if redraw && info.surface_mesh_mode == SurfaceMeshMode::Lines {
+        redraw_all.write(RedrawEvent::HighQuality);
+    }
+}
+
+pub fn handle_change_surface_mode(
+    mut reader: EventReader<ChangeSurfaceMeshMode>,
+    mut info: ResMut<RenderInformation>,
+    mut redraw_writer: EventWriter<RedrawEvent>,
+) {
+    let mut redraw = false;
+
+    for evt in reader.read() {
+        info.surface_mesh_mode = evt.0;
+        redraw = true;
+    }
+
+    if redraw {
+        redraw_writer.write(RedrawEvent::HighQuality);
     }
 }

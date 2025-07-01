@@ -12,9 +12,10 @@ use struct_patch::Patch;
 
 use crate::{
     bezier_curve::{
-        bezier_curve_renderer::{RedrawBoxesEvent, RedrawEvent},
         curvature_display_mode::{ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode},
-        render_info::{RenderInformation, UpdateBoxDimEvent},
+        render_info::{
+            ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UpdateBoxDimEvent,
+        },
         surface_click::SurfaceClickChangeset,
     },
     history::plugin::HistoryUndoEvent,
@@ -34,6 +35,7 @@ pub struct UiState {
     curvature_mode: CurvatureDisplayMode,
     u_box_count: u32,
     v_box_count: u32,
+    surface_mesh_mode: SurfaceMeshMode,
 }
 
 fn spawn_background<'a>(
@@ -267,6 +269,37 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: ResMut
             );
         });
     });
+
+    ui.spawn((
+        Name::new("Layout Fifth"),
+        UiLayout::window()
+            .pos(Rl((5.0, 75.0)))
+            .size((Rw(90.0), Rh(10.0)))
+            .anchor(Anchor::TopLeft)
+            .pack(),
+    ))
+    .with_children(|ui| {
+        ui.spawn(UiButton::new(
+            format!("MeshMode: {}", ui_state.surface_mesh_mode),
+            14,
+            Rl(100.0),
+        ))
+        .observe(
+            |trigger: Trigger<ButtonClickedEvent>,
+             mut commands: Commands,
+             mut state: ResMut<UiState>,
+             mut writer: EventWriter<ChangeSurfaceMeshMode>| {
+                state.surface_mesh_mode = state.surface_mesh_mode.next();
+                writer.write(ChangeSurfaceMeshMode(state.surface_mesh_mode));
+                if let Ok(mut entity) = commands.get_entity(trigger.target()) {
+                    entity.trigger(ChangeTextEvent::new(format!(
+                        "MeshMode: {}",
+                        state.surface_mesh_mode
+                    )));
+                }
+            },
+        );
+    });
 }
 
 fn build_ui(
@@ -286,7 +319,7 @@ fn build_ui(
             // Provide default size instead of camera
             Dimension::from((1.0 * scale_info.scale, 2.0 * scale_info.scale)),
             // The location of the UI panel
-            Transform::from_xyz(0.0, 2.0, -3.0 * scale_info.scale),
+            Transform::from_xyz(0.0, 0.0, -5.0 * scale_info.scale),
         ))
         .with_children(|ui| {
             spawn_background(ui, materials.as_mut()); // spawn_text(ui, materials.as_mut());

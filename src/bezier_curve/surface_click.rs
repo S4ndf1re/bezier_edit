@@ -24,6 +24,9 @@ pub struct SurfaceClick {
     pub v: f64,
 }
 
+#[derive(Component)]
+pub struct SurfaceClickMesh;
+
 #[allow(clippy::complexity)]
 pub fn bezier_surface_picking(
     trigger: Trigger<Pointer<Click>>,
@@ -49,7 +52,6 @@ pub fn bezier_surface_picking(
 
     let material = materials.add(Color::from(RED_400));
     let sphere = meshes.add(Sphere::new(0.07 * scale).mesh().ico(5).unwrap());
-    let normal_pointer = meshes.add(Cuboid::new(0.07 * scale, 0.07 * scale, 0.5 * scale));
 
     let mut root = commands.get_entity(root.single().unwrap()).unwrap();
     if let Some(click_coords) = trigger.hit.position {
@@ -80,6 +82,11 @@ pub fn bezier_surface_picking(
                 let evaluated = eval_2d_bezier_curves(&control_points, hit.0, hit.1);
                 let (u_diff, v_diff) = derive_2d(&control_points, hit.0, hit.1, 1);
                 let normal = &u_diff.cross(&v_diff);
+                let normal_pointer = meshes.add(Cuboid::new(
+                    0.07 * scale,
+                    0.07 * scale,
+                    (normal.magnitude() as f32) * scale,
+                ));
 
                 root.with_children(|ui| {
                     ui.spawn((
@@ -95,9 +102,14 @@ pub fn bezier_surface_picking(
                     ))
                     .with_children(|parent| {
                         parent.spawn((
-                            Transform::from_xyz(0.0, 0.0, -0.25 * scale),
+                            Transform::from_xyz(
+                                0.0,
+                                0.0,
+                                -(normal.magnitude() as f32) / 2.0 * scale,
+                            ),
                             MeshMaterial3d(material.clone()),
                             Mesh3d(normal_pointer.clone()),
+                            SurfaceClickMesh,
                         ));
                     });
                 });
@@ -114,19 +126,43 @@ pub fn bezier_surface_picking(
 #[allow(clippy::complexity)]
 pub fn update_surface_click(
     mut set: ParamSet<(
-        Query<(&SurfaceClick, &mut Transform)>,
+        Query<(&SurfaceClick, &mut Transform, &Children), Without<SurfaceClickMesh>>,
         Query<(&Transform, &RenderPoint)>,
     )>,
+    mut meshes_query: Query<
+        (&mut Mesh3d, &mut Transform),
+        (
+            With<SurfaceClickMesh>,
+            Without<SurfaceClick>,
+            Without<RenderPoint>,
+        ),
+    >,
+    mut meshes: ResMut<Assets<Mesh>>,
+    scale_res: Res<RenderInformation>,
 ) {
+    let scale = scale_res.scale;
     let points = collect_control_points(set.p1());
 
-    for (surface, mut transform) in set.p0() {
+    for (surface, mut transform, children) in set.p0() {
         let point = eval_2d_bezier_curves(&points, surface.u, surface.v);
         let (u_diff, v_diff) = derive_2d(&points, surface.u, surface.v, 1);
         let normal = &u_diff.cross(&v_diff);
 
         transform.translation = Vec3::new(point.x as f32, point.y as f32, point.z as f32);
         transform.look_to(Into::<Vec3>::into(-1.0 * normal), Vec3::Y);
+
+        for child in children {
+            if let Ok((mut mesh, mut transform)) = meshes_query.get_mut(*child) {
+                let normal_pointer = meshes.add(Cuboid::new(
+                    0.07 * scale,
+                    0.07 * scale,
+                    (normal.magnitude() as f32) * scale,
+                ));
+                *mesh = Mesh3d(normal_pointer.clone());
+                *transform =
+                    Transform::from_xyz(0.0, 0.0, -(normal.magnitude() as f32) / 2.0 * scale);
+            }
+        }
     }
 }
 

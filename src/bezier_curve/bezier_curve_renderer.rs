@@ -2,11 +2,17 @@ use super::components::*;
 use super::curvature_display_mode::{
     ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
 };
-use super::render_info::{RenderInformation, UpdateBoxDimEvent, handle_box_dim_event};
+use super::render_info::{
+    ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
+    handle_box_dim_event, handle_change_surface_mode,
+};
 use super::surface_click::{
     SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
 };
-use super::util::{collect_control_points, create_mesh_from_control_points, curvature_to_color};
+use super::util::{
+    collect_control_points, compute_point_by_params, compute_points,
+    create_mesh_from_control_points, curvature_to_color,
+};
 use crate::RootTransform;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
@@ -19,6 +25,7 @@ use crate::translation_control::translation_controller::EnableTranslationControl
 use crate::util::update_material_on;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
+use bevy::color::palettes::css::LIGHT_GREEN;
 use bevy::color::palettes::tailwind::*;
 use bevy::prelude::*;
 use bevy::render::mesh::PrimitiveTopology;
@@ -172,41 +179,85 @@ fn generate_pointcloud(
         return;
     }
 
-    let multi_curves = collect_control_points(control_points);
-    let mut color = Color::from(GRAY_500);
-    color.set_alpha(0.3);
-
-    let (mesh, image_handle) = create_mesh_from_control_points(
-        &multi_curves,
-        resolution,
-        &scale_info.curvature_mode,
-        images,
-        scale_info.scale as f64,
-    );
-
-    let mat = StandardMaterial {
-        base_color_texture: Some(image_handle),
-        double_sided: true,
-        cull_mode: None,
-        ..Default::default()
-    };
-
     // Despawn old, respawn new
     for p in entities.iter() {
         commands.entity(p).despawn();
     }
 
-    {
-        let mut root = commands.get_entity(root.single().unwrap()).unwrap();
-        root.with_children(|ui| {
-            ui.spawn((
-                Transform::default(),
-                ResultSurface,
-                Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(materials.add(mat)),
-            ))
-            .observe(bezier_surface_picking);
-        });
+    info!("Redrawing");
+    let multi_curves = collect_control_points(control_points);
+    if scale_info.surface_mesh_mode == SurfaceMeshMode::Mesh {
+        let mut color = Color::from(GRAY_500);
+        color.set_alpha(0.3);
+
+        let (mesh, image_handle) = create_mesh_from_control_points(
+            &multi_curves,
+            resolution,
+            &scale_info.curvature_mode,
+            images,
+            scale_info.scale as f64,
+        );
+
+        let mat = StandardMaterial {
+            base_color_texture: Some(image_handle),
+            double_sided: true,
+            cull_mode: None,
+            ..Default::default()
+        };
+
+        {
+            let mut root = commands.get_entity(root.single().unwrap()).unwrap();
+            root.with_children(|ui| {
+                ui.spawn((
+                    Transform::default(),
+                    ResultSurface,
+                    Mesh3d(meshes.add(mesh)),
+                    MeshMaterial3d(materials.add(mat)),
+                ))
+                .observe(bezier_surface_picking);
+            });
+        }
+    } else {
+        let w = resolution.0;
+        let h = resolution.1;
+
+        let mut meshes_lines = Vec::new();
+
+        for line in scale_info.to_line_uv() {
+            let verticies = match line {
+                UVEither::U(u) => (0..h)
+                    .map(|v| compute_point_by_params(&multi_curves, u, v as f64 / ((h - 1) as f64)))
+                    .map(|p| p.into())
+                    .collect::<Vec<Vec3>>(),
+                UVEither::V(v) => (0..w)
+                    .map(|u| compute_point_by_params(&multi_curves, u as f64 / ((w - 1) as f64), v))
+                    .map(|p| p.into())
+                    .collect::<Vec<Vec3>>(),
+            };
+
+            let mut mesh = Mesh::new(
+                PrimitiveTopology::LineStrip,
+                RenderAssetUsages::RENDER_WORLD,
+            );
+            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, verticies);
+            meshes_lines.push(mesh);
+        }
+
+        {
+            let mut root = commands.get_entity(root.single().unwrap()).unwrap();
+            root.with_children(|ui| {
+                ui.spawn((Transform::default(), ResultSurface, Visibility::default()))
+                    .with_children(|ui| {
+                        for mesh in meshes_lines {
+                            ui.spawn((
+                                Mesh3d(meshes.add(mesh)),
+                                MeshMaterial3d(materials.add(Color::from(LIGHT_GREEN))),
+                                Pickable::IGNORE,
+                            ));
+                        }
+                    });
+            });
+        }
     }
 
     redraw_boxes.write(RedrawBoxesEvent);
@@ -233,12 +284,11 @@ pub fn redraw_boxes(
         commands.entity(p).despawn();
     }
 
-    let mat = StandardMaterial {
-        base_color: Color::from(RED_400),
-        double_sided: true,
-        cull_mode: None,
-        ..Default::default()
-    };
+    // Early return, because line mode hijacks the box count parameters (otherwise, no lines would
+    // be visible)
+    if scale_info.surface_mesh_mode == SurfaceMeshMode::Lines {
+        return;
+    }
 
     let multi_curves = collect_control_points(control_points);
     let mut root = commands.get_entity(root.single().unwrap()).unwrap();
@@ -539,6 +589,7 @@ impl Plugin for BezierRenderPlugin {
                 handle_state_change_event,
                 handle_change_curvature,
                 handle_box_dim_event,
+                handle_change_surface_mode,
             ),
         );
 
@@ -551,5 +602,6 @@ impl Plugin for BezierRenderPlugin {
         app.add_event::<ChangeCurvatureDisplayModeEvent>();
         app.add_event::<UpdateBoxDimEvent>();
         app.add_event::<RedrawBoxesEvent>();
+        app.add_event::<ChangeSurfaceMeshMode>();
     }
 }

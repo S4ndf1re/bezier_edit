@@ -26,6 +26,9 @@ pub struct ComputationResultBezierSurface {
     pub v_diff_2: Point,
 }
 
+pub fn compute_point_by_params(control_points: &ControlPoints2D, u: f64, v: f64) -> Point {
+    eval_2d_bezier_curves(control_points, u, v)
+}
 pub fn compute_points(
     control_points: &ControlPoints2D,
     u: u32,
@@ -34,8 +37,8 @@ pub fn compute_points(
     h: u32,
 ) -> ComputationResultBezierSurface {
     let uvs = [
-        ((u as f64) / ((w as f64) - 1.0)),
-        ((v as f64) / ((h as f64) - 1.0)),
+        ((u as f64) / ((w - 1) as f64)),
+        ((v as f64) / ((h - 1) as f64)),
     ];
 
     let resulting_point = eval_2d_bezier_curves(control_points, uvs[0], uvs[1]);
