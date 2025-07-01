@@ -130,13 +130,56 @@ pub fn update_surface_click(
     }
 }
 
+#[allow(clippy::complexity)]
 pub fn handle_state_change_event(
     mut reader: EventReader<SurfaceClickChangeset>,
     mut clicks: Query<&mut SurfaceClick>,
+    root: Query<Entity, With<RootTransform>>,
+    control_points: Query<(&Transform, &RenderPoint)>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    scale_res: Res<RenderInformation>,
 ) {
-    for evt in reader.read() {
-        for mut click in clicks.iter_mut() {
-            click.apply(evt.clone());
+    let scale = scale_res.scale;
+    if clicks.is_empty() {
+        let mut surface_click = SurfaceClick { u: 0.5, v: 0.5 };
+        for evt in reader.read() {
+            surface_click.apply(evt.clone());
+        }
+
+        let material = materials.add(Color::from(RED_400));
+        let sphere = meshes.add(Sphere::new(0.07 * scale).mesh().ico(5).unwrap());
+        let normal_pointer = meshes.add(Cuboid::new(0.07 * scale, 0.07 * scale, 0.5 * scale));
+
+        let mut root = commands.get_entity(root.single().unwrap()).unwrap();
+
+        let control_points = collect_control_points(control_points);
+        let evaluated = eval_2d_bezier_curves(&control_points, surface_click.u, surface_click.v);
+        let (u_diff, v_diff) = derive_2d(&control_points, surface_click.u, surface_click.v, 1);
+        let normal = &u_diff.cross(&v_diff);
+
+        root.with_children(|ui| {
+            ui.spawn((
+                surface_click,
+                MeshMaterial3d(material.clone()),
+                Mesh3d(sphere.clone()),
+                Transform::from_xyz(evaluated.x as f32, evaluated.y as f32, evaluated.z as f32)
+                    .looking_to(Into::<Vec3>::into(-1.0 * normal), Vec3::Y),
+            ))
+            .with_children(|parent| {
+                parent.spawn((
+                    Transform::from_xyz(0.0, 0.0, -0.25 * scale),
+                    MeshMaterial3d(material.clone()),
+                    Mesh3d(normal_pointer.clone()),
+                ));
+            });
+        });
+    } else {
+        for evt in reader.read() {
+            for mut click in clicks.iter_mut() {
+                click.apply(evt.clone());
+            }
         }
     }
 }

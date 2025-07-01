@@ -385,6 +385,7 @@ fn handle_input_grab(
     }
 }
 
+#[allow(clippy::complexity)]
 pub fn update_aim_line(
     mut aim_ray: Query<(Entity, &ChildOf), (With<AimLineRayMarker>, Without<AimLineMarker>)>,
     aim_query_left: Query<&GlobalTransform, With<AimLeft>>,

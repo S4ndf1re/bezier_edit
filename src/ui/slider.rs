@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fmt::Display, sync::Arc};
 
 use bevy::{
     color::palettes::{css::WHITE, tailwind::GRAY_800},
@@ -55,11 +55,12 @@ fn slider_value_change(
         if let Some(entity) = slider.slider_text
             && let Ok(mut text) = text3d.get_mut(entity)
         {
-            *text = Text3d::new(format!("{}: {:.2}", slider.text_prefix, slider.get()));
+            *text = Text3d::new(format!("{}", *slider));
         }
     }
 }
 
+#[allow(clippy::complexity)]
 fn slider_drag(
     trigger: Trigger<Pointer<Drag>>,
     camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
@@ -92,7 +93,7 @@ fn slider_drag(
         let axis = root.single().unwrap().right().as_vec3();
         let direction = (diff.dot(axis)) / (diff.length() * axis.length());
 
-        let delta_x = direction * diff.length();
+        let delta_x = direction * diff.length() * slider.span();
         let old_value = slider.get();
         slider.set(old_value + delta_x);
 
@@ -115,7 +116,7 @@ fn slider_drag(
         if let Some(entity) = slider.slider_text
             && let Ok(mut text) = text3d.get_mut(entity)
         {
-            *text = Text3d::new(format!("{}: {:.2}", slider.text_prefix, slider.get()));
+            *text = Text3d::new(format!("{}", *slider));
         }
     }
 }
@@ -134,7 +135,7 @@ fn slider_drag3d(
         let axis = root.single().unwrap().right().as_vec3();
         let direction = (diff.dot(axis)) / (diff.length() * axis.length());
 
-        let delta_x = direction * diff.length();
+        let delta_x = direction * diff.length() * slider.span();
         let old_value = slider.get();
         slider.set(old_value + delta_x);
 
@@ -157,7 +158,7 @@ fn slider_drag3d(
         if let Some(entity) = slider.slider_text
             && let Ok(mut text) = text3d.get_mut(entity)
         {
-            *text = Text3d::new(format!("{}: {:.2}", slider.text_prefix, slider.get()));
+            *text = Text3d::new(format!("{}", *slider));
         }
     }
 }
@@ -240,7 +241,7 @@ fn spawn_children<'s>(
                     .anchor(Anchor::Center)
                     .pack(),
                 UiColor::from(Color::WHITE),
-                Text3d::new(format!("{}: {value:.2}", slider.text_prefix)),
+                Text3d::new(format!("{slider}")),
                 Text3dStyling {
                     size: 64.0,
                     color: Srgba::new(1., 1., 1., 1.),
@@ -285,6 +286,8 @@ fn on_add(
     }
 }
 
+pub type ValueToStringFn = fn(f32) -> String;
+
 #[derive(Component)]
 #[require(Visibility)]
 pub struct UiSlider {
@@ -294,6 +297,7 @@ pub struct UiSlider {
     value: f32,
     slider_text: Option<Entity>,
     size: UiValue<Vec2>,
+    to_string_fn: ValueToStringFn,
 }
 
 impl UiSlider {
@@ -310,6 +314,7 @@ impl UiSlider {
             value: 0.0,
             slider_text: None,
             size: size.into(),
+            to_string_fn: |value| format!("{value:.2}"),
         }
     }
 
@@ -324,6 +329,20 @@ impl UiSlider {
     /// get value between 0 and 1 in respect to max and min value
     pub fn as_percent(&self) -> f32 {
         (self.value - self.min_value) / (self.max_value - self.min_value)
+    }
+
+    pub fn span(&self) -> f32 {
+        self.max_value - self.min_value
+    }
+
+    pub fn set_to_string_fn(&mut self, func: ValueToStringFn) {
+        self.to_string_fn = func;
+    }
+}
+
+impl Display for UiSlider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.text_prefix, (self.to_string_fn)(self.value))
     }
 }
 

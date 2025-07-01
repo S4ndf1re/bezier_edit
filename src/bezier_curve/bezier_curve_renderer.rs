@@ -1,10 +1,12 @@
 use super::components::*;
-use super::curvature_display_mode::{ChangeCurvatureDisplayModeEvent, handle_change_curvature};
-use super::render_info::RenderInformation;
+use super::curvature_display_mode::{
+    ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
+};
+use super::render_info::{RenderInformation, UpdateBoxDimEvent, handle_box_dim_event};
 use super::surface_click::{
     SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
 };
-use super::util::{collect_control_points, create_mesh_from_control_points};
+use super::util::{collect_control_points, create_mesh_from_control_points, curvature_to_color};
 use crate::RootTransform;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
@@ -37,6 +39,9 @@ pub enum RedrawEvent {
     HighQuality,
     Fast,
 }
+
+#[derive(Event)]
+pub struct RedrawBoxesEvent;
 
 fn update_lines(
     mut commands: Commands,
@@ -146,9 +151,9 @@ fn generate_pointcloud(
     control_points: Query<(&Transform, &RenderPoint)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    boxes: Query<Entity, With<CurveBox>>,
     images: ResMut<Assets<Image>>,
     scale_info: Res<RenderInformation>,
+    mut redraw_boxes: EventWriter<RedrawBoxesEvent>,
 ) {
     let mut resolution: Resolution = scale_info.fast_resolution;
     if !events.is_empty() {
@@ -204,6 +209,25 @@ fn generate_pointcloud(
         });
     }
 
+    redraw_boxes.write(RedrawBoxesEvent);
+}
+
+#[allow(clippy::complexity)]
+pub fn redraw_boxes(
+    mut events: EventReader<RedrawBoxesEvent>,
+    mut commands: Commands,
+    root: Query<Entity, With<RootTransform>>,
+    boxes: Query<Entity, With<CurveBox>>,
+    control_points: Query<(&Transform, &RenderPoint)>,
+    scale_info: Res<RenderInformation>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    if events.is_empty() {
+        return;
+    };
+    events.clear();
+
     // Despawn old, respawn new
     for p in boxes.iter() {
         commands.entity(p).despawn();
@@ -215,10 +239,28 @@ fn generate_pointcloud(
         cull_mode: None,
         ..Default::default()
     };
+
+    let multi_curves = collect_control_points(control_points);
     let mut root = commands.get_entity(root.single().unwrap()).unwrap();
     for (u, v) in scale_info.to_uv_sample() {
         let point = eval_2d_bezier_curves(&multi_curves, u, v);
         let (u_diff, v_diff) = derive_2d(&multi_curves, u, v, 1);
+        let normal = &u_diff.cross(&v_diff) * -1.0;
+        let (u_diff_2, v_diff_2) = derive_2d(&multi_curves, u, v, 2);
+
+        let color = if scale_info.curvature_mode == CurvatureDisplayMode::None {
+            (1.0, 0.0, 0.0)
+        } else {
+            curvature_to_color(
+                &scale_info.curvature_mode,
+                &normal,
+                &u_diff,
+                &v_diff,
+                &u_diff_2,
+                &v_diff_2,
+                scale_info.scale as f64,
+            )
+        };
 
         let mesh = Cuboid::new(
             scale_info.box_dim.0 * scale_info.scale,
@@ -235,9 +277,13 @@ fn generate_pointcloud(
                 ),
                 CurveBox,
                 Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(materials.add(mat.clone())),
-            ))
-            .observe(bezier_surface_picking);
+                MeshMaterial3d(materials.add(Color::from(Srgba::new(
+                    color.0 as f32,
+                    color.1 as f32,
+                    color.2 as f32,
+                    1.0,
+                )))),
+            ));
         });
     }
 }
@@ -475,13 +521,16 @@ pub struct BezierRenderPlugin;
 
 impl Plugin for BezierRenderPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<RedrawEvent>();
-        app.init_resource::<RenderInformation>();
         app.add_systems(Startup, generate_default_curve);
         app.add_systems(PreUpdate, (handle_keyboard, solve_constraints));
         app.add_systems(
             Update,
-            (generate_pointcloud, update_lines, update_surface_click),
+            (
+                generate_pointcloud,
+                update_lines,
+                update_surface_click,
+                redraw_boxes,
+            ),
         ); // , listen_to_mouse_left_button));
         app.add_systems(
             PostUpdate,
@@ -489,11 +538,18 @@ impl Plugin for BezierRenderPlugin {
                 handle_c1_points_events,
                 handle_state_change_event,
                 handle_change_curvature,
+                handle_box_dim_event,
             ),
         );
+
         app.init_resource::<ConstraintState>();
+        app.init_resource::<RenderInformation>();
+
+        app.add_event::<RedrawEvent>();
         app.add_event::<ToggleC1Enable>();
         app.add_event::<SurfaceClickChangeset>();
         app.add_event::<ChangeCurvatureDisplayModeEvent>();
+        app.add_event::<UpdateBoxDimEvent>();
+        app.add_event::<RedrawBoxesEvent>();
     }
 }

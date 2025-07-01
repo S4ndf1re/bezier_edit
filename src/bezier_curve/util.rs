@@ -142,7 +142,7 @@ pub fn create_mesh_from_control_points(
     (mesh, handle)
 }
 
-fn curvature_to_color(
+pub fn curvature_to_color(
     curvature_mode: &CurvatureDisplayMode,
     normal: &Point,
     u_diff_1: &Point,
