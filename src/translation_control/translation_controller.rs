@@ -289,7 +289,6 @@ fn drag_end3d_trigger_redraw(
     query: Query<Entity, With<ShadowMarker>>,
     mut history: EventWriter<HistoryLogEvent>,
 ) {
-    info!("Dragging ended");
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
 
