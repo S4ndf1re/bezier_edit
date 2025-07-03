@@ -36,7 +36,7 @@ fn update_thumbstick_events(
 
     let left_state_y = actions
         .left
-        .thumbstick_x
+        .thumbstick_y
         .state(&session, openxr::Path::NULL);
 
     let right_state_x = actions
