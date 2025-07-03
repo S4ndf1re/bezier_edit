@@ -1,19 +1,18 @@
 use super::components::*;
 use super::curvature_display_mode::{
-    ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
+    handle_change_curvature, ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode,
 };
 use super::render_info::{
-    ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
-    handle_box_dim_event, handle_change_surface_mode,
+    handle_box_dim_event, handle_change_surface_mode, ChangeSurfaceMeshMode, RenderInformation,
+    SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
 };
 use super::surface_click::{
-    SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
+    bezier_surface_picking, handle_state_change_event, update_surface_click, SurfaceClickChangeset,
 };
 use super::util::{
     collect_control_points, compute_point_by_params, compute_points,
     create_mesh_from_control_points, curvature_to_color,
 };
-use crate::RootTransform;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
 use crate::nurbs::point::Point;
@@ -23,6 +22,7 @@ use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::solver::{C1Constraint, Constraints, Solver};
 use crate::translation_control::translation_controller::EnableTranslationControl;
 use crate::util::update_material_on;
+use crate::RootTransform;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::css::LIGHT_GREEN;
@@ -184,7 +184,6 @@ fn generate_pointcloud(
         commands.entity(p).despawn();
     }
 
-    info!("Redrawing");
     let multi_curves = collect_control_points(control_points);
     if scale_info.surface_mesh_mode == SurfaceMeshMode::Mesh {
         let mut color = Color::from(GRAY_500);
