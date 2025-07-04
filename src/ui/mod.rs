@@ -20,6 +20,7 @@ use crate::{
     },
     history::plugin::HistoryUndoEvent,
 };
+use bevy_xr_utils::tracking_utils::XrTrackedView;
 
 #[derive(Component)]
 struct USlider;
