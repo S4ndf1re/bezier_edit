@@ -2,12 +2,12 @@ use bevy::{color::palettes::tailwind::RED_400, prelude::*};
 use struct_patch::Patch;
 
 use crate::{
-    RootTransform,
     nurbs::{
         bezier_plane::{derive_2d, determine_u_v, eval_2d_bezier_curves},
         point::Point,
     },
     ui::UiStateChangeset,
+    RootTransform,
 };
 
 use super::{
@@ -85,7 +85,8 @@ pub fn bezier_surface_picking(
                 let normal_pointer = meshes.add(Cuboid::new(
                     0.07 * scale,
                     0.07 * scale,
-                    (normal.magnitude() as f32) * scale,
+                    0.5 * scale,
+                    // (normal.magnitude() as f32) * scale,
                 ));
 
                 root.with_children(|ui| {
@@ -105,7 +106,8 @@ pub fn bezier_surface_picking(
                             Transform::from_xyz(
                                 0.0,
                                 0.0,
-                                -(normal.magnitude() as f32) / 2.0 * scale,
+                                -0.25 * scale,
+                                // -(normal.magnitude() as f32) / 2.0 * scale,
                             ),
                             MeshMaterial3d(material.clone()),
                             Mesh3d(normal_pointer.clone()),
@@ -156,11 +158,16 @@ pub fn update_surface_click(
                 let normal_pointer = meshes.add(Cuboid::new(
                     0.07 * scale,
                     0.07 * scale,
-                    (normal.magnitude() as f32) * scale,
+                    0.5 * scale,
+                    // (normal.magnitude() as f32) * scale,
                 ));
                 *mesh = Mesh3d(normal_pointer.clone());
-                *transform =
-                    Transform::from_xyz(0.0, 0.0, -(normal.magnitude() as f32) / 2.0 * scale);
+                *transform = Transform::from_xyz(
+                    0.0,
+                    0.0,
+                    -0.25 * scale,
+                    //-(normal.magnitude() as f32) / 2.0 * scale
+                );
             }
         }
     }
