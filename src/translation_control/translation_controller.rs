@@ -1,12 +1,13 @@
+use crate::RootTransform;
 use crate::bezier_curve::bezier_curve_renderer::RedrawEvent;
 use crate::bezier_curve::render_info::RenderInformation;
+use crate::click_decider::LogTrace;
 use crate::history::plugin::HistoryLogEvent;
 use crate::picking3d::events::{HoveredBy, MoveIn, MoveOut, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
-use crate::RootTransform;
 use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;
@@ -213,6 +214,7 @@ fn drag_start3d(
     arrows: Res<ControlStorage>,
     scale: Res<RenderInformation>,
     mut history: EventWriter<HistoryLogEvent>,
+    mut trace_log_writer: EventWriter<LogTrace>,
 ) {
     let mut root = commands.get_entity(root.single().unwrap()).unwrap();
     let dragged_entity = trigger.target();
@@ -254,6 +256,8 @@ fn drag_start3d(
         control_parent.0,
         Some(*start_transform),
     ));
+
+    trace_log_writer.write(LogTrace);
 }
 
 fn drag_end_trigger_redraw(
@@ -288,6 +292,7 @@ fn drag_end3d_trigger_redraw(
     mut commands: Commands,
     query: Query<Entity, With<ShadowMarker>>,
     mut history: EventWriter<HistoryLogEvent>,
+    mut trace_log_writer: EventWriter<LogTrace>,
 ) {
     info!("Dragging ended");
     let dragged_entity = trigger.target();
@@ -303,6 +308,8 @@ fn drag_end3d_trigger_redraw(
     }
 
     history.write(HistoryLogEvent::End(control_parent.0, None));
+
+    trace_log_writer.write(LogTrace);
 }
 
 fn drag_controller(

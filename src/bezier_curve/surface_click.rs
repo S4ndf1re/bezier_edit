@@ -2,12 +2,12 @@ use bevy::{color::palettes::tailwind::RED_400, prelude::*};
 use struct_patch::Patch;
 
 use crate::{
+    RootTransform,
     nurbs::{
         bezier_plane::{derive_2d, determine_u_v, eval_2d_bezier_curves},
         point::Point,
     },
     ui::UiStateChangeset,
-    RootTransform,
 };
 
 use super::{
