@@ -3,8 +3,8 @@ use super::curvature_display_mode::{
     ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
 };
 use super::render_info::{
-    RenderInformation, SurfaceMeshMode, UVEither, UpdateBoxDimEvent, handle_box_dim_event,
-    handle_change_surface_mode,
+    ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
+    handle_box_dim_event, handle_change_surface_mode,
 };
 use super::surface_click::{
     SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
@@ -607,5 +607,6 @@ impl Plugin for BezierRenderPlugin {
         app.add_event::<ChangeCurvatureDisplayModeEvent>();
         app.add_event::<UpdateBoxDimEvent>();
         app.add_event::<RedrawBoxesEvent>();
+        app.add_event::<ChangeSurfaceMeshMode>();
     }
 }
