@@ -1,4 +1,4 @@
-use bevy::{prelude::*, reflect::List};
+use bevy::prelude::*;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -21,6 +21,7 @@ pub enum ControllerSide {
 pub struct ControllerTrace {
     timed_transforms: VecDeque<(u128, Transform)>,
     controller_derivatives: VecDeque<(u128, ButtonPressValue, ButtonPressDerivative)>,
+    max_entries: usize,
 
     #[serde(skip_serializing, skip_deserializing)]
     start_time: Option<Instant>,
@@ -36,12 +37,14 @@ impl ControllerTrace {
         config: Config,
         start_value_controller: ButtonPressValue,
         side: ControllerSide,
+        max_entries: usize,
     ) -> Self {
         let now = Instant::now();
         let elapsed = now.elapsed().as_micros();
         Self {
             timed_transforms: VecDeque::new(),
             start_time: Some(now),
+            max_entries,
             controller_derivatives: VecDeque::from([(elapsed, start_value_controller, 0.0)]),
             config,
             side,
@@ -69,6 +72,14 @@ impl ControllerTrace {
 
             self.controller_derivatives
                 .push_back((time, button_press_value, derivative));
+        }
+
+        while self.controller_derivatives.len() > self.max_entries {
+            self.controller_derivatives.pop_front();
+        }
+
+        while self.timed_transforms.len() > self.max_entries {
+            self.timed_transforms.pop_front();
         }
     }
 

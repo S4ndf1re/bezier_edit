@@ -128,14 +128,14 @@ fn slider_drag3d_start(
     _: Trigger<Pointer3d<picking3d::events::DragStart>>,
     mut trace_log_writer: EventWriter<LogTrace>,
 ) {
-    trace_log_writer.write(LogTrace);
+    trace_log_writer.write(LogTrace::default());
 }
 
 fn slider_drag3d_end(
     _: Trigger<Pointer3d<picking3d::events::DragEnd>>,
     mut trace_log_writer: EventWriter<LogTrace>,
 ) {
-    trace_log_writer.write(LogTrace);
+    trace_log_writer.write(LogTrace::default());
 }
 
 fn slider_drag3d(

@@ -257,7 +257,7 @@ fn drag_start3d(
         Some(*start_transform),
     ));
 
-    trace_log_writer.write(LogTrace);
+    trace_log_writer.write(LogTrace::default());
 }
 
 fn drag_end_trigger_redraw(
@@ -309,7 +309,7 @@ fn drag_end3d_trigger_redraw(
 
     history.write(HistoryLogEvent::End(control_parent.0, None));
 
-    trace_log_writer.write(LogTrace);
+    trace_log_writer.write(LogTrace::default());
 }
 
 fn drag_controller(

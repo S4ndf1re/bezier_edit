@@ -53,7 +53,7 @@ fn button_clicked3d(
         entity.trigger(ButtonClickedEvent);
     }
 
-    trace_log_writer.write(LogTrace);
+    trace_log_writer.write(LogTrace::default());
 }
 
 fn spawn_children<'s>(

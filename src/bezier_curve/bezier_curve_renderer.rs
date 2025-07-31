@@ -136,7 +136,7 @@ fn enable_gizmo3d(
     } else {
         entity.insert(EnableTranslationControl);
     }
-    trace_log_writer.write(LogTrace);
+    trace_log_writer.write(LogTrace::default());
 }
 
 // fn drag_point(
