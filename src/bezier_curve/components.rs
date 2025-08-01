@@ -1,7 +1,23 @@
 use bevy::prelude::*;
 
+#[derive(States, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Hash, Debug)]
+pub enum ControlState {
+    #[default]
+    Main,
+    CreateCurve,
+    CreatePlane,
+    Delete,
+}
+
 #[derive(Component)]
 pub struct RenderPoint(pub usize, pub usize);
+
+#[derive(Component)]
+pub struct ControlCurve;
+
+#[derive(Component)]
+#[require(Transform)]
+pub struct ControlCurvePoint(usize);
 
 #[derive(Component)]
 #[require(Transform, Visibility)]

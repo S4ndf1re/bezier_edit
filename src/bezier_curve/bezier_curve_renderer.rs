@@ -1,18 +1,20 @@
 use super::components::*;
 use super::curvature_display_mode::{
-    handle_change_curvature, ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode,
+    ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
 };
+use super::helper_curves::{add_point_3d, commit_curve, commit_plane};
 use super::render_info::{
-    handle_box_dim_event, handle_change_surface_mode, ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode,
-    UVEither, UpdateBoxDimEvent,
+    ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
+    handle_box_dim_event, handle_change_surface_mode,
 };
 use super::surface_click::{
-    bezier_surface_picking, handle_state_change_event, update_surface_click, SurfaceClickChangeset,
+    SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
 };
 use super::util::{
     collect_control_points, compute_point_by_params, create_mesh_from_control_points,
     curvature_to_color,
 };
+use crate::RootTransform;
 use crate::click_decider::LogTrace;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
@@ -23,7 +25,6 @@ use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::solver::{C1Constraint, Constraints, Solver};
 use crate::translation_control::translation_controller::EnableTranslationControl;
 use crate::util::update_material_on;
-use crate::RootTransform;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::tailwind::*;
@@ -49,6 +50,55 @@ pub enum RedrawEvent {
 
 #[derive(Event)]
 pub struct RedrawBoxesEvent;
+
+#[derive(Event)]
+pub struct CreateCurveEvent;
+
+#[derive(Event)]
+pub struct CreatePlaneEvent;
+
+#[derive(Event)]
+pub struct DeleteModeEvent;
+
+fn handle_create_curve_event(
+    mut reader: EventReader<CreateCurveEvent>,
+    mut next_state: ResMut<NextState<ControlState>>,
+) {
+    if reader.is_empty() {
+        return;
+    }
+    reader.clear();
+
+    next_state.set(ControlState::CreateCurve);
+}
+
+fn handle_create_plane_event(
+    mut reader: EventReader<CreatePlaneEvent>,
+    mut next_state: ResMut<NextState<ControlState>>,
+) {
+    if reader.is_empty() {
+        return;
+    }
+    reader.clear();
+
+    next_state.set(ControlState::CreatePlane);
+}
+
+fn handle_delete_mode_event(
+    mut reader: EventReader<DeleteModeEvent>,
+    mut next_state: ResMut<NextState<ControlState>>,
+) {
+    if reader.is_empty() {
+        return;
+    }
+    reader.clear();
+
+    next_state.set(ControlState::Delete);
+}
+
+fn handle_end_mode(mut next_state: ResMut<NextState<ControlState>>) {
+    next_state.set(ControlState::Main)
+}
 
 fn update_lines(
     mut commands: Commands,
@@ -595,7 +645,24 @@ impl Plugin for BezierRenderPlugin {
                 handle_state_change_event,
                 handle_change_curvature,
                 handle_box_dim_event,
-                handle_change_surface_mode,
+                handle_change_surface_mode.run_if(in_state(ControlState::Main)),
+                handle_create_curve_event.run_if(in_state(ControlState::Main)),
+                handle_create_plane_event.run_if(in_state(ControlState::Main)),
+                handle_delete_mode_event.run_if(in_state(ControlState::Main)),
+                handle_end_mode.run_if(
+                    in_state(ControlState::CreateCurve)
+                        .or(in_state(ControlState::CreatePlane))
+                        .or(in_state(ControlState::Delete)),
+                ),
+            ),
+        );
+
+        app.add_systems(OnExit(ControlState::CreateCurve), commit_curve);
+        app.add_systems(OnExit(ControlState::CreatePlane), commit_plane);
+        app.add_systems(
+            Update,
+            add_point_3d.run_if(
+                in_state(ControlState::CreateCurve).or(in_state(ControlState::CreatePlane)),
             ),
         );
 

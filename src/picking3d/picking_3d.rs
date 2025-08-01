@@ -271,6 +271,7 @@ fn handle_input_grab(
     mut moved_marked_query: Query<(&GlobalTransform, &mut MoveMarker, Entity)>,
     mut left_writer: EventWriter<AddLeftTrace>,
     mut right_writer: EventWriter<AddRightTrace>,
+    mut click_writer: EventWriter<Pointer3d<Click>>,
 ) {
     for (state, hover_by) in [
         (trigger.left, HoveredBy::Left),
@@ -317,6 +318,13 @@ fn handle_input_grab(
                     },
                     *entity,
                 );
+
+                click_writer.write(Pointer3d {
+                    hit_entity: tracked.1,
+                    controler: hover_by,
+                    position: entity_global_position.translation(),
+                    event: Click,
+                });
             }
         } else if !current_state
             && pointer_state.is_grabbing(&hover_by)
