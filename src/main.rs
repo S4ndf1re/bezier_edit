@@ -21,6 +21,7 @@ use bevy_xr_utils::xr_utils_actions::{XRUtilsActionSystemSet, XRUtilsActionsPlug
 use bezier_curve::bezier_curve_renderer::*;
 use history::plugin::HistoryPlugin;
 
+use crate::bezier_curve::render_info::RenderInformation;
 use translation_control::translation_controller::TranslationController;
 use ui::UiPlugin;
 

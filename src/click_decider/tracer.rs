@@ -1,11 +1,11 @@
+use super::config::Config;
 use bevy::prelude::*;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
+use std::fs::create_dir_all;
 use std::io::Write;
 use std::{collections::VecDeque, fs::File, path::PathBuf, time::Instant};
-
-use super::config::Config;
 
 pub type ButtonPressValue = f64;
 pub type ButtonPressDerivative = f64;
@@ -91,8 +91,8 @@ impl ControllerTrace {
 
         let mut pathbuf = PathBuf::new();
         pathbuf.push(path);
-        let time = Utc::now().to_rfc3339();
-        pathbuf.push(time);
+        let time = Utc::now().timestamp_millis();
+        pathbuf.push(format!("{time}.json"));
 
         let mut file = File::create(pathbuf.as_path())?;
 
