@@ -1,18 +1,20 @@
 use super::components::*;
 use super::curvature_display_mode::{
-    handle_change_curvature, ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode,
+    ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
 };
 use super::render_info::{
-    handle_box_dim_event, handle_change_surface_mode, ChangeSurfaceMeshMode, RenderInformation,
-    SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
+    ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
+    handle_box_dim_event, handle_change_surface_mode,
 };
 use super::surface_click::{
-    bezier_surface_picking, handle_state_change_event, update_surface_click, SurfaceClickChangeset,
+    SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
 };
 use super::util::{
-    collect_control_points, compute_point_by_params, compute_points,
-    create_mesh_from_control_points, curvature_to_color,
+    collect_control_points, compute_point_by_params, create_mesh_from_control_points,
+    curvature_to_color,
 };
+use crate::RootTransform;
+use crate::click_decider::LogTrace;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
 use crate::nurbs::point::Point;
@@ -22,10 +24,8 @@ use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::solver::{C1Constraint, Constraints, Solver};
 use crate::translation_control::translation_controller::EnableTranslationControl;
 use crate::util::update_material_on;
-use crate::RootTransform;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
-use bevy::color::palettes::css::LIGHT_GREEN;
 use bevy::color::palettes::tailwind::*;
 use bevy::prelude::*;
 use bevy::render::mesh::PrimitiveTopology;
@@ -123,6 +123,7 @@ fn enable_gizmo3d(
     query: Query<&RenderPoint>,
     mut commands: Commands,
     enabled: Query<&EnableTranslationControl>,
+    mut trace_log_writer: EventWriter<LogTrace>,
 ) {
     if query.get(trigger.target()).is_err() {
         return;
@@ -135,6 +136,7 @@ fn enable_gizmo3d(
     } else {
         entity.insert(EnableTranslationControl);
     }
+    trace_log_writer.write(LogTrace::default());
 }
 
 // fn drag_point(
@@ -239,6 +241,10 @@ fn generate_pointcloud(
                 RenderAssetUsages::RENDER_WORLD,
             );
             mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, verticies);
+            info!(
+                "Spawning mesh with {} verticies",
+                mesh.attribute(Mesh::ATTRIBUTE_POSITION).iter().len()
+            );
             meshes_lines.push(mesh);
         }
 
@@ -250,7 +256,7 @@ fn generate_pointcloud(
                         for mesh in meshes_lines {
                             ui.spawn((
                                 Mesh3d(meshes.add(mesh)),
-                                MeshMaterial3d(materials.add(Color::from(LIGHT_GREEN))),
+                                MeshMaterial3d(materials.add(Color::BLACK)),
                                 Pickable::IGNORE,
                             ));
                         }

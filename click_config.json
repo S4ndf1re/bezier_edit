@@ -1,0 +1,4 @@
+{
+  "left_log_path": "./click_log/left/",
+  "right_log_path": "./click_log/right/"
+}

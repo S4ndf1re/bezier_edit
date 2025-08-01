@@ -2,6 +2,7 @@
 
 mod advanced_orbit_controls;
 mod bezier_curve;
+pub mod click_decider;
 mod history;
 mod nurbs;
 pub mod picking3d;
@@ -16,18 +17,10 @@ use crate::advanced_orbit_controls::AdvancedOrbitControls;
 use crate::thirdparty_copy::transform_util_copy::{SnapToPosition, SnapToRotation};
 use crate::translation_control::control_storage::ControlStorage;
 use bevy::prelude::*;
-use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
-use bevy_mod_openxr::add_xr_plugins;
-use bevy_mod_openxr::resources::OxrSessionConfig;
-use bevy_mod_openxr::types::EnvironmentBlendMode;
-use bevy_mod_xr::camera::XrCamera;
 use bevy_xr_utils::xr_utils_actions::{XRUtilsActionSystemSet, XRUtilsActionsPlugin};
 use bezier_curve::bezier_curve_renderer::*;
 use history::plugin::HistoryPlugin;
-use picking3d::picking_3d::ObjectPicking3d;
 
-use crate::bezier_curve::render_info::RenderInformation;
-use crate::vr_control::VrControlPlugin;
 use translation_control::translation_controller::TranslationController;
 use ui::UiPlugin;
 
@@ -50,7 +43,7 @@ fn setup(mut commands: Commands) {
         Transform::from_xyz(0.0, 10.0, 0.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
     ));
 
-    commands.spawn((RootTransform));
+    commands.spawn(RootTransform);
 }
 
 #[cfg(feature = "vr_enable")]
@@ -102,6 +95,14 @@ fn create_app() -> App {
 
 #[cfg(feature = "vr_enable")]
 fn create_app() -> App {
+    use crate::vr_control::VrControlPlugin;
+    use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
+    use bevy_mod_openxr::add_xr_plugins;
+    use bevy_mod_openxr::resources::OxrSessionConfig;
+    use bevy_mod_openxr::types::EnvironmentBlendMode;
+    use click_decider::TracingPlugin;
+    use picking3d::picking_3d::ObjectPicking3d;
+
     info!("Creating VR App");
     let mut app = App::new();
     app.add_plugins(add_xr_plugins(
@@ -124,6 +125,7 @@ fn create_app() -> App {
     .add_plugins(TranslationController)
     .add_plugins(VrControlPlugin)
     .add_plugins(UiPlugin)
+    .add_plugins(TracingPlugin)
     .add_systems(Startup, (setup.before(generate_default_curve),))
     .insert_resource(ClearColor(Color::NONE));
 

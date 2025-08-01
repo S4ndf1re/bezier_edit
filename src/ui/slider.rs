@@ -8,7 +8,10 @@ use bevy::{
 };
 use bevy_lunex::{Rl, UiColor, UiDepth, UiLayout, UiMeshPlane3d, prelude::*};
 
-use crate::picking3d::{self, events::Pointer3d, picking_3d::Picking3dInteractable};
+use crate::{
+    click_decider::LogTrace,
+    picking3d::{self, events::Pointer3d, picking_3d::Picking3dInteractable},
+};
 
 #[derive(Event)]
 pub struct ChangeSliderValueEvent {
@@ -119,6 +122,20 @@ fn slider_drag(
             *text = Text3d::new(format!("{}", *slider));
         }
     }
+}
+
+fn slider_drag3d_start(
+    _: Trigger<Pointer3d<picking3d::events::DragStart>>,
+    mut trace_log_writer: EventWriter<LogTrace>,
+) {
+    trace_log_writer.write(LogTrace::default());
+}
+
+fn slider_drag3d_end(
+    _: Trigger<Pointer3d<picking3d::events::DragEnd>>,
+    mut trace_log_writer: EventWriter<LogTrace>,
+) {
+    trace_log_writer.write(LogTrace::default());
 }
 
 fn slider_drag3d(
@@ -281,6 +298,8 @@ fn on_add(
                 })
                 .observe(slider_drag)
                 .observe(slider_drag3d)
+                .observe(slider_drag3d_start)
+                .observe(slider_drag3d_end)
                 .observe(slider_value_change);
         }
     }

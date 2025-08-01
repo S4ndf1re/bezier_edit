@@ -1,4 +1,5 @@
 use crate::bezier_curve::render_info::RenderInformation;
+use crate::click_decider::{AddLeftTrace, AddRightTrace};
 use crate::picking3d::events::{
     Click, Drag, DragEnd, DragStart, HoveredBy, MoveIn, MoveOut, Pointer3d,
 };
@@ -197,7 +198,11 @@ fn test_all_hovered(
                 .always_early_exit(),
             );
 
-            if let Some(hit) = collisions.iter().position(|entity| entity.0 == p.1) {
+            if collisions
+                .iter()
+                .position(|entity| entity.0 == p.1)
+                .is_some()
+            {
                 is_first_ray_hit = true;
             }
         }
@@ -219,7 +224,11 @@ fn test_all_hovered(
                 .always_early_exit(),
             );
 
-            if let Some(hit) = collisions.iter().position(|entity| entity.0 == p.1) {
+            if collisions
+                .iter()
+                .position(|entity| entity.0 == p.1)
+                .is_some()
+            {
                 is_first_ray_hit = true;
             }
         }
@@ -260,6 +269,8 @@ fn handle_input_grab(
     right_tracked: Single<(&GlobalTransform, Entity), With<GripRight>>,
     mut picking_state: ResMut<PickingState>,
     mut moved_marked_query: Query<(&GlobalTransform, &mut MoveMarker, Entity)>,
+    mut left_writer: EventWriter<AddLeftTrace>,
+    mut right_writer: EventWriter<AddRightTrace>,
 ) {
     for (state, hover_by) in [
         (trigger.left, HoveredBy::Left),
@@ -269,6 +280,21 @@ fn handle_input_grab(
             HoveredBy::Left => *left_tracked,
             HoveredBy::Right => *right_tracked,
         };
+
+        match hover_by {
+            HoveredBy::Left => {
+                left_writer.write(AddLeftTrace {
+                    transform: tracked.0.compute_transform(),
+                    click_value: state as f64,
+                });
+            }
+            HoveredBy::Right => {
+                right_writer.write(AddRightTrace {
+                    transform: tracked.0.compute_transform(),
+                    click_value: state as f64,
+                });
+            }
+        }
 
         let current_state = state > 0.2;
         if !current_state

@@ -5,7 +5,10 @@ use bevy::{
 };
 use bevy_lunex::{UiStateTrait, prelude::*};
 
-use crate::picking3d::{self, events::Pointer3d, picking_3d::Picking3dInteractable};
+use crate::{
+    click_decider::LogTrace,
+    picking3d::{self, events::Pointer3d, picking_3d::Picking3dInteractable},
+};
 
 #[derive(Event)]
 pub struct ButtonClickedEvent;
@@ -41,10 +44,16 @@ fn button_clicked(trigger: Trigger<Pointer<Click>>, mut commands: Commands) {
     }
 }
 
-fn button_clicked3d(trigger: Trigger<Pointer3d<picking3d::events::Click>>, mut commands: Commands) {
+fn button_clicked3d(
+    trigger: Trigger<Pointer3d<picking3d::events::Click>>,
+    mut commands: Commands,
+    mut trace_log_writer: EventWriter<LogTrace>,
+) {
     if let Ok(mut entity) = commands.get_entity(trigger.target()) {
         entity.trigger(ButtonClickedEvent);
     }
+
+    trace_log_writer.write(LogTrace::default());
 }
 
 fn spawn_children<'s>(

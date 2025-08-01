@@ -244,7 +244,7 @@ pub struct VrControlPlugin;
 
 impl Plugin for VrControlPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(Config::read_or_create_default("config.json"));
+        app.insert_resource(Config::read_or_create_default("vr_config.json"));
         app.add_systems(XrSessionCreated, spawn_hand_tracking);
         app.add_systems(XrSessionCreated, create_hand_trackers);
         app.add_systems(XrSessionCreated, attach_set);
