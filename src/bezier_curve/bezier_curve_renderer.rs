@@ -15,7 +15,7 @@ use super::surface_click::{
 };
 use super::util::{
     collect_control_points, compute_point_by_params, create_mesh_from_control_points,
-    curvature_to_color,
+    curvature_to_color, enable_gizmo, enable_gizmo_shadow_points, enable_gizmo3d,
 };
 use crate::RootTransform;
 use crate::click_decider::LogTrace;
@@ -141,66 +141,6 @@ fn update_lines(
             );
         }
     }
-}
-
-fn enable_gizmo(
-    trigger: Trigger<Pointer<Click>>,
-    query: Query<&RenderPoint>,
-    mut commands: Commands,
-    enabled: Query<&EnableTranslationControl>,
-) {
-    if query.get(trigger.target()).is_err() {
-        return;
-    }
-
-    let mut entity = commands.get_entity(trigger.target()).unwrap();
-
-    if enabled.get(trigger.target()).is_ok() {
-        entity.remove::<EnableTranslationControl>();
-    } else {
-        entity.insert(EnableTranslationControl);
-    }
-}
-
-fn enable_gizmo_shadow_points(
-    trigger: Trigger<Pointer<Click>>,
-    query: Query<&C1ControlPoint>,
-    mut commands: Commands,
-    enabled: Query<&EnableTranslationControl>,
-) {
-    if query.get(trigger.target()).is_err() {
-        return;
-    }
-
-    let mut entity = commands.get_entity(trigger.target()).unwrap();
-
-    if enabled.get(trigger.target()).is_ok() {
-        entity.remove::<EnableTranslationControl>();
-    } else {
-        entity.insert(EnableTranslationControl);
-    }
-}
-
-fn enable_gizmo3d(
-    trigger: Trigger<Pointer3d<events::Click>>,
-    query: Query<&RenderPoint>,
-    mut commands: Commands,
-    enabled: Query<&EnableTranslationControl>,
-    mut trace_log_writer: EventWriter<LogTrace>,
-) {
-    if query.get(trigger.target()).is_err() {
-        return;
-    }
-
-    let mut entity = commands.get_entity(trigger.target()).unwrap();
-
-    if enabled.get(trigger.target()).is_ok() {
-        entity.remove::<EnableTranslationControl>();
-    } else {
-        entity.insert(EnableTranslationControl);
-    }
-    println!("Sending log trace event");
-    trace_log_writer.write(LogTrace::default());
 }
 
 // fn drag_point(

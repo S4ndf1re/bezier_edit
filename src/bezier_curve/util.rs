@@ -7,8 +7,11 @@ use bevy::{color::palettes::css::BLACK, prelude::*};
 use num::pow;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
+use crate::click_decider::LogTrace;
 use crate::nurbs::bezier_plane::{ControlPoints2D, derive_2d, eval_2d_bezier_curves};
 use crate::nurbs::point::Point;
+use crate::picking3d::events::{self, Pointer3d};
+use crate::translation_control::translation_controller::EnableTranslationControl;
 
 use super::bezier_curve_renderer::Resolution;
 use super::components::RenderPoint;
@@ -246,4 +249,49 @@ pub fn collect_control_points(
         multi_curves.iter().map(|p| p.1.clone()).collect::<Vec<_>>();
 
     multi_curves
+}
+
+pub fn enable_gizmo_shadow_points(
+    trigger: Trigger<Pointer<Click>>,
+    mut commands: Commands,
+    enabled: Query<&EnableTranslationControl>,
+) {
+    let mut entity = commands.get_entity(trigger.target()).unwrap();
+
+    if enabled.get(trigger.target()).is_ok() {
+        entity.remove::<EnableTranslationControl>();
+    } else {
+        entity.insert(EnableTranslationControl);
+    }
+}
+
+pub fn enable_gizmo(
+    trigger: Trigger<Pointer<Click>>,
+    mut commands: Commands,
+    enabled: Query<&EnableTranslationControl>,
+) {
+    let mut entity = commands.get_entity(trigger.target()).unwrap();
+
+    if enabled.get(trigger.target()).is_ok() {
+        entity.remove::<EnableTranslationControl>();
+    } else {
+        entity.insert(EnableTranslationControl);
+    }
+}
+
+pub fn enable_gizmo3d(
+    trigger: Trigger<Pointer3d<events::Click>>,
+    mut commands: Commands,
+    enabled: Query<&EnableTranslationControl>,
+    mut trace_log_writer: EventWriter<LogTrace>,
+) {
+    let mut entity = commands.get_entity(trigger.target()).unwrap();
+
+    if enabled.get(trigger.target()).is_ok() {
+        entity.remove::<EnableTranslationControl>();
+    } else {
+        entity.insert(EnableTranslationControl);
+    }
+    println!("Sending log trace event");
+    trace_log_writer.write(LogTrace::default());
 }

@@ -9,7 +9,7 @@ use crate::{
     picking3d::{self, events::Pointer3d},
 };
 
-use super::render_info::RenderInformation;
+use super::{render_info::RenderInformation, util::enable_gizmo3d};
 
 #[derive(Component)]
 pub struct ControlCurve;
@@ -109,11 +109,15 @@ pub fn commit_curve(
             let (entity, mut transform, point) = tmp_points.get_mut(child_point_entity).unwrap();
 
             transform.translation = root_transform.transform_point3(transform.translation);
-            let mut cmd_entity = commands.get_entity(entity).unwrap();
-            cmd_entity.insert(ChildOf(parent));
             let idx = point.0;
-            cmd_entity.remove::<TemporaryCurvePoint>();
-            cmd_entity.insert(ControlCurvePoint(idx));
+
+            commands
+                .get_entity(entity)
+                .unwrap()
+                .insert(ChildOf(parent))
+                .remove::<TemporaryCurvePoint>()
+                .insert(ControlCurvePoint(idx))
+                .observe(enable_gizmo3d);
         }
 
         // Despawn temporary curve, that was replaced by a final curve
@@ -122,6 +126,8 @@ pub fn commit_curve(
 
     redraw_curves_writer.write(RedrawCurvesEvent);
 }
+
+pub fn toggle_gizmo() {}
 
 #[allow(clippy::complexity)]
 pub fn render_curves(

@@ -318,14 +318,15 @@ fn handle_input_grab(
                     },
                     *entity,
                 );
-
-                click_writer.write(Pointer3d {
-                    hit_entity: tracked.1,
-                    controler: hover_by,
-                    position: entity_global_position.translation(),
-                    event: Click,
-                });
             }
+
+            // NOTE: This is another position, since we are not clicking on anything.
+            click_writer.write(Pointer3d {
+                hit_entity: tracked.1,
+                controler: hover_by,
+                position: tracked.0.translation(),
+                event: Click,
+            });
         } else if !current_state
             && pointer_state.is_grabbing(&hover_by)
             && !pointer_state.is_just_toggled(&hover_by)

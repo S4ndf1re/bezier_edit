@@ -1,5 +1,6 @@
 use crate::RootTransform;
 use crate::bezier_curve::bezier_curve_renderer::RedrawEvent;
+use crate::bezier_curve::helper_curves::RedrawCurvesEvent;
 use crate::bezier_curve::render_info::RenderInformation;
 use crate::click_decider::LogTrace;
 use crate::history::plugin::HistoryLogEvent;
@@ -260,11 +261,13 @@ fn drag_start3d(
     trace_log_writer.write(LogTrace::default());
 }
 
+#[allow(clippy::complexity)]
 fn drag_end_trigger_redraw(
     trigger: Trigger<Pointer<DragEnd>>,
     arrow_query: Query<(&ChildOf, Entity), With<Control>>,
     control_parents: Query<&ControlParent>,
     mut redraw_writer: EventWriter<RedrawEvent>,
+    mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
     mut commands: Commands,
     query: Query<Entity, With<ShadowMarker>>,
     mut history: EventWriter<HistoryLogEvent>,
@@ -276,6 +279,7 @@ fn drag_end_trigger_redraw(
     let control_parent = control_parents.get(dragged_parent).unwrap();
 
     redraw_writer.write(RedrawEvent::HighQuality);
+    redraw_curves_writer.write(RedrawCurvesEvent);
 
     for entity in query {
         commands.get_entity(entity).unwrap().despawn();
@@ -284,11 +288,13 @@ fn drag_end_trigger_redraw(
     history.write(HistoryLogEvent::End(control_parent.0, None));
 }
 
+#[allow(clippy::complexity)]
 fn drag_end3d_trigger_redraw(
     trigger: Trigger<Pointer3d<crate::picking3d::events::DragEnd>>,
     arrow_query: Query<(&ChildOf, Entity), With<Control>>,
     control_parents: Query<&ControlParent>,
     mut redraw_writer: EventWriter<RedrawEvent>,
+    mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
     mut commands: Commands,
     query: Query<Entity, With<ShadowMarker>>,
     mut history: EventWriter<HistoryLogEvent>,
@@ -301,6 +307,7 @@ fn drag_end3d_trigger_redraw(
     let control_parent = control_parents.get(dragged_parent).unwrap();
 
     redraw_writer.write(RedrawEvent::HighQuality);
+    redraw_curves_writer.write(RedrawCurvesEvent);
 
     for entity in query {
         commands.get_entity(entity).unwrap().despawn();
@@ -311,6 +318,7 @@ fn drag_end3d_trigger_redraw(
     trace_log_writer.write(LogTrace::default());
 }
 
+#[allow(clippy::complexity)]
 fn drag_controller(
     trigger: Trigger<Pointer<Drag>>,
     control_query: Query<(&Control, &ChildOf)>,
@@ -318,6 +326,7 @@ fn drag_controller(
     camera: Query<(&Camera, &GlobalTransform)>,
     mut control_parents: Query<(&ControlParent, &mut Transform)>,
     mut redraw_writer: EventWriter<RedrawEvent>,
+    mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
 ) {
     let (control, child_of) = control_query.get(trigger.target()).unwrap();
@@ -361,6 +370,7 @@ fn drag_controller(
     };
 
     redraw_writer.write(RedrawEvent::Fast);
+    redraw_curves_writer.write(RedrawCurvesEvent);
 }
 
 fn drag_controller3d(
@@ -369,6 +379,7 @@ fn drag_controller3d(
     mut all_other_transforms: Query<&mut Transform, (Without<Control>, Without<ControlParent>)>,
     mut control_parents: Query<(&ControlParent, &mut Transform)>,
     mut redraw_writer: EventWriter<RedrawEvent>,
+    mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
 ) {
     // NOTE: Make sure that the draw event is triggered only once. Otherwise this difference adding happens multiple times for the same event........
@@ -398,6 +409,7 @@ fn drag_controller3d(
     };
 
     redraw_writer.write(RedrawEvent::Fast);
+    redraw_curves_writer.write(RedrawCurvesEvent);
 }
 
 pub struct TranslationController;
