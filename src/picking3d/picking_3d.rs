@@ -584,6 +584,6 @@ impl Plugin for ObjectPicking3d {
             .add_event::<Pointer3d<Drag>>()
             .add_event::<Pointer3d<DragEnd>>()
             .insert_resource(PickingState::new())
-            .insert_resource(Pointer3dState::new(15)); // On 90 FPS (VR Standard), 15 Ticks correspond to 0,1666666667 s
+            .insert_resource(Pointer3dState::new(30)); // On 90 FPS (VR Standard), 30 Ticks correspond to 2 * 0,1666666667 s = 0,3333333333 s
     }
 }
