@@ -6,13 +6,13 @@ use bevy::{
     sprite::Anchor,
 };
 use bevy_lunex::{UiStateTrait, prelude::*};
-use bevy_xr_utils::tracking_utils::XrTrackedView;
 use button::{ButtonClickedEvent, ButtonPlugin, ChangeTextEvent, UiButton};
 use slider::{ChangeSliderValueEvent, SliderPlugin, SliderValueChangedEvent, UiSlider};
 use struct_patch::Patch;
 
 use crate::{
     bezier_curve::{
+        bezier_curve_renderer::{CreateCurveEvent, EndModeEvent},
         curvature_display_mode::{ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode},
         render_info::{
             ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UpdateBoxDimEvent,
@@ -300,6 +300,48 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: ResMut
                 }
             },
         );
+    });
+
+    ui.spawn((
+        Name::new("Layout Sixt"),
+        UiLayout::window()
+            .pos(Rl((5.0, 85.0)))
+            .size((Rw(90.0), Rh(10.0)))
+            .anchor(Anchor::TopLeft)
+            .pack(),
+    ))
+    .with_children(|ui| {
+        ui.spawn(
+            UiLayout::window()
+                .pos(Rl((0.0, 0.0)))
+                .size(Rl((45.0, 100.0)))
+                .anchor(Anchor::TopLeft)
+                .pack(),
+        )
+        .with_children(|ui| {
+            ui.spawn(UiButton::new("Create".to_owned(), 6, Rl(100.0)))
+                .observe(
+                    |_: Trigger<ButtonClickedEvent>, mut writer: EventWriter<CreateCurveEvent>| {
+                        writer.write(CreateCurveEvent);
+                    },
+                );
+        });
+
+        ui.spawn(
+            UiLayout::window()
+                .pos(Rl((55.0, 0.0)))
+                .size(Rl((45.0, 100.0)))
+                .anchor(Anchor::TopLeft)
+                .pack(),
+        )
+        .with_children(|ui| {
+            ui.spawn(UiButton::new("Confirm".to_owned(), 7, Rl(100.0)))
+                .observe(
+                    |_: Trigger<ButtonClickedEvent>, mut writer: EventWriter<EndModeEvent>| {
+                        writer.write(EndModeEvent);
+                    },
+                );
+        });
     });
 }
 

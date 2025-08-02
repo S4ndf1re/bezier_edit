@@ -2,7 +2,10 @@ use super::components::*;
 use super::curvature_display_mode::{
     ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
 };
-use super::helper_curves::{add_point_3d, commit_curve, commit_plane};
+use super::helper_curves::{
+    RedrawCurvesEvent, add_point_3d, commit_curve, commit_plane, enter_create_curve_mode,
+    render_curves,
+};
 use super::render_info::{
     ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
     handle_box_dim_event, handle_change_surface_mode,
@@ -60,6 +63,9 @@ pub struct CreatePlaneEvent;
 #[derive(Event)]
 pub struct DeleteModeEvent;
 
+#[derive(Event)]
+pub struct EndModeEvent;
+
 fn handle_create_curve_event(
     mut reader: EventReader<CreateCurveEvent>,
     mut next_state: ResMut<NextState<ControlState>>,
@@ -96,7 +102,14 @@ fn handle_delete_mode_event(
     next_state.set(ControlState::Delete);
 }
 
-fn handle_end_mode(mut next_state: ResMut<NextState<ControlState>>) {
+fn handle_end_mode(
+    mut reader: EventReader<EndModeEvent>,
+    mut next_state: ResMut<NextState<ControlState>>,
+) {
+    if reader.is_empty() {
+        return;
+    }
+    reader.clear();
     next_state.set(ControlState::Main)
 }
 
@@ -636,6 +649,7 @@ impl Plugin for BezierRenderPlugin {
                 update_lines,
                 update_surface_click,
                 redraw_boxes,
+                render_curves,
             ),
         ); // , listen_to_mouse_left_button));
         app.add_systems(
@@ -657,6 +671,7 @@ impl Plugin for BezierRenderPlugin {
             ),
         );
 
+        app.add_systems(OnEnter(ControlState::CreateCurve), enter_create_curve_mode);
         app.add_systems(OnExit(ControlState::CreateCurve), commit_curve);
         app.add_systems(OnExit(ControlState::CreatePlane), commit_plane);
         app.add_systems(
@@ -676,5 +691,10 @@ impl Plugin for BezierRenderPlugin {
         app.add_event::<UpdateBoxDimEvent>();
         app.add_event::<RedrawBoxesEvent>();
         app.add_event::<ChangeSurfaceMeshMode>();
+        app.add_event::<RedrawCurvesEvent>();
+        app.add_event::<CreateCurveEvent>();
+        app.add_event::<CreatePlaneEvent>();
+        app.add_event::<DeleteModeEvent>();
+        app.add_event::<EndModeEvent>();
     }
 }

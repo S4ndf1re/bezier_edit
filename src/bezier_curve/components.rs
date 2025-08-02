@@ -13,13 +13,6 @@ pub enum ControlState {
 pub struct RenderPoint(pub usize, pub usize);
 
 #[derive(Component)]
-pub struct ControlCurve;
-
-#[derive(Component)]
-#[require(Transform)]
-pub struct ControlCurvePoint(usize);
-
-#[derive(Component)]
 #[require(Transform, Visibility)]
 pub struct C1ControlPoint(pub i32, pub i32, pub usize, pub usize);
 
