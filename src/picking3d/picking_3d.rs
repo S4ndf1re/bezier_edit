@@ -302,6 +302,7 @@ fn handle_input_grab(
             && pointer_state.is_grabbing(&hover_by)
             && pointer_state.is_just_toggled(&hover_by)
         {
+            let mut sended_event = false;
             // Click event here, since the new state is false, the old state was true and the state change lasted only <n ticks
             for entity in picking_state.iter(&hover_by) {
                 let entity_global_position = transform_query.get(*entity);
@@ -318,15 +319,20 @@ fn handle_input_grab(
                     },
                     *entity,
                 );
+                sended_event = true;
             }
 
-            // NOTE: This is another position, since we are not clicking on anything.
-            click_writer.write(Pointer3d {
-                hit_entity: tracked.1,
-                controler: hover_by,
-                position: tracked.0.translation(),
-                event: Click,
-            });
+            // Only send when not clicking on anything else. This may inhibit some functionality,
+            // but is needed to handle click events and still use the ui
+            if !sended_event {
+                // NOTE: This is another position, since we are not clicking on anything.
+                click_writer.write(Pointer3d {
+                    hit_entity: tracked.1,
+                    controler: hover_by,
+                    position: tracked.0.translation(),
+                    event: Click,
+                });
+            }
         } else if !current_state
             && pointer_state.is_grabbing(&hover_by)
             && !pointer_state.is_just_toggled(&hover_by)
