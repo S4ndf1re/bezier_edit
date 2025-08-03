@@ -15,18 +15,12 @@ use super::surface_click::{
 };
 use super::util::{
     collect_control_points, compute_point_by_params, create_mesh_from_control_points,
-    curvature_to_color, enable_gizmo, enable_gizmo_shadow_points, enable_gizmo3d,
+    curvature_to_color, enable_gizmo, enable_gizmo3d,
 };
 use crate::RootTransform;
-use crate::click_decider::LogTrace;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
-use crate::nurbs::point::Point;
-use crate::picking3d::events;
-use crate::picking3d::events::Pointer3d;
 use crate::picking3d::picking_3d::Picking3dInteractable;
-use crate::solver::{C1Constraint, Constraints, Solver};
-use crate::translation_control::translation_controller::EnableTranslationControl;
 use crate::util::update_material_on;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
@@ -36,14 +30,6 @@ use bevy::render::mesh::PrimitiveTopology;
 use num::ToPrimitive;
 
 pub type Resolution = (u32, u32);
-
-#[derive(Resource, Default)]
-pub struct ConstraintState {
-    c1_enabled: bool,
-}
-
-#[derive(Event)]
-pub struct ToggleC1Enable;
 
 #[derive(Event)]
 pub enum RedrawEvent {
@@ -359,7 +345,6 @@ pub fn generate_default_curve(
     let scale = scale_res.scale;
     let height = scale_res.height;
     let material = materials.add(Color::from(GRAY_400));
-    let material_shadow = materials.add(Color::from(GRAY_700));
     let material_hover = materials.add(Color::from(GRAY_600));
     let sphere = meshes.add(Sphere::new(0.1 * scale).mesh().ico(5).unwrap());
 
@@ -411,18 +396,6 @@ pub fn generate_default_curve(
                 .observe(enable_gizmo3d)
                 .id();
             ids.push(id);
-        });
-    }
-
-    for p in c1_control_points {
-        root.with_children(|ui| {
-            ui.spawn((
-                C1ControlPoint(p.0, p.1, p.2, p.3),
-                Mesh3d(sphere.clone()),
-                MeshMaterial3d(material_shadow.clone()),
-                Visibility::Hidden,
-            ))
-            .observe(enable_gizmo_shadow_points);
         });
     }
 
@@ -483,88 +456,13 @@ pub fn generate_default_curve(
     event_writer.write(RedrawEvent::HighQuality);
 }
 
-#[allow(clippy::complexity)]
-fn handle_c1_points_events(
-    mut reader: EventReader<ToggleC1Enable>,
-    mut constraint_state: ResMut<ConstraintState>,
-    mut set: ParamSet<(
-        Query<(&mut Transform, &C1ControlPoint, &mut Visibility)>,
-        Query<(&Transform, &RenderPoint)>,
-    )>,
-) {
-    if !reader.is_empty() {
-        reader.clear();
-        constraint_state.c1_enabled = !constraint_state.c1_enabled;
-    } else {
-        return;
-    }
-
-    let points = collect_control_points(set.p1());
-
-    for (mut trans, c1_point, mut visibility) in set.p0().iter_mut() {
-        if constraint_state.c1_enabled {
-            let constraint = C1Constraint::new(
-                Point::default(),
-                (c1_point.0, c1_point.1),
-                (c1_point.2, c1_point.3),
-            );
-
-            if let Some(new_position) = constraint.inverse(&points) {
-                trans.translation = new_position.into();
-                *visibility = Visibility::Visible;
-            }
-        } else {
-            *visibility = Visibility::Hidden;
-        }
-    }
-}
-
-#[allow(clippy::complexity)]
-fn solve_constraints(
-    constraint_state: Res<ConstraintState>,
-    mut set: ParamSet<(
-        Query<(&Transform, &C1ControlPoint)>,
-        Query<(&mut Transform, &RenderPoint)>,
-    )>,
-) {
-    let points = collect_control_points(set.p1().as_readonly());
-
-    let mut constraints = vec![];
-
-    for (trans, c1_point) in set.p0().iter() {
-        if constraint_state.c1_enabled {
-            let constraint = C1Constraint::new(
-                trans.translation.into(),
-                (c1_point.0, c1_point.1),
-                (c1_point.2, c1_point.3),
-            );
-            constraints.push(constraint);
-        }
-    }
-
-    let points = Solver::solve_constraints(
-        &points,
-        Constraints {
-            c1_constraints: constraints,
-        },
-    );
-
-    for (mut trans, render_point) in set.p1().iter_mut() {
-        trans.translation = points[render_point.0][render_point.1].into();
-    }
-}
-
 fn handle_keyboard(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut toggle_writer: EventWriter<ToggleC1Enable>,
+    // mut toggle_writer: EventWriter<ToggleC1Enable>,
     mut history: EventWriter<HistoryUndoEvent>,
     mut change_curvature: EventWriter<ChangeCurvatureDisplayModeEvent>,
     renderinfo: Res<RenderInformation>,
 ) {
-    if keyboard.just_released(KeyCode::Space) {
-        toggle_writer.write(ToggleC1Enable);
-    }
-
     if keyboard.just_released(KeyCode::KeyU) {
         history.write(HistoryUndoEvent);
     }
@@ -581,7 +479,8 @@ pub struct BezierRenderPlugin;
 impl Plugin for BezierRenderPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, generate_default_curve);
-        app.add_systems(PreUpdate, (handle_keyboard, solve_constraints));
+        // app.add_systems(PreUpdate, (handle_keyboard, solve_constraints));
+        app.add_systems(PreUpdate, handle_keyboard);
         app.add_systems(
             Update,
             (
@@ -595,7 +494,7 @@ impl Plugin for BezierRenderPlugin {
         app.add_systems(
             PostUpdate,
             (
-                handle_c1_points_events,
+                // handle_c1_points_events,
                 handle_state_change_event,
                 handle_change_curvature,
                 handle_box_dim_event,
@@ -621,11 +520,11 @@ impl Plugin for BezierRenderPlugin {
             ),
         );
 
-        app.init_resource::<ConstraintState>();
+        // app.init_resource::<ConstraintState>();
         app.init_resource::<RenderInformation>();
 
         app.add_event::<RedrawEvent>();
-        app.add_event::<ToggleC1Enable>();
+        // app.add_event::<ToggleC1Enable>();
         app.add_event::<SurfaceClickChangeset>();
         app.add_event::<ChangeCurvatureDisplayModeEvent>();
         app.add_event::<UpdateBoxDimEvent>();
