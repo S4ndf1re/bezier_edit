@@ -21,8 +21,38 @@ pub struct EnableTranslationControl;
 
 #[derive(Component)]
 struct ControlParent(Entity);
+
 #[derive(Component)]
 struct Control(Vec3);
+
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SnappingBehaviour {
+    #[default]
+    NoSnap,
+    Snap,
+}
+#[derive(Resource, Default)]
+struct TranslationControllerState {
+    curve_snapping: SnappingBehaviour,
+}
+
+#[derive(Event)]
+pub struct ToggleSnappingBehaviour;
+
+fn handle_toggle_snapping(
+    mut reader: EventReader<ToggleSnappingBehaviour>,
+    mut state: ResMut<TranslationControllerState>,
+) {
+    if reader.is_empty() {
+        return;
+    }
+    reader.clear();
+
+    state.curve_snapping = match state.curve_snapping {
+        SnappingBehaviour::NoSnap => SnappingBehaviour::Snap,
+        SnappingBehaviour::Snap => SnappingBehaviour::NoSnap,
+    };
+}
 
 fn register_deletes(
     mut commands: Commands,
@@ -322,7 +352,7 @@ fn drag_controller(
     control_query: Query<(&Control, &ChildOf)>,
     mut all_other_transforms: Query<&mut Transform, (Without<Control>, Without<ControlParent>)>,
     camera: Query<(&Camera, &GlobalTransform)>,
-    mut control_parents: Query<(&ControlParent, &mut Transform)>,
+    mut control_parents: Query<&ControlParent>,
     mut redraw_writer: EventWriter<RedrawEvent>,
     mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
@@ -358,7 +388,7 @@ fn drag_controller(
     let direction = (diff.dot(axis)) / (diff.length() * axis.length());
     let translation = axis * direction * trigger.delta.length() * 0.01;
 
-    let (control_parent, transform) = control_parents.get_mut(parent).unwrap();
+    let control_parent = control_parents.get_mut(parent).unwrap();
     // transform.translation += translation;
 
     // Only adjust the control parent
@@ -375,7 +405,7 @@ fn drag_controller3d(
     trigger: Trigger<Pointer3d<crate::picking3d::events::Drag>>,
     control_query: Query<(&Control, &ChildOf)>,
     mut all_other_transforms: Query<&mut Transform, (Without<Control>, Without<ControlParent>)>,
-    mut control_parents: Query<(&ControlParent, &mut Transform)>,
+    mut control_parents: Query<&ControlParent>,
     mut redraw_writer: EventWriter<RedrawEvent>,
     mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
@@ -397,7 +427,7 @@ fn drag_controller3d(
     let direction = (axis.dot(diff)) / (axis.length() * diff.length());
     let translation = axis * diff.length() * direction;
 
-    let (control_parent, transform) = control_parents.get_mut(parent).unwrap();
+    let control_parent = control_parents.get_mut(parent).unwrap();
     // transform.translation += translation;
 
     let control_point = all_other_transforms.get_mut(control_parent.0);
@@ -414,7 +444,16 @@ pub struct TranslationController;
 impl Plugin for TranslationController {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, show_transitional_controls);
-        app.add_systems(PostUpdate, register_deletes);
+        app.add_systems(
+            PostUpdate,
+            (
+                register_deletes,
+                handle_toggle_snapping.run_if(on_event::<ToggleSnappingBehaviour>),
+            ),
+        );
         app.init_resource::<ControlStorage>();
+
+        app.init_resource::<TranslationControllerState>();
+        app.add_event::<ToggleSnappingBehaviour>();
     }
 }
