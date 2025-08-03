@@ -55,6 +55,8 @@ pub struct ToggleSnappingBehaviour;
 fn handle_toggle_snapping(
     mut reader: EventReader<ToggleSnappingBehaviour>,
     mut state: ResMut<TranslationControllerState>,
+    mut commands: Commands,
+    snapped: Query<Entity, With<SnappedPoint>>,
 ) {
     if reader.is_empty() {
         return;
@@ -63,7 +65,12 @@ fn handle_toggle_snapping(
 
     state.curve_snapping = match state.curve_snapping {
         SnappingBehaviour::NoSnap => SnappingBehaviour::Snap,
-        SnappingBehaviour::Snap => SnappingBehaviour::NoSnap,
+        SnappingBehaviour::Snap => {
+            for snap in snapped {
+                commands.get_entity(snap).unwrap().remove::<SnappedPoint>();
+            }
+            SnappingBehaviour::NoSnap
+        }
     };
 }
 
@@ -369,6 +376,7 @@ struct ObligatoryDragParams<'w, 's> {
     curves: CurveCollection<'w, 's>,
     snapped: Query<'w, 's, (Entity, Write<SnappedPoint>)>,
     info: Res<'w, RenderInformation>,
+    state: Res<'w, TranslationControllerState>,
 }
 
 impl<'w, 's> ObligatoryDragParams<'w, 's> {
@@ -381,43 +389,47 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         let is_already_snapped = self.snapped.get(control_parent.0).is_ok();
         let control_point = self.all_other_transforms.get_mut(control_parent.0);
         if let Ok(mut t) = control_point {
-            if !is_already_snapped {
-                let shortest = self.curves.collect_shortest(Point::from(t.translation));
+            if self.state.curve_snapping == SnappingBehaviour::Snap {
+                if !is_already_snapped {
+                    let shortest = self.curves.collect_shortest(Point::from(t.translation));
 
-                if let Some((curve, u, p, dist)) = shortest
-                    && dist < 0.001 * self.info.scale as f64
-                {
-                    t.translation = p.into();
+                    if let Some((curve, u, p, dist)) = shortest
+                        && dist < 0.001 * self.info.scale as f64
+                    {
+                        t.translation = p.into();
 
-                    self.commands
-                        .get_entity(control_parent.0)
-                        .unwrap()
-                        .insert(SnappedPoint { u, curve });
-                    // TODO: Add arrow, that moves along the curvature of bezier curve that was snapped
-                    // to
+                        self.commands
+                            .get_entity(control_parent.0)
+                            .unwrap()
+                            .insert(SnappedPoint { u, curve });
+                        // TODO: Add arrow, that moves along the curvature of bezier curve that was snapped
+                        // to
+                    } else {
+                        t.translation += translation;
+                    }
                 } else {
-                    t.translation += translation;
+                    let point = Point::from(t.translation + translation);
+
+                    let shortest = self.curves.collect_shortest(point);
+                    if let Some((curve, u, p, dist)) = shortest
+                        && dist < 0.001 * self.info.scale as f64
+                    {
+                        let mut snap = self.snapped.get_mut(control_parent.0).unwrap().1;
+                        snap.curve = curve;
+                        snap.u = u;
+
+                        t.translation = p.into();
+                    } else {
+                        let entity = self.snapped.get(control_parent.0).unwrap().0;
+                        self.commands
+                            .get_entity(entity)
+                            .unwrap()
+                            .remove::<SnappedPoint>();
+                        t.translation = point.into();
+                    }
                 }
             } else {
-                let point = Point::from(t.translation + translation);
-
-                let shortest = self.curves.collect_shortest(point);
-                if let Some((curve, u, p, dist)) = shortest
-                    && dist < 0.001 * self.info.scale as f64
-                {
-                    let mut snap = self.snapped.get_mut(control_parent.0).unwrap().1;
-                    snap.curve = curve;
-                    snap.u = u;
-
-                    t.translation = p.into();
-                } else {
-                    let entity = self.snapped.get(control_parent.0).unwrap().0;
-                    self.commands
-                        .get_entity(entity)
-                        .unwrap()
-                        .remove::<SnappedPoint>();
-                    t.translation = point.into();
-                }
+                t.translation += translation;
             }
         };
 
