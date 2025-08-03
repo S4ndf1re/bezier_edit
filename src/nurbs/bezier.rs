@@ -104,3 +104,49 @@ pub fn split_at<T: AsRef<[Point]>>(points: T, t: f64) -> (Vec<Point>, Vec<Point>
 
     (left_half, right_half)
 }
+
+/// Compute the parameter t in the interval of [0, 1] (clamped) that has the shortest distance with point p
+/// Code is taken from https://stackoverflow.com/questions/2742610/closest-point-on-a-cubic-bezier-curve and translated into this rust implementation
+pub fn shortest_distance_to_point<T: AsRef<[Point]>>(points: T, point: Point) -> f64 {
+    // TODO replace this algorithm with a numerically stable solution, and not just the
+    // brute-force solution
+
+    let mut min = f64::MAX;
+    let mut min_index = f64::MAX;
+    let first_scans_counter = 50; // Modify using a resolution flag
+    let eps = 1e-10;
+
+    for scan in 0..=first_scans_counter {
+        let t = (scan as f64) / (first_scans_counter as f64);
+        let p = horner_scheme(&points, t);
+        let diff = &point - &p;
+        let distance = diff.magnitude();
+        if distance < min {
+            min = distance;
+            min_index = scan as f64;
+        }
+    }
+
+    // Now that the probable min index is found, use binary search to actually find the min index.
+    // (clapmed)
+
+    let t0 = ((min_index - 1.0) / first_scans_counter as f64).max(0.0);
+    let t1 = ((min_index + 1.0) / first_scans_counter as f64).min(1.0);
+    let f = |t| (&point - &horner_scheme(&points, t)).magnitude();
+
+    let mut n = t0;
+    let mut m = t1;
+    let mut k = 0.0;
+
+    while (m - n) > eps {
+        k = (n + m) / 2.0;
+
+        if f(k - eps) < f(k + eps) {
+            m = k;
+        } else {
+            n = k;
+        }
+    }
+
+    k
+}
