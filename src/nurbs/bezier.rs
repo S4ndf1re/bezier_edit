@@ -107,7 +107,7 @@ pub fn split_at<T: AsRef<[Point]>>(points: T, t: f64) -> (Vec<Point>, Vec<Point>
 
 /// Compute the parameter t in the interval of [0, 1] (clamped) that has the shortest distance with point p
 /// Code is taken from https://stackoverflow.com/questions/2742610/closest-point-on-a-cubic-bezier-curve and translated into this rust implementation
-pub fn shortest_distance_to_point<T: AsRef<[Point]>>(points: T, point: Point) -> f64 {
+pub fn shortest_distance_to_point<T: AsRef<[Point]>>(points: T, point: Point) -> (f64, Point, f64) {
     // TODO replace this algorithm with a numerically stable solution, and not just the
     // brute-force solution
 
@@ -148,5 +148,5 @@ pub fn shortest_distance_to_point<T: AsRef<[Point]>>(points: T, point: Point) ->
         }
     }
 
-    k
+    (k, horner_scheme(&points, k), f(k))
 }

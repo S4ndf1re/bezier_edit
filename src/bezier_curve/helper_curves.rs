@@ -14,7 +14,10 @@ use bevy::{
 use crate::{
     RootTransform,
     click_decider::LogTrace,
-    nurbs::{bezier::horner_scheme, point::Point},
+    nurbs::{
+        bezier::{horner_scheme, shortest_distance_to_point},
+        point::Point,
+    },
     picking3d::events::{self, Click, Pointer3d},
     translation_control::translation_controller::EnableTranslationControl,
 };
@@ -209,6 +212,33 @@ impl<'w, 's> CurveCollection<'w, 's> {
         }
 
         result
+    }
+
+    pub fn collect_shortest(&self, point: Point) -> Option<(Entity, f64, Point, f64)> {
+        let mut min = f64::MAX;
+        let mut min_u = None;
+        let mut min_curve = None;
+        let mut min_point = None;
+
+        let collected = self.collect();
+        for (curve, points) in collected {
+            let (u, p, dist) = shortest_distance_to_point(&points, point);
+            if dist < min {
+                min = dist;
+                min_u = Some(u);
+                min_curve = Some(curve);
+                min_point = Some(p);
+            }
+        }
+
+        if let Some(u) = min_u
+            && let Some(curve) = min_curve
+            && let Some(p) = min_point
+        {
+            Some((curve, u, p, min))
+        } else {
+            None
+        }
     }
 }
 

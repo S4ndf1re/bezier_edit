@@ -1,17 +1,30 @@
 use crate::RootTransform;
 use crate::bezier_curve::bezier_curve_renderer::RedrawEvent;
-use crate::bezier_curve::helper_curves::RedrawCurvesEvent;
+use crate::bezier_curve::helper_curves::{
+    ControlCurve, ControlCurvePoint, CurveCollection, RedrawCurvesEvent, TemporaryCurve,
+    TemporaryCurvePoint,
+};
 use crate::bezier_curve::render_info::RenderInformation;
 use crate::click_decider::LogTrace;
 use crate::history::plugin::HistoryLogEvent;
+use crate::nurbs::bezier::{horner_scheme, shortest_distance_to_point};
+use crate::nurbs::point::Point;
 use crate::picking3d::events::{HoveredBy, MoveIn, MoveOut, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
 use bevy::ecs::relationship::RelatedSpawnerCommands;
+use bevy::ecs::system::SystemParam;
+use bevy::ecs::system::lifetimeless::{Read, Write};
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;
+
+#[derive(Component)]
+struct SnappedPoint {
+    u: f64,
+    curve: Entity,
+}
 
 #[derive(Component)]
 pub struct ShadowMarker;
@@ -346,16 +359,81 @@ fn drag_end3d_trigger_redraw(
     trace_log_writer.write(LogTrace::default());
 }
 
+#[derive(SystemParam)]
+struct ObligatoryDragParams<'w, 's> {
+    commands: Commands<'w, 's>,
+    all_other_transforms:
+        Query<'w, 's, Write<Transform>, (Without<Control>, Without<ControlParent>)>,
+    redraw_writer: EventWriter<'w, RedrawEvent>,
+    redraw_curves_writer: EventWriter<'w, RedrawCurvesEvent>,
+    curves: CurveCollection<'w, 's>,
+    snapped: Query<'w, 's, (Entity, Write<SnappedPoint>)>,
+    info: Res<'w, RenderInformation>,
+}
+
+impl<'w, 's> ObligatoryDragParams<'w, 's> {
+    fn update_position_drag_universal(
+        &mut self,
+        control_parent: &ControlParent,
+        translation: Vec3,
+    ) {
+        // Only adjust the control parent
+        let is_already_snapped = self.snapped.get(control_parent.0).is_ok();
+        let control_point = self.all_other_transforms.get_mut(control_parent.0);
+        if let Ok(mut t) = control_point {
+            if !is_already_snapped {
+                let shortest = self.curves.collect_shortest(Point::from(t.translation));
+
+                if let Some((curve, u, p, dist)) = shortest
+                    && dist < 0.001 * self.info.scale as f64
+                {
+                    t.translation = p.into();
+
+                    self.commands
+                        .get_entity(control_parent.0)
+                        .unwrap()
+                        .insert(SnappedPoint { u, curve });
+                    // TODO: Add arrow, that moves along the curvature of bezier curve that was snapped
+                    // to
+                } else {
+                    t.translation += translation;
+                }
+            } else {
+                let point = Point::from(t.translation + translation);
+
+                let shortest = self.curves.collect_shortest(point);
+                if let Some((curve, u, p, dist)) = shortest
+                    && dist < 0.001 * self.info.scale as f64
+                {
+                    let mut snap = self.snapped.get_mut(control_parent.0).unwrap().1;
+                    snap.curve = curve;
+                    snap.u = u;
+
+                    t.translation = p.into();
+                } else {
+                    let entity = self.snapped.get(control_parent.0).unwrap().0;
+                    self.commands
+                        .get_entity(entity)
+                        .unwrap()
+                        .remove::<SnappedPoint>();
+                    t.translation = point.into();
+                }
+            }
+        };
+
+        self.redraw_writer.write(RedrawEvent::Fast);
+        self.redraw_curves_writer.write(RedrawCurvesEvent);
+    }
+}
+
 #[allow(clippy::complexity)]
 fn drag_controller(
     trigger: Trigger<Pointer<Drag>>,
     control_query: Query<(&Control, &ChildOf)>,
-    mut all_other_transforms: Query<&mut Transform, (Without<Control>, Without<ControlParent>)>,
     camera: Query<(&Camera, &GlobalTransform)>,
     mut control_parents: Query<&ControlParent>,
-    mut redraw_writer: EventWriter<RedrawEvent>,
-    mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
+    mut params: ObligatoryDragParams,
 ) {
     let (control, child_of) = control_query.get(trigger.target()).unwrap();
 
@@ -389,26 +467,17 @@ fn drag_controller(
     let translation = axis * direction * trigger.delta.length() * 0.01;
 
     let control_parent = control_parents.get_mut(parent).unwrap();
-    // transform.translation += translation;
 
-    // Only adjust the control parent
-    let control_point = all_other_transforms.get_mut(control_parent.0);
-    if let Ok(mut t) = control_point {
-        t.translation += translation;
-    };
-
-    redraw_writer.write(RedrawEvent::Fast);
-    redraw_curves_writer.write(RedrawCurvesEvent);
+    params.update_position_drag_universal(control_parent, translation);
 }
 
+#[allow(clippy::complexity)]
 fn drag_controller3d(
     trigger: Trigger<Pointer3d<crate::picking3d::events::Drag>>,
     control_query: Query<(&Control, &ChildOf)>,
-    mut all_other_transforms: Query<&mut Transform, (Without<Control>, Without<ControlParent>)>,
     mut control_parents: Query<&ControlParent>,
-    mut redraw_writer: EventWriter<RedrawEvent>,
-    mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
+    mut params: ObligatoryDragParams,
 ) {
     // NOTE: Make sure that the draw event is triggered only once. Otherwise this difference adding happens multiple times for the same event........
     let (control, child_of) = control_query.get(trigger.target()).unwrap();
@@ -428,15 +497,28 @@ fn drag_controller3d(
     let translation = axis * diff.length() * direction;
 
     let control_parent = control_parents.get_mut(parent).unwrap();
-    // transform.translation += translation;
 
-    let control_point = all_other_transforms.get_mut(control_parent.0);
-    if let Ok(mut t) = control_point {
-        t.translation += translation;
-    };
+    params.update_position_drag_universal(control_parent, translation);
+}
 
-    redraw_writer.write(RedrawEvent::Fast);
-    redraw_curves_writer.write(RedrawCurvesEvent);
+fn update_snapped_points(
+    mut commands: Commands,
+    mut snapped: Query<(&mut Transform, &SnappedPoint, Entity)>,
+    curves: CurveCollection,
+) {
+    let curves = curves.collect();
+
+    for (mut transform, snap, entity) in snapped.iter_mut() {
+        if let Some(curve) = curves.get(&snap.curve) {
+            let p = horner_scheme(curve, snap.u);
+            transform.translation = p.into();
+        } else {
+            commands
+                .get_entity(entity)
+                .unwrap()
+                .remove::<SnappedPoint>();
+        }
+    }
 }
 
 pub struct TranslationController;
@@ -449,6 +531,7 @@ impl Plugin for TranslationController {
             (
                 register_deletes,
                 handle_toggle_snapping.run_if(on_event::<ToggleSnappingBehaviour>),
+                update_snapped_points,
             ),
         );
         app.init_resource::<ControlStorage>();
