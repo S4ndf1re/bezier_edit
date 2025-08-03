@@ -1,7 +1,13 @@
 use std::collections::HashMap;
 
 use bevy::{
-    asset::RenderAssetUsages, color::palettes::tailwind::PURPLE_600, prelude::*,
+    asset::RenderAssetUsages,
+    color::palettes::tailwind::PURPLE_600,
+    ecs::{
+        query::QueryData,
+        system::{SystemParam, lifetimeless::Read},
+    },
+    prelude::*,
     render::mesh::PrimitiveTopology,
 };
 
@@ -180,66 +186,70 @@ pub fn commit_curve(
     redraw_curves_writer.write(RedrawCurvesEvent);
 }
 
-#[allow(clippy::complexity)]
-/// Collect only created curves
-pub fn collect_curves(
-    mut curves: Query<Entity, (With<ControlCurve>, Without<TemporaryCurve>)>,
-    children: Query<&Children>,
-    curves_points: Query<(&ControlCurvePoint, &Transform), Without<TemporaryCurvePoint>>,
-) -> HashMap<Entity, Vec<Point>> {
-    let mut result = HashMap::new();
-    for curve in curves.iter_mut() {
-        let mut points = Vec::new();
-        for child in children.iter_descendants(curve) {
-            if let Ok(point) = curves_points.get(child) {
-                points.push((point.0.0, Point::from(point.1.translation)));
-            }
-        }
-        points.sort_by_key(|p| p.0);
-        result.insert(curve, points.iter().map(|p| p.1).collect());
-    }
-
-    result
+#[derive(SystemParam)]
+pub struct CurveCollection<'w, 's> {
+    curves: Query<'w, 's, Entity, (With<ControlCurve>, Without<TemporaryCurve>)>,
+    children: Query<'w, 's, Read<Children>>,
+    curves_points:
+        Query<'w, 's, (Read<ControlCurvePoint>, Read<Transform>), Without<TemporaryCurvePoint>>,
 }
 
-#[allow(clippy::complexity)]
-/// Collect only temporary curves
-pub fn collect_temporary_curves(
-    curves: Query<Entity, (With<TemporaryCurve>, Without<ControlCurve>)>,
-    children: Query<&Children>,
-    curves_points: Query<(&TemporaryCurvePoint, &Transform), Without<ControlCurvePoint>>,
-) -> HashMap<Entity, Vec<Point>> {
-    let mut result = HashMap::new();
-    for curve in curves.iter() {
-        let mut points = Vec::new();
-        for child in children.iter_descendants(curve) {
-            if let Ok(point) = curves_points.get(child) {
-                points.push((point.0.0, Point::from(point.1.translation)));
+impl<'w, 's> CurveCollection<'w, 's> {
+    pub fn collect(&self) -> HashMap<Entity, Vec<Point>> {
+        let mut result = HashMap::new();
+        for curve in self.curves.iter() {
+            let mut points = Vec::new();
+            for child in self.children.iter_descendants(curve) {
+                if let Ok(point) = self.curves_points.get(child) {
+                    points.push((point.0.0, Point::from(point.1.translation)));
+                }
             }
+            points.sort_by_key(|p| p.0);
+            result.insert(curve, points.iter().map(|p| p.1).collect());
         }
-        points.sort_by_key(|p| p.0);
-        result.insert(curve, points.iter().map(|p| p.1).collect());
-    }
 
-    result
+        result
+    }
 }
 
-/// Collect both temporary and created curves
-pub fn collect_all_curves(
-    curves: Query<Entity, (With<ControlCurve>, Without<TemporaryCurve>)>,
-    curves_points: Query<(&ControlCurvePoint, &Transform), Without<TemporaryCurvePoint>>,
-    temporary_curves: Query<Entity, (With<TemporaryCurve>, Without<ControlCurve>)>,
-    temporary_points: Query<(&TemporaryCurvePoint, &Transform), Without<ControlCurvePoint>>,
-    children: Query<&Children>,
-) -> HashMap<Entity, Vec<Point>> {
-    let mut map = collect_curves(curves, children, curves_points);
-    map.extend(collect_temporary_curves(
-        temporary_curves,
-        children,
-        temporary_points,
-    ));
+#[derive(SystemParam)]
+pub struct TemporaryCurveCollection<'w, 's> {
+    curves: Query<'w, 's, Entity, (With<TemporaryCurve>, Without<ControlCurve>)>,
+    children: Query<'w, 's, Read<Children>>,
+    curves_points:
+        Query<'w, 's, (Read<TemporaryCurvePoint>, Read<Transform>), Without<ControlCurvePoint>>,
+}
 
-    map
+impl<'w, 's> TemporaryCurveCollection<'w, 's> {
+    pub fn collect(&self) -> HashMap<Entity, Vec<Point>> {
+        let mut result = HashMap::new();
+        for curve in self.curves.iter() {
+            let mut points = Vec::new();
+            for child in self.children.iter_descendants(curve) {
+                if let Ok(point) = self.curves_points.get(child) {
+                    points.push((point.0.0, Point::from(point.1.translation)));
+                }
+            }
+            points.sort_by_key(|p| p.0);
+            result.insert(curve, points.iter().map(|p| p.1).collect());
+        }
+
+        result
+    }
+}
+
+#[derive(SystemParam)]
+pub struct AllCurveCollection<'w, 's> {
+    curves: CurveCollection<'w, 's>,
+    temporary_curves: TemporaryCurveCollection<'w, 's>,
+}
+
+impl<'w, 's> AllCurveCollection<'w, 's> {
+    pub fn collect(&self) -> HashMap<Entity, Vec<Point>> {
+        let mut map = self.curves.collect();
+        map.extend(self.temporary_curves.collect());
+        map
+    }
 }
 
 #[allow(clippy::complexity)]
@@ -247,14 +257,7 @@ pub fn render_curves(
     mut redraw_curves_writer: EventReader<RedrawCurvesEvent>,
     mut commands: Commands,
     mut meshes3d: Query<&mut Mesh3d>,
-    // curves
-    curves: Query<Entity, (With<ControlCurve>, Without<TemporaryCurve>)>,
-    curves_points: Query<(&ControlCurvePoint, &Transform), Without<TemporaryCurvePoint>>,
-    // temp_curves
-    temporary_curves: Query<Entity, (With<TemporaryCurve>, Without<ControlCurve>)>,
-    temporary_points: Query<(&TemporaryCurvePoint, &Transform), Without<ControlCurvePoint>>,
-    //
-    children: Query<&Children>,
+    all_curves: AllCurveCollection,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -263,13 +266,7 @@ pub fn render_curves(
     }
     redraw_curves_writer.clear();
 
-    let curves_collected = collect_all_curves(
-        curves,
-        curves_points,
-        temporary_curves,
-        temporary_points,
-        children,
-    );
+    let curves_collected = all_curves.collect();
 
     // after collecting, set meshes accordingly
     for (entity, points) in curves_collected {
