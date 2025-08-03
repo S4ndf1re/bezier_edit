@@ -3,9 +3,13 @@ use super::curvature_display_mode::{
     ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
 };
 use super::helper_curves::{
-    RedrawCurvesEvent, add_point_3d, commit_curve, commit_plane, enter_create_curve_mode,
+    CreateCurveState, RedrawCurvesEvent, commit_curve, commit_plane, enter_create_curve_mode,
     render_curves,
 };
+
+#[cfg(feature = "vr_enable")]
+use super::helper_curves::add_point_3d;
+
 use super::render_info::{
     ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
     handle_box_dim_event, handle_change_surface_mode,
@@ -513,6 +517,8 @@ impl Plugin for BezierRenderPlugin {
         app.add_systems(OnEnter(ControlState::CreateCurve), enter_create_curve_mode);
         app.add_systems(OnExit(ControlState::CreateCurve), commit_curve);
         app.add_systems(OnExit(ControlState::CreatePlane), commit_plane);
+
+        #[cfg(feature = "vr_enable")]
         app.add_systems(
             Update,
             add_point_3d.run_if(
@@ -522,6 +528,7 @@ impl Plugin for BezierRenderPlugin {
 
         // app.init_resource::<ConstraintState>();
         app.init_resource::<RenderInformation>();
+        app.init_resource::<CreateCurveState>();
 
         app.add_event::<RedrawEvent>();
         // app.add_event::<ToggleC1Enable>();
@@ -535,5 +542,6 @@ impl Plugin for BezierRenderPlugin {
         app.add_event::<CreatePlaneEvent>();
         app.add_event::<DeleteModeEvent>();
         app.add_event::<EndModeEvent>();
+        app.init_state::<ControlState>();
     }
 }
