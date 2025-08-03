@@ -214,11 +214,12 @@ impl<'w, 's> CurveCollection<'w, 's> {
         result
     }
 
-    pub fn collect_shortest(&self, point: Point) -> Option<(Entity, f64, Point, f64)> {
+    pub fn collect_shortest(&self, point: Point) -> Option<(Entity, f64, Point, f64, Vec<Point>)> {
         let mut min = f64::MAX;
         let mut min_u = None;
         let mut min_curve = None;
         let mut min_point = None;
+        let mut min_points = None;
 
         let collected = self.collect();
         for (curve, points) in collected {
@@ -228,14 +229,16 @@ impl<'w, 's> CurveCollection<'w, 's> {
                 min_u = Some(u);
                 min_curve = Some(curve);
                 min_point = Some(p);
+                min_points = Some(points);
             }
         }
 
         if let Some(u) = min_u
             && let Some(curve) = min_curve
             && let Some(p) = min_point
+            && let Some(points) = min_points
         {
-            Some((curve, u, p, min))
+            Some((curve, u, p, min, points))
         } else {
             None
         }

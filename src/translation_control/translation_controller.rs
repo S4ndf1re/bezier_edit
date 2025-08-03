@@ -7,13 +7,16 @@ use crate::bezier_curve::helper_curves::{
 use crate::bezier_curve::render_info::RenderInformation;
 use crate::click_decider::LogTrace;
 use crate::history::plugin::HistoryLogEvent;
-use crate::nurbs::bezier::{horner_scheme, shortest_distance_to_point};
+use crate::nurbs::bezier::{
+    de_casteljau, derive_after_de_casteljau, horner_scheme, shortest_distance_to_point,
+};
 use crate::nurbs::point::Point;
 use crate::picking3d::events::{HoveredBy, MoveIn, MoveOut, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
+use bevy::color::palettes::tailwind::{YELLOW_400, YELLOW_600};
 use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::ecs::system::SystemParam;
 use bevy::ecs::system::lifetimeless::{Read, Write};
@@ -31,6 +34,9 @@ pub struct ShadowMarker;
 
 #[derive(Component)]
 pub struct EnableTranslationControl;
+
+#[derive(Component)]
+struct SnappedArrow(Entity);
 
 #[derive(Component)]
 struct ControlParent(Entity);
@@ -366,17 +372,29 @@ fn drag_end3d_trigger_redraw(
     trace_log_writer.write(LogTrace::default());
 }
 
+#[allow(clippy::complexity)]
 #[derive(SystemParam)]
 struct ObligatoryDragParams<'w, 's> {
     commands: Commands<'w, 's>,
-    all_other_transforms:
-        Query<'w, 's, Write<Transform>, (Without<Control>, Without<ControlParent>)>,
+    all_other_transforms: Query<
+        'w,
+        's,
+        Write<Transform>,
+        (
+            Without<Control>,
+            Without<ControlParent>,
+            Without<ControlCurve>,
+            Without<ControlCurvePoint>,
+        ),
+    >,
     redraw_writer: EventWriter<'w, RedrawEvent>,
     redraw_curves_writer: EventWriter<'w, RedrawCurvesEvent>,
     curves: CurveCollection<'w, 's>,
     snapped: Query<'w, 's, (Entity, Write<SnappedPoint>)>,
     info: Res<'w, RenderInformation>,
     state: Res<'w, TranslationControllerState>,
+    materials: ResMut<'w, Assets<StandardMaterial>>,
+    meshes: ResMut<'w, Assets<Mesh>>,
 }
 
 impl<'w, 's> ObligatoryDragParams<'w, 's> {
@@ -393,15 +411,38 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                 if !is_already_snapped {
                     let shortest = self.curves.collect_shortest(Point::from(t.translation));
 
-                    if let Some((curve, u, p, dist)) = shortest
+                    if let Some((curve, u, p, dist, points)) = shortest
                         && dist < 0.001 * self.info.scale as f64
                     {
                         t.translation = p.into();
 
+                        let mat = self.materials.add(StandardMaterial::from_color(YELLOW_600));
+                        let mat_hover =
+                            self.materials.add(StandardMaterial::from_color(YELLOW_400));
+
+                        let deriv = derive_after_de_casteljau(&de_casteljau(&points, u), 1);
+
                         self.commands
                             .get_entity(control_parent.0)
                             .unwrap()
-                            .insert(SnappedPoint { u, curve });
+                            .insert(SnappedPoint { u, curve })
+                            .with_children(|cmd| {
+                                cmd.spawn((
+                                    SnappedArrow(control_parent.0),
+                                    Transform::default().looking_to(Vec3::from(deriv), Vec3::Y),
+                                ))
+                                .with_children(|cmd| {
+                                    draw_arrow(
+                                        cmd,
+                                        mat,
+                                        mat_hover,
+                                        &mut self.meshes,
+                                        self.info.scale,
+                                    );
+                                })
+                                .observe(drag_snap_arrow)
+                                .observe(drag_snap_arrow3d);
+                            });
                         // TODO: Add arrow, that moves along the curvature of bezier curve that was snapped
                         // to
                     } else {
@@ -411,7 +452,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     let point = Point::from(t.translation + translation);
 
                     let shortest = self.curves.collect_shortest(point);
-                    if let Some((curve, u, p, dist)) = shortest
+                    if let Some((curve, u, p, dist, _)) = shortest
                         && dist < 0.001 * self.info.scale as f64
                     {
                         let mut snap = self.snapped.get_mut(control_parent.0).unwrap().1;
@@ -445,15 +486,20 @@ fn drag_controller(
     camera: Query<(&Camera, &GlobalTransform)>,
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
-    mut params: ObligatoryDragParams,
+    mut params: ParamSet<(ObligatoryDragParams, Query<&GlobalTransform>)>,
 ) {
     let (control, child_of) = control_query.get(trigger.target()).unwrap();
 
     let parent = child_of.parent();
+    let control_parent = control_parents.get_mut(parent).unwrap();
 
     let (camera, camera_transform) = camera.single().unwrap();
 
     let diff = {
+        let dist = (params.p1().get(control_parent.0).unwrap().translation()
+            - camera_transform.translation())
+        .length();
+
         let mouse_start = camera
             .viewport_to_world(
                 camera_transform,
@@ -465,8 +511,8 @@ fn drag_controller(
             .viewport_to_world(camera_transform, trigger.pointer_location.position)
             .unwrap();
 
-        let start = mouse_start.get_point(1.0);
-        let end = mouse_end.get_point(1.0);
+        let start = mouse_start.get_point(dist);
+        let end = mouse_end.get_point(dist);
         root.single()
             .unwrap()
             .affine()
@@ -476,11 +522,11 @@ fn drag_controller(
 
     let axis = control.0;
     let direction = (diff.dot(axis)) / (diff.length() * axis.length());
-    let translation = axis * direction * trigger.delta.length() * 0.01;
+    let translation = axis * direction * diff.length();
 
-    let control_parent = control_parents.get_mut(parent).unwrap();
-
-    params.update_position_drag_universal(control_parent, translation);
+    params
+        .p0()
+        .update_position_drag_universal(control_parent, translation);
 }
 
 #[allow(clippy::complexity)]
@@ -513,22 +559,115 @@ fn drag_controller3d(
     params.update_position_drag_universal(control_parent, translation);
 }
 
+#[allow(clippy::complexity)]
+fn drag_snap_arrow(
+    trigger: Trigger<Pointer<Drag>>,
+    camera: Query<(&Camera, &GlobalTransform)>,
+    root: Query<&GlobalTransform, With<RootTransform>>,
+    mut snapped: Query<&mut SnappedPoint, Without<SnappedArrow>>,
+    mut params: ParamSet<(
+        Query<(&Transform, &SnappedArrow), Without<SnappedPoint>>,
+        Query<&GlobalTransform>,
+    )>,
+) {
+    let (arrow_transform, arrow_entity) = {
+        let p0 = params.p0();
+        let arrow = p0.get(trigger.target()).unwrap();
+        (*arrow.0, arrow.1.0)
+    };
+
+    let (camera, camera_transform) = camera.single().unwrap();
+
+    let diff = {
+        let dist = (params.p1().get(arrow_entity).unwrap().translation()
+            - camera_transform.translation())
+        .length();
+
+        let mouse_start = camera
+            .viewport_to_world(
+                camera_transform,
+                trigger.pointer_location.position - trigger.delta,
+            )
+            .unwrap();
+
+        let mouse_end = camera
+            .viewport_to_world(camera_transform, trigger.pointer_location.position)
+            .unwrap();
+
+        let start = mouse_start.get_point(dist);
+        let end = mouse_end.get_point(dist);
+        root.single()
+            .unwrap()
+            .affine()
+            .inverse()
+            .transform_point3(end - start)
+    };
+
+    let axis = arrow_transform.translation;
+    let direction = (diff.dot(axis)) / (diff.length() * axis.length());
+    let change = direction * trigger.delta.length() * 0.01;
+
+    let mut snap = snapped.get_mut(arrow_entity).unwrap();
+    snap.u += change as f64;
+}
+
+fn drag_snap_arrow3d(
+    trigger: Trigger<Pointer3d<crate::picking3d::events::Drag>>,
+    root: Query<&GlobalTransform, With<RootTransform>>,
+    arrows: Query<(&Transform, &SnappedArrow), Without<SnappedPoint>>,
+    mut snapped: Query<&mut SnappedPoint, Without<SnappedArrow>>,
+) {
+    let arrow = arrows.get(trigger.target()).unwrap();
+
+    let diff = trigger.event.delta;
+    let diff = root
+        .single()
+        .unwrap()
+        .affine()
+        .inverse()
+        .transform_point3(diff);
+
+    let axis = arrow.0.translation;
+    let direction = (axis.dot(diff)) / (axis.length() * diff.length());
+    let change = direction * diff.length();
+
+    let mut snap = snapped.get_mut(arrow.1.0).unwrap();
+    snap.u += change as f64;
+}
+
+#[allow(clippy::complexity)]
+/// Update both arrows and snaps, despawning / removing them if invalid
 fn update_snapped_points(
     mut commands: Commands,
-    mut snapped: Query<(&mut Transform, &SnappedPoint, Entity)>,
-    curves: CurveCollection,
+    mut set: ParamSet<(
+        (
+            Query<(&mut Transform, &SnappedArrow, Entity), Without<SnappedPoint>>, // arrows
+            Query<(&mut Transform, &SnappedPoint, Entity), Without<SnappedArrow>>, // snapped
+        ),
+        CurveCollection,
+    )>,
 ) {
-    let curves = curves.collect();
+    let curves = set.p1().collect();
 
-    for (mut transform, snap, entity) in snapped.iter_mut() {
-        if let Some(curve) = curves.get(&snap.curve) {
-            let p = horner_scheme(curve, snap.u);
-            transform.translation = p.into();
+    let (mut arrows, mut snapped) = set.p0();
+
+    for (mut t, arrow, arrow_entity) in &mut arrows {
+        if let Ok((mut transform, snap, entity)) = snapped.get_mut(arrow.0) {
+            if let Some(curve) = curves.get(&snap.curve) {
+                let p = horner_scheme(curve, snap.u);
+                transform.translation = p.into();
+
+                let deriv = derive_after_de_casteljau(&de_casteljau(curve, snap.u), 1);
+                t.look_to(Vec3::from(deriv), Vec3::Y);
+            } else {
+                commands
+                    .get_entity(entity)
+                    .unwrap()
+                    .remove::<SnappedPoint>();
+                commands.get_entity(arrow_entity).unwrap().despawn();
+            }
         } else {
-            commands
-                .get_entity(entity)
-                .unwrap()
-                .remove::<SnappedPoint>();
+            commands.get_entity(arrow_entity).unwrap().despawn();
         }
     }
 }
