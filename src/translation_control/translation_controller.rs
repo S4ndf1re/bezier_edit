@@ -97,7 +97,6 @@ fn draw_arrow(
 }
 
 fn show_transitional_controls(
-    root: Query<Entity, With<RootTransform>>,
     mut commands: Commands,
     to_enable: Query<(&Transform, Entity), Added<EnableTranslationControl>>,
     arrows: Res<ControlStorage>,
@@ -105,14 +104,13 @@ fn show_transitional_controls(
     mut meshes: ResMut<Assets<Mesh>>,
     scale: Res<RenderInformation>,
 ) {
-    let mut root = commands.get_entity(root.single().unwrap()).unwrap();
     let scale = scale.scale;
 
     for (t, entity) in to_enable.iter() {
-        root.with_children(|ui| {
-            ui.spawn((
+        commands.get_entity(entity).unwrap().with_children(|cmd| {
+            cmd.spawn((
                 ControlParent(entity),
-                Transform::from_translation(t.translation),
+                Transform::default(),
                 Visibility::default(),
             ))
             .with_children(|parent| {
@@ -171,8 +169,8 @@ fn drag_start(
 
     let scale = scale.scale;
 
-    root.with_children(|ui| {
-        ui.spawn((ShadowMarker, *start_transform, Visibility::default()))
+    root.with_children(|cmd| {
+        cmd.spawn((ShadowMarker, *start_transform, Visibility::default()))
             .with_children(|parent| {
                 for arrow in arrows.as_ref().iter() {
                     parent
@@ -228,8 +226,8 @@ fn drag_start3d(
 
     let scale = scale.scale;
 
-    root.with_children(|ui| {
-        ui.spawn((ShadowMarker, *start_transform, Visibility::default()))
+    root.with_children(|cmd| {
+        cmd.spawn((ShadowMarker, *start_transform, Visibility::default()))
             .with_children(|parent| {
                 for arrow in arrows.as_ref().iter() {
                     parent
@@ -360,13 +358,13 @@ fn drag_controller(
     let direction = (diff.dot(axis)) / (diff.length() * axis.length());
     let translation = axis * direction * trigger.delta.length() * 0.01;
 
-    let (control_parent, mut transform) = control_parents.get_mut(parent).unwrap();
-    transform.translation += translation;
+    let (control_parent, transform) = control_parents.get_mut(parent).unwrap();
+    // transform.translation += translation;
 
     // Only adjust the control parent
     let control_point = all_other_transforms.get_mut(control_parent.0);
     if let Ok(mut t) = control_point {
-        t.translation = transform.translation;
+        t.translation += translation;
     };
 
     redraw_writer.write(RedrawEvent::Fast);
@@ -399,13 +397,12 @@ fn drag_controller3d(
     let direction = (axis.dot(diff)) / (axis.length() * diff.length());
     let translation = axis * diff.length() * direction;
 
-    let (control_parent, mut transform) = control_parents.get_mut(parent).unwrap();
-
-    transform.translation += translation;
+    let (control_parent, transform) = control_parents.get_mut(parent).unwrap();
+    // transform.translation += translation;
 
     let control_point = all_other_transforms.get_mut(control_parent.0);
     if let Ok(mut t) = control_point {
-        t.translation = transform.translation;
+        t.translation += translation;
     };
 
     redraw_writer.write(RedrawEvent::Fast);
