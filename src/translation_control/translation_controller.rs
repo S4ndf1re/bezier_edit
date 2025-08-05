@@ -19,6 +19,7 @@ use bevy::color::palettes::tailwind::{RED_600, YELLOW_400, YELLOW_600};
 use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::ecs::system::lifetimeless::{Read, Write};
 use bevy::ecs::system::SystemParam;
+use bevy::picking::hover::PickingInteraction;
 use bevy::prelude::*;
 use std::collections::HashSet;
 use std::f32::consts::FRAC_PI_2;
@@ -84,13 +85,15 @@ fn handle_toggle_snapping(
 }
 
 fn register_deletes(
+    mut commands: Commands,
     mut deleted: RemovedComponents<EnableTranslationControl>,
-    mut controls: Query<(&mut Visibility, &ControlParent)>,
+    mut controls: Query<(Entity, &mut Visibility, &ControlParent)>,
 ) {
     for event in deleted.read() {
-        for (mut visibility, contrl) in controls.iter_mut() {
+        for (entity, mut visibility, contrl) in controls.iter_mut() {
             if contrl.0 == event {
-                *visibility = Visibility::Hidden
+                *visibility = Visibility::Hidden;
+                commands.entity(entity).insert(Pickable::IGNORE);
             }
         }
     }
@@ -173,6 +176,7 @@ fn show_transitional_controls(
             if parent.0 == entity {
                 *visibility = Visibility::Inherited;
                 already_created = true;
+                commands.entity(entity).remove::<Pickable>();
                 break;
             }
         }
