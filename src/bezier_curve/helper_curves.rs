@@ -5,14 +5,13 @@ use bevy::{
     color::palettes::tailwind::PURPLE_600,
     ecs::{
         query::QueryData,
-        system::{SystemParam, lifetimeless::Read},
+        system::{lifetimeless::Read, SystemParam},
     },
     prelude::*,
     render::mesh::PrimitiveTopology,
 };
 
 use crate::{
-    RootTransform,
     click_decider::LogTrace,
     nurbs::{
         bezier::{horner_scheme, shortest_distance_to_point},
@@ -20,11 +19,12 @@ use crate::{
     },
     picking3d::events::{self, Click, Pointer3d},
     translation_control::translation_controller::EnableTranslationControl,
+    RootTransform,
 };
 
 use super::{
-    EntityDeletedEvent, components::ControlState, render_info::RenderInformation,
-    util::enable_gizmo3d,
+    components::ControlState, render_info::RenderInformation, util::enable_gizmo3d,
+    EntityDeletedEvent,
 };
 
 #[derive(Component)]
@@ -66,7 +66,7 @@ pub fn add_point_3d(
     let root = root.single().unwrap();
     let mut redraw = false;
 
-    let sphere = meshes.add(Sphere::new(0.6 * render_info.scale));
+    let sphere = meshes.add(Sphere::new(0.08 * render_info.scale));
     let material = materials.add(StandardMaterial::from_color(PURPLE_600));
 
     for evt in reader.read() {

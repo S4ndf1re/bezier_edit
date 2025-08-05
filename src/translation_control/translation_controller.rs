@@ -1,4 +1,3 @@
-use crate::RootTransform;
 use crate::bezier_curve::bezier_curve_renderer::RedrawEvent;
 use crate::bezier_curve::helper_curves::{
     ControlCurve, ControlCurvePoint, CurveCollection, RedrawCurvesEvent, TemporaryCurve,
@@ -16,10 +15,11 @@ use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
+use crate::RootTransform;
 use bevy::color::palettes::tailwind::{YELLOW_400, YELLOW_600};
 use bevy::ecs::relationship::RelatedSpawnerCommands;
-use bevy::ecs::system::SystemParam;
 use bevy::ecs::system::lifetimeless::{Read, Write};
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;
 
@@ -100,23 +100,24 @@ fn draw_arrow(
     mat_hover: Handle<StandardMaterial>,
     meshes: &mut ResMut<Assets<Mesh>>,
     scale: f32,
+    is_shadow: bool,
 ) {
     let cuboid = meshes.add(Cuboid::new(0.07 * scale, 0.07 * scale, 0.4 * scale));
     let line = meshes.add(Cuboid::new(0.02 * scale, 0.02 * scale, 0.8 * scale));
     let arrow = meshes.add(Cone::new(0.035 * scale, 0.2 * scale));
 
-    child_builder
-        .spawn((
-            Transform::from_xyz(0.0, 0.0, -0.4 * scale),
-            MeshMaterial3d(mat.clone()),
-            Mesh3d(cuboid.clone()),
-            Picking3dInteractable,
-        ))
-        .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
+    let mut obj = child_builder.spawn((
+        Transform::from_xyz(0.0, 0.0, -0.4 * scale),
+        MeshMaterial3d(mat.clone()),
+        Mesh3d(cuboid.clone()),
+        Picking3dInteractable,
+    ));
+    obj.observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()))
         .observe(update_material_on::<Pointer3d<MoveIn>>(mat_hover.clone()))
-        .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()))
-        .observe(
+        .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()));
+    if !is_shadow {
+        obj.observe(
             |trigger: Trigger<Pointer3d<MoveIn>>,
              mut writer_left: EventWriter<VibrateLeftEvent>,
              mut writer_right: EventWriter<VibrateRightEvent>| {
@@ -130,6 +131,7 @@ fn draw_arrow(
                 };
             },
         );
+    }
 
     child_builder
         .spawn((
@@ -186,6 +188,7 @@ fn show_transitional_controls(
                                 materials.add(arrow.hover_color),
                                 &mut meshes,
                                 scale,
+                                false,
                             );
                         })
                         .observe(drag_controller)
@@ -244,6 +247,7 @@ fn drag_start(
                                 materials.add(arrow.shadow_color),
                                 &mut meshes,
                                 scale,
+                                true,
                             );
                         });
                 }
@@ -301,6 +305,7 @@ fn drag_start3d(
                                 materials.add(arrow.shadow_color),
                                 &mut meshes,
                                 scale,
+                                true,
                             );
                         });
                 }
@@ -438,6 +443,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                                         mat_hover,
                                         &mut self.meshes,
                                         self.info.scale,
+                                        false,
                                     );
                                 })
                                 .observe(drag_snap_arrow)
