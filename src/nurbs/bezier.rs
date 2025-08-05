@@ -118,7 +118,7 @@ pub fn shortest_distance_to_point<T: AsRef<[Point]>>(points: T, point: Point) ->
 
     for scan in 0..=first_scans_counter {
         let t = (scan as f64) / (first_scans_counter as f64);
-        let p = horner_scheme(&points, t);
+        let p = *de_casteljau(&points, t).last().unwrap().last().unwrap();
         let diff = &point - &p;
         let distance = diff.magnitude();
         if distance < min {
@@ -132,7 +132,7 @@ pub fn shortest_distance_to_point<T: AsRef<[Point]>>(points: T, point: Point) ->
 
     let t0 = ((min_index - 1.0) / first_scans_counter as f64).max(0.0);
     let t1 = ((min_index + 1.0) / first_scans_counter as f64).min(1.0);
-    let f = |t| (&point - &horner_scheme(&points, t)).magnitude();
+    let f = |t| (&point - &de_casteljau(&points, t).last().unwrap().last().unwrap()).magnitude();
 
     let mut n = t0;
     let mut m = t1;

@@ -21,6 +21,7 @@ use super::util::{
     collect_control_points, compute_point_by_params, create_mesh_from_control_points,
     curvature_to_color, enable_gizmo, enable_gizmo3d,
 };
+use crate::bezier_curve::EntityDeletedEvent;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
 use crate::picking3d::picking_3d::Picking3dInteractable;
@@ -538,6 +539,7 @@ impl Plugin for BezierRenderPlugin {
         app.add_event::<CreatePlaneEvent>();
         app.add_event::<DeleteModeEvent>();
         app.add_event::<EndModeEvent>();
+        app.add_event::<EntityDeletedEvent>();
         app.init_state::<ControlState>();
     }
 }

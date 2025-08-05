@@ -1,16 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use bevy::{
-    asset::RenderAssetUsages,
-    color::palettes::tailwind::PURPLE_600,
-    ecs::{
-        query::QueryData,
-        system::{lifetimeless::Read, SystemParam},
-    },
-    prelude::*,
-    render::mesh::PrimitiveTopology,
+use super::{
+    components::ControlState, render_info::RenderInformation, util::enable_gizmo3d,
+    EntityDeletedEvent,
 };
-
+use crate::nurbs::bezier::de_casteljau;
+use crate::picking3d::picking_3d::Picking3dInteractable;
+use crate::translation_control::translation_controller::CantSnapToCurve;
 use crate::{
     click_decider::LogTrace,
     nurbs::{
@@ -21,10 +17,16 @@ use crate::{
     translation_control::translation_controller::EnableTranslationControl,
     RootTransform,
 };
-
-use super::{
-    components::ControlState, render_info::RenderInformation, util::enable_gizmo3d,
-    EntityDeletedEvent,
+use bevy::color::palettes::tailwind::PURPLE_900;
+use bevy::{
+    asset::RenderAssetUsages,
+    color::palettes::tailwind::PURPLE_600,
+    ecs::{
+        query::QueryData,
+        system::{lifetimeless::Read, SystemParam},
+    },
+    prelude::*,
+    render::mesh::PrimitiveTopology,
 };
 
 #[derive(Component)]
@@ -75,6 +77,8 @@ pub fn add_point_3d(
             .inverse()
             .transform_point3(evt.position);
 
+        info!("Adding point at {:?}", pos);
+
         commands.get_entity(parent).unwrap().with_children(|cmd| {
             cmd.spawn((
                 TemporaryCurvePoint(state.counter),
@@ -101,7 +105,7 @@ pub fn enter_create_curve_mode(
 
     let root = root.single().unwrap();
     commands.get_entity(root).unwrap().with_children(|cmd| {
-        cmd.spawn(TemporaryCurve);
+        cmd.spawn((TemporaryCurve, Transform::default(), Visibility::Inherited));
     });
 }
 
@@ -168,15 +172,19 @@ pub fn commit_curve(
                 let (entity, mut transform, point) =
                     tmp_points.get_mut(child_point_entity).unwrap();
 
-                transform.translation = root_transform.transform_point3(transform.translation);
                 let idx = point.0;
 
+                info!("Consolidated curve point {entity:?}");
                 commands
                     .get_entity(entity)
                     .unwrap()
                     .insert(ChildOf(parent))
                     .remove::<TemporaryCurvePoint>()
-                    .insert(ControlCurvePoint(idx))
+                    .insert((
+                        ControlCurvePoint(idx),
+                        Picking3dInteractable,
+                        CantSnapToCurve(parent),
+                    ))
                     .observe(handle_click_on_curve_point);
             }
         } else {
@@ -214,7 +222,11 @@ impl<'w, 's> CurveCollection<'w, 's> {
         result
     }
 
-    pub fn collect_shortest(&self, point: Point) -> Option<(Entity, f64, Point, f64, Vec<Point>)> {
+    pub fn collect_shortest(
+        &self,
+        point: Point,
+        ignore_curves: HashSet<Entity>,
+    ) -> Option<(Entity, f64, Point, f64, Vec<Point>)> {
         let mut min = f64::MAX;
         let mut min_u = None;
         let mut min_curve = None;
@@ -223,6 +235,9 @@ impl<'w, 's> CurveCollection<'w, 's> {
 
         let collected = self.collect();
         for (curve, points) in collected {
+            if ignore_curves.contains(&curve) {
+                continue;
+            }
             let (u, p, dist) = shortest_distance_to_point(&points, point);
             if dist < min {
                 min = dist;
@@ -306,7 +321,12 @@ pub fn render_curves(
         if points.len() >= 2 {
             let mut verticies = Vec::new();
             for u in 0..=100 {
-                let point = horner_scheme(&points, (u as f64) / 100.0);
+                let point = *de_casteljau(&points, (u as f64) / 100.0)
+                    .last()
+                    .unwrap()
+                    .last()
+                    .unwrap();
+
                 verticies.push(Vec3::from(point));
             }
 
@@ -322,7 +342,7 @@ pub fn render_curves(
             if let Ok(mut mesh3d) = mesh3d {
                 mesh3d.0 = meshes.add(mesh);
             } else {
-                let material = StandardMaterial::from_color(Color::BLACK);
+                let material = StandardMaterial::from_color(PURPLE_900);
                 commands.get_entity(entity).unwrap().insert((
                     Mesh3d(meshes.add(mesh)),
                     MeshMaterial3d(materials.add(material)),
