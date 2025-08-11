@@ -6,6 +6,7 @@ pub mod click_decider;
 mod history;
 mod nurbs;
 pub mod picking3d;
+pub mod projection;
 pub mod solver;
 mod thirdparty_copy;
 mod translation_control;
@@ -31,9 +32,12 @@ pub struct RootTransform;
 
 #[cfg(not(feature = "vr_enable"))]
 fn setup(mut commands: Commands) {
+    use bevy::render::view::RenderLayers;
+
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(-10.0, 0.0, 0.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+        RenderLayers::layer(0).with(1),
     ));
 
     commands.spawn((
@@ -54,11 +58,14 @@ fn setup(
     mut position_writer: EventWriter<SnapToPosition>,
     mut scale: ResMut<RenderInformation>,
 ) {
+    use bevy::render::view::RenderLayers;
+
     scale.scale = 0.3;
 
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 0.0, -10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+        RenderLayers::layer(0).with(1),
     ));
 
     commands.spawn((
