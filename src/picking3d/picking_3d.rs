@@ -80,7 +80,7 @@ fn check_intersections(
                     p.1,
                 );
             }
-            state.ensure_inserted(p.1, HoveredBy::Left);
+            state.ensure_inserted(p.1, HoveredBy::Left, p.0.translation());
         }
 
         if bb_sphere_right.intersects(&test) {
@@ -96,7 +96,7 @@ fn check_intersections(
                     p.1,
                 );
             }
-            state.ensure_inserted(p.1, HoveredBy::Right);
+            state.ensure_inserted(p.1, HoveredBy::Right, p.0.translation());
         }
     }
 
@@ -117,6 +117,9 @@ fn check_intersections(
             );
 
             for collision in collisions.iter() {
+                let (transform, _) = pickable
+                    .get(collision.0)
+                    .expect("This is already checked in the mesh_ray_casting filter option");
                 if !state.contains_entity_and_controller(&collision.0, &hovered_by) {
                     commands.trigger_targets(
                         Pointer3d {
@@ -128,7 +131,7 @@ fn check_intersections(
                         collision.0,
                     );
                 }
-                state.ensure_inserted(collision.0, hovered_by);
+                state.ensure_inserted(collision.0, hovered_by, transform.translation());
             }
         }
     }
@@ -272,14 +275,15 @@ fn handle_input_grab(
     mut left_writer: EventWriter<AddLeftTrace>,
     mut right_writer: EventWriter<AddRightTrace>,
     mut click_writer: EventWriter<Pointer3d<Click>>,
+    info: Res<RenderInformation>,
 ) {
     for (state, hover_by) in [
         (trigger.left, HoveredBy::Left),
         (trigger.right, HoveredBy::Right),
     ] {
-        let tracked = match hover_by {
-            HoveredBy::Left => *left_tracked,
-            HoveredBy::Right => *right_tracked,
+        let (tracked, is_dragging) = match hover_by {
+            HoveredBy::Left => (*left_tracked, picking_state.is_dragging_left),
+            HoveredBy::Right => (*right_tracked, picking_state.is_dragging_right),
         };
 
         match hover_by {
@@ -301,6 +305,7 @@ fn handle_input_grab(
         if !current_state
             && pointer_state.is_grabbing(&hover_by)
             && pointer_state.is_just_toggled(&hover_by)
+            && !is_dragging
         {
             let mut sended_event = false;
             // Click event here, since the new state is false, the old state was true and the state change lasted only <n ticks
@@ -333,10 +338,7 @@ fn handle_input_grab(
                     event: Click,
                 });
             }
-        } else if !current_state
-            && pointer_state.is_grabbing(&hover_by)
-            && !pointer_state.is_just_toggled(&hover_by)
-        {
+        } else if !current_state && pointer_state.is_grabbing(&hover_by) && is_dragging {
             // End Drag here, new state is false, old one was true for >n ticks
             for entity in picking_state.iter(&hover_by) {
                 let entity_global_position = transform_query.get(*entity);
@@ -364,63 +366,77 @@ fn handle_input_grab(
             && !pointer_state.is_just_toggled(&hover_by)
         {
             // Either start dragging here, since we crossed the n tick mark, or continue dragging
-            if !picking_state.is_dragging_right && hover_by == HoveredBy::Right
-                || !picking_state.is_dragging_left && hover_by == HoveredBy::Left
-            {
+            if !is_dragging {
+                let mut dragging_should_start = false;
                 for entity in picking_state.iter(&hover_by) {
                     let transform = transform_query.get(*entity).unwrap();
-                    let dist = transform.translation() - tracked.0.translation();
-                    // The controller may be rotated. In order to properly spawn the child, use the inverse rotation.
-                    let dist = tracked.0.rotation().inverse().mul_vec3(dist);
-                    let dist = dist / tracked.0.scale();
+                    let translation = match picking_state.get_start_transform(entity) {
+                        Some(vec) => vec,
+                        None => transform.translation(),
+                    };
+                    let dist = translation - tracked.0.translation();
 
-                    commands.spawn((
-                        ChildOf(tracked.1),
-                        Transform::from_translation(dist),
-                        Visibility::default(),
-                        MoveMarker {
-                            entity: *entity,
-                            global_start: transform.translation(),
-                            current_position: tracked.0.transform_point(dist),
-                        },
-                    ));
+                    if dist.length() > 0.1 * info.scale || !pointer_state.is_just_toggled(&hover_by)
+                    {
+                        // The controller may be rotated. In order to properly spawn the child, use the inverse rotation.
+                        let dist = tracked.0.rotation().inverse().mul_vec3(dist);
+                        let dist = dist / tracked.0.scale();
 
-                    commands.trigger_targets(
-                        Pointer3d {
-                            controler: hover_by,
-                            hit_entity: tracked.1,
-                            event: DragStart,
-                            position: transform.translation(),
-                        },
-                        *entity,
-                    );
-                }
-            }
-
-            for (transform, mut marker, _) in moved_marked_query.iter_mut() {
-                if picking_state.contains_entity(&marker.entity, &hover_by) {
-                    let entity_global_position = transform_query.get(marker.entity).unwrap();
-
-                    // Dispatch Drag event on entity. Use old state for positional calculation
-                    commands.trigger_targets(
-                        Pointer3d {
-                            controler: hover_by,
-                            hit_entity: tracked.1,
-                            event: Drag {
-                                start_entity_position: marker.global_start,
-                                current_entity_position: transform.translation(),
-                                delta: transform.translation() - marker.current_position,
+                        commands.spawn((
+                            ChildOf(tracked.1),
+                            Transform::from_translation(dist),
+                            Visibility::default(),
+                            MoveMarker {
+                                entity: *entity,
+                                global_start: transform.translation(),
+                                current_position: tracked.0.transform_point(dist),
                             },
-                            position: entity_global_position.translation(),
-                        },
-                        marker.entity,
-                    );
+                        ));
 
-                    // Update marker to new state
-                    marker.current_position = transform.translation();
+                        commands.trigger_targets(
+                            Pointer3d {
+                                controler: hover_by,
+                                hit_entity: tracked.1,
+                                event: DragStart,
+                                position: transform.translation(),
+                            },
+                            *entity,
+                        );
+
+                        dragging_should_start = true;
+                    }
+                }
+
+                if dragging_should_start {
+                    picking_state.set_dragging(true, &hover_by);
                 }
             }
-            picking_state.set_dragging(true, &hover_by);
+
+            if !pointer_state.is_just_toggled(&hover_by) {
+                for (transform, mut marker, _) in moved_marked_query.iter_mut() {
+                    if picking_state.contains_entity(&marker.entity, &hover_by) {
+                        let entity_global_position = transform_query.get(marker.entity).unwrap();
+
+                        // Dispatch Drag event on entity. Use old state for positional calculation
+                        commands.trigger_targets(
+                            Pointer3d {
+                                controler: hover_by,
+                                hit_entity: tracked.1,
+                                event: Drag {
+                                    start_entity_position: marker.global_start,
+                                    current_entity_position: transform.translation(),
+                                    delta: transform.translation() - marker.current_position,
+                                },
+                                position: entity_global_position.translation(),
+                            },
+                            marker.entity,
+                        );
+
+                        // Update marker to new state
+                        marker.current_position = transform.translation();
+                    }
+                }
+            }
         }
         pointer_state.set_state(current_state, &hover_by);
     }

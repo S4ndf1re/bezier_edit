@@ -1,4 +1,5 @@
 use crate::picking3d::events::HoveredBy;
+use bevy::math::Vec3;
 use bevy::prelude::{Entity, Resource};
 use std::collections::hash_set::Iter;
 use std::collections::{HashMap, HashSet, hash_map};
@@ -8,6 +9,7 @@ pub struct PickingState {
     hovered_entities: HashMap<Entity, HashSet<HoveredBy>>,
     hovered_by_left: HashSet<Entity>,
     hovered_by_right: HashSet<Entity>,
+    start_position: HashMap<Entity, Vec3>,
     pub is_dragging_left: bool,
     pub is_dragging_right: bool,
 }
@@ -18,6 +20,7 @@ impl PickingState {
             hovered_entities: HashMap::new(),
             hovered_by_left: HashSet::new(),
             hovered_by_right: HashSet::new(),
+            start_position: HashMap::new(),
             is_dragging_left: false,
             is_dragging_right: false,
         }
@@ -38,7 +41,7 @@ impl PickingState {
                 .contains(controller)
     }
 
-    pub fn ensure_inserted(&mut self, entity: Entity, controller: HoveredBy) {
+    pub fn ensure_inserted(&mut self, entity: Entity, controller: HoveredBy, start_pos: Vec3) {
         if self.check_is_dragging(&controller) {
             return;
         }
@@ -56,6 +59,8 @@ impl PickingState {
                 self.hovered_by_right.insert(entity);
             }
         }
+
+        self.start_position.insert(entity, start_pos);
     }
 
     pub fn remove_from_entity(&mut self, entity: &Entity, controller: &HoveredBy) -> bool {
@@ -118,5 +123,9 @@ impl PickingState {
             HoveredBy::Left => self.is_dragging_left = is_dragging,
             HoveredBy::Right => self.is_dragging_right = is_dragging,
         }
+    }
+
+    pub fn get_start_transform(&self, entity: &Entity) -> Option<Vec3> {
+        self.start_position.get(entity).map(|v| *v)
     }
 }
