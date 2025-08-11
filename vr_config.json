@@ -7,7 +7,7 @@
     "squeeze": "/user/hand/left/input/squeeze/value",
     "thumbstick_x": "/user/hand/left/input/thumbstick/x",
     "thumbstick_y": "/user/hand/left/input/thumbstick/y",
-    "output": "/user/hand/right/output/haptic"
+    "output": "/user/hand/left/output/haptic"
   },
   "right": {
     "aim": "/user/hand/right/input/aim/pose",

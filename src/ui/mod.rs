@@ -5,7 +5,8 @@ use bevy::{
     color::palettes::tailwind::GRAY_900, ecs::relationship::RelatedSpawnerCommands, prelude::*,
     sprite::Anchor,
 };
-use bevy_lunex::{UiStateTrait, prelude::*};
+use bevy_lunex::{prelude::*, UiStateTrait};
+use bevy_xr_utils::tracking_utils::XrTrackedView;
 use button::{ButtonClickedEvent, ButtonPlugin, ChangeTextEvent, UiButton};
 use slider::{ChangeSliderValueEvent, SliderPlugin, SliderValueChangedEvent, UiSlider};
 use struct_patch::Patch;

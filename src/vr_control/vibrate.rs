@@ -7,27 +7,27 @@ use super::ControllerActions;
 pub struct Vibration {
     pub amplitude: f32,
     pub frequency: f32,
-    pub duration_nano: i64,
+    pub duration_nano: openxr::Duration,
 }
 
 impl Default for Vibration {
     fn default() -> Self {
         Self {
-            amplitude: 0.5,
+            amplitude: 1.0,
             frequency: openxr::FREQUENCY_UNSPECIFIED,
-            duration_nano: openxr::Duration::MIN_HAPTIC.as_nanos(),
+            duration_nano: openxr::Duration::MIN_HAPTIC,
         }
     }
 }
 
 impl Vibration {
     pub fn duration_millis(mut self, millis: i64) -> Self {
-        self.duration_nano = millis * 1000 * 1000;
+        self.duration_nano = openxr::Duration::from_nanos(millis * 1000 * 1000);
         self
     }
 
     pub fn duration_micros(mut self, micros: i64) -> Self {
-        self.duration_nano = micros * 1000;
+        self.duration_nano = openxr::Duration::from_nanos(micros * 1000);
         self
     }
 }
@@ -57,14 +57,18 @@ fn listen_left_events(
 ) {
     for event in reader.read() {
         let vibration = HapticVibration::new()
-            .duration(Duration::from_nanos(event.0.duration_nano))
+            .duration(event.0.duration_nano)
             .frequency(event.0.frequency)
             .amplitude(event.0.amplitude);
 
-        let _ = actions
+        let res = actions
             .left
             .output
             .apply_feedback(&session, openxr::Path::NULL, &vibration);
+
+        if res.is_err() {
+            error!("{}", res.err().unwrap())
+        }
     }
 }
 
@@ -75,14 +79,18 @@ fn listen_right_events(
 ) {
     for event in reader.read() {
         let vibration = HapticVibration::new()
-            .duration(Duration::from_nanos(event.0.duration_nano))
+            .duration(event.0.duration_nano)
             .frequency(event.0.frequency)
             .amplitude(event.0.amplitude);
 
-        let _ = actions
+        let res = actions
             .right
             .output
             .apply_feedback(&session, openxr::Path::NULL, &vibration);
+
+        if res.is_err() {
+            error!("{}", res.err().unwrap())
+        }
     }
 }
 

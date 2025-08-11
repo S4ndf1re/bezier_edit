@@ -104,7 +104,7 @@ impl Plugin for TracingPlugin {
         app.add_event::<AddLeftTrace>();
         app.add_event::<AddRightTrace>();
         app.add_event::<LogTrace>();
-        app.add_systems(PostUpdate, handle_add_trace_events);
-        app.add_systems(PostUpdate, handle_log_events.after(handle_add_trace_events));
+        // app.add_systems(PostUpdate, handle_add_trace_events);
+        // app.add_systems(PostUpdate, handle_log_events.after(handle_add_trace_events));
     }
 }
