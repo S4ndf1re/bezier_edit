@@ -6,7 +6,7 @@ pub fn update_material_on<E>(
     new_material: Handle<StandardMaterial>,
 ) -> impl Fn(Trigger<E>, Query<&mut MeshMaterial3d<StandardMaterial>>) {
     move |trigger, mut query| {
-        if let Ok(mut material) = query.get_mut(trigger.entity()) {
+        if let Ok(mut material) = query.get_mut(trigger.target()) {
             material.0 = new_material.clone();
         }
     }

@@ -1,13 +1,16 @@
-use nalgebra::DVector;
-use nalgebra::DMatrix;
-use num::pow::Pow;
-use std::ops::Mul;
 use crate::nurbs::bezier::horner_scheme;
 use crate::nurbs::point::Point;
+use nalgebra::DMatrix;
+use nalgebra::DVector;
+use num::pow::Pow;
+use std::ops::Mul;
 
+#[allow(unused)]
 fn delta_u_i(us: &[f64], i: usize) -> f64 {
     us[i + 1] - us[i]
 }
+
+#[allow(unused)]
 fn de_boor_idx(i: i32) -> usize {
     if i < -1 {
         panic!("i must not be less than -1. i={i}");
@@ -15,6 +18,7 @@ fn de_boor_idx(i: i32) -> usize {
     (i + 1) as usize
 }
 
+#[allow(unused)]
 pub fn generate_intervals_chordale_distance<T: AsRef<[Point]>>(ds: T, l: usize) -> Vec<f64> {
     let ds = ds.as_ref();
     if ds.len() != l + 3 {
@@ -44,6 +48,7 @@ pub fn generate_intervals_chordale_distance<T: AsRef<[Point]>>(ds: T, l: usize) 
     result
 }
 
+#[allow(unused)]
 fn generate_control_points<T: AsRef<[Point]>>(ds: T, us: &[f64], l: usize) -> Vec<Point> {
     let ds = ds.as_ref();
     let mut bs = vec![Point::new(0.0, 0.0, 0.0, None); 3 * l + 1];
@@ -80,6 +85,7 @@ fn generate_control_points<T: AsRef<[Point]>>(ds: T, us: &[f64], l: usize) -> Ve
     bs
 }
 
+#[allow(unused)]
 pub fn build_c2_spline<T: AsRef<[Point]>>(
     points: T,
     l: usize,
@@ -109,6 +115,7 @@ fn find_us_idx<S: AsRef<[f64]>>(us: S, u: f64) -> Option<usize> {
     idx
 }
 
+#[allow(unused)]
 pub fn eval_bspline<T: AsRef<[Point]>, S: AsRef<[f64]>>(points: T, us: S, u: f64) -> Point {
     let points = points.as_ref();
     let us = us.as_ref();
@@ -120,16 +127,16 @@ pub fn eval_bspline<T: AsRef<[Point]>, S: AsRef<[f64]>>(points: T, us: S, u: f64
     horner_scheme(points, t)
 }
 
+#[allow(unused)]
 fn x_diff(xs: &[f64], i: i32, l: usize) -> f64 {
-    if i < 0 {
-        0.0
-    } else if i == l as i32 {
+    if i < 0 || i == l as i32 {
         0.0
     } else {
         xs[(i + 1) as usize] - xs[i as usize]
     }
 }
 
+#[allow(unused)]
 fn solve<T: AsRef<[f64]>, S: AsRef<[f64]>>(
     mat: &DMatrix<f64>,
     points: T,
@@ -161,6 +168,8 @@ fn solve<T: AsRef<[f64]>, S: AsRef<[f64]>>(
 
     result
 }
+
+#[allow(unused)]
 pub fn cubic_bspline_interpolation<T: AsRef<[Point]>>(
     points: T,
     l: usize,
@@ -227,6 +236,7 @@ pub fn cubic_bspline_interpolation<T: AsRef<[Point]>>(
     (bs, us, d)
 }
 
+#[allow(unused)]
 pub fn de_boor<T: AsRef<[Point]>, S: AsRef<[f64]>>(
     control: T,
     us: S,
@@ -238,7 +248,7 @@ pub fn de_boor<T: AsRef<[Point]>, S: AsRef<[f64]>>(
     let us = us.as_ref();
     assert!(us[n - 1] <= u && u <= us[l + n - 1], "s(u) is not defined");
 
-    let idx = find_us_idx(&us, u).expect("Interval must be found");
+    let idx = find_us_idx(us, u).expect("Interval must be found");
 
     let rank = us
         .iter()
@@ -248,8 +258,7 @@ pub fn de_boor<T: AsRef<[Point]>, S: AsRef<[f64]>>(
         return control[idx];
     }
 
-    let mut stages = Vec::new();
-    stages.reserve(n + 1);
+    let mut stages = Vec::with_capacity(n + 1);
 
     let mut stage = vec![Point::new(0.0, 0.0, 0.0, None); n + 1];
     for i in idx + 1 - n..=idx + 1 {
