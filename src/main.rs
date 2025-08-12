@@ -23,6 +23,7 @@ use bezier_curve::bezier_curve_renderer::*;
 use history::plugin::HistoryPlugin;
 
 use crate::bezier_curve::render_info::RenderInformation;
+use bevy::render::view::RenderLayers;
 use translation_control::translation_controller::TranslationController;
 use ui::UiPlugin;
 
@@ -32,8 +33,6 @@ pub struct RootTransform;
 
 #[cfg(not(feature = "vr_enable"))]
 fn setup(mut commands: Commands) {
-    use bevy::render::view::RenderLayers;
-
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(-10.0, 0.0, 0.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
@@ -58,8 +57,6 @@ fn setup(
     mut position_writer: EventWriter<SnapToPosition>,
     mut scale: ResMut<RenderInformation>,
 ) {
-    use bevy::render::view::RenderLayers;
-
     scale.scale = 0.3;
 
     commands.spawn((

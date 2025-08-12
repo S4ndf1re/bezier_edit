@@ -1,3 +1,4 @@
+use crate::RootTransform;
 use crate::bezier_curve::bezier_curve_renderer::RedrawEvent;
 use crate::bezier_curve::helper_curves::{
     CurveCollection, RedrawCurvesEvent, TemporaryCurve, TemporaryCurvePoint,
@@ -14,11 +15,10 @@ use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
-use crate::RootTransform;
 use bevy::color::palettes::tailwind::{RED_600, YELLOW_400, YELLOW_600};
 use bevy::ecs::relationship::RelatedSpawnerCommands;
-use bevy::ecs::system::lifetimeless::{Read, Write};
 use bevy::ecs::system::SystemParam;
+use bevy::ecs::system::lifetimeless::{Read, Write};
 use bevy::picking::hover::PickingInteraction;
 use bevy::prelude::*;
 use std::collections::HashSet;
@@ -34,7 +34,21 @@ struct SnappedPoint {
 pub struct ShadowMarker;
 
 #[derive(Component)]
-pub struct EnableTranslationControl;
+pub struct EnableTranslationControl {
+    with_rotation: bool,
+}
+
+impl EnableTranslationControl {
+    pub fn new(with_rotation: bool) -> Self {
+        Self { with_rotation }
+    }
+}
+
+impl Default for EnableTranslationControl {
+    fn default() -> Self {
+        Self::new(false)
+    }
+}
 
 #[derive(Component, Clone, Copy)]
 struct SnappedArrow;
@@ -44,6 +58,11 @@ struct ControlParent(Entity);
 
 #[derive(Component)]
 struct Control(Vec3);
+
+#[derive(Component)]
+struct ControlRotation {
+    normal: Vec3,
+}
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SnappingBehaviour {
@@ -159,9 +178,73 @@ fn draw_arrow(
         .observe(update_material_on::<Pointer<Out>>(mat.clone()));
 }
 
+fn draw_ring(
+    child_builder: &mut RelatedSpawnerCommands<ChildOf>,
+    mat: Handle<StandardMaterial>,
+    mat_hover: Handle<StandardMaterial>,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    scale: f32,
+) {
+    // this is a little smaller then the arrow
+    let torus = meshes.add(Torus::new(0.38 * scale, 0.42 * scale));
+    let ball = meshes.add(Sphere::new(0.035 * scale));
+
+    let ball_positions = [
+        Vec3::new(-0.4, 0.0, 0.0),
+        Vec3::new(0.0, -0.4, 0.0),
+        Vec3::new(0.4, 0.0, 0.0),
+        Vec3::new(0.0, 0.4, 0.0),
+    ];
+
+    let angle: f32 = 90.0;
+    let angle = angle.to_radians();
+    let mut transform = Transform::default();
+    // NOTE: For some reason, this is oriented in Vec3::Y Direction, instead of Vec3::NEG_Z
+    transform.rotate(Quat::from_axis_angle(Vec3::X, angle));
+
+    child_builder
+        .spawn((transform, Mesh3d(torus), MeshMaterial3d(mat.clone())))
+        .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
+        .observe(update_material_on::<Pointer<Out>>(mat.clone()));
+
+    let angle: f32 = 45.0;
+    let angle = angle.to_radians();
+    for pos in ball_positions {
+        let mut transform = Transform::from_translation(pos * scale);
+        transform.rotate_around(Vec3::default(), Quat::from_axis_angle(Vec3::NEG_Z, angle));
+        child_builder
+            .spawn((
+                transform,
+                Mesh3d(ball.clone()),
+                MeshMaterial3d(mat.clone()),
+                Picking3dInteractable,
+            ))
+            .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
+            .observe(update_material_on::<Pointer<Out>>(mat.clone()))
+            .observe(update_material_on::<Pointer3d<MoveIn>>(mat_hover.clone()))
+            .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()))
+            .observe(
+                |trigger: Trigger<Pointer3d<MoveIn>>,
+                 mut writer_left: EventWriter<VibrateLeftEvent>,
+                 mut writer_right: EventWriter<VibrateRightEvent>| {
+                    match trigger.controler {
+                        HoveredBy::Left => {
+                            writer_left.write(VibrateLeftEvent::new(Vibration::default()));
+                        }
+                        HoveredBy::Right => {
+                            writer_right.write(VibrateRightEvent::new(Vibration::default()));
+                        }
+                    };
+                },
+            );
+    }
+}
+
+#[allow(clippy::complexity)]
 fn show_transitional_controls(
     mut commands: Commands,
-    to_enable: Query<Entity, Added<EnableTranslationControl>>,
+    to_enable: Query<(Entity, &EnableTranslationControl), Added<EnableTranslationControl>>,
+    transforms: Query<&Transform>,
     arrows: Res<ControlStorage>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -170,7 +253,7 @@ fn show_transitional_controls(
 ) {
     let scale = scale.scale;
 
-    for entity in to_enable.iter() {
+    for (entity, enabled_control) in to_enable.iter() {
         let mut already_created = false;
         for (mut visibility, parent) in already_existing.iter_mut() {
             if parent.0 == entity {
@@ -184,6 +267,9 @@ fn show_transitional_controls(
             continue;
         }
 
+        let parent_transform = transforms.get(entity).unwrap();
+        let rotation_inverse = parent_transform.rotation.inverse();
+
         commands.get_entity(entity).unwrap().with_children(|cmd| {
             cmd.spawn((
                 ControlParent(entity),
@@ -192,14 +278,11 @@ fn show_transitional_controls(
             ))
             .with_children(|parent| {
                 for arrow in arrows.as_ref().iter() {
+                    let mut transform =
+                        Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.normalized, Vec3::Y);
+                    transform.rotate(rotation_inverse);
                     parent
-                        .spawn((
-                            Transform::from_xyz(0.0, 0.0, 0.0)
-                                .looking_to(arrow.normalized, Vec3::Y),
-                            Control(arrow.normalized),
-                            Picking3dInteractable,
-                            Visibility::default(),
-                        ))
+                        .spawn((transform, Control(arrow.normalized), Visibility::default()))
                         .with_children(|parent| {
                             draw_arrow(
                                 parent,
@@ -216,6 +299,26 @@ fn show_transitional_controls(
                         .observe(drag_start3d)
                         .observe(drag_end_trigger_redraw)
                         .observe(drag_end3d_trigger_redraw);
+
+                    if enabled_control.with_rotation {
+                        parent
+                            .spawn((
+                                transform,
+                                ControlRotation {
+                                    normal: arrow.normalized,
+                                },
+                                Visibility::default(),
+                            ))
+                            .with_children(|parent| {
+                                draw_ring(
+                                    parent,
+                                    materials.add(arrow.color),
+                                    materials.add(arrow.hover_color),
+                                    &mut meshes,
+                                    scale,
+                                );
+                            });
+                    }
                 }
             });
         });
@@ -607,6 +710,52 @@ fn drag_controller3d(
     let translation = axis * diff.length() * direction;
 
     params.update_position_drag_universal((parent, control_parent), translation);
+}
+
+#[allow(clippy::complexity)]
+fn rotate_controller(
+    trigger: Trigger<Pointer<Drag>>,
+    control_query: Query<(&Control, &ChildOf)>,
+    camera: Query<(&Camera, &GlobalTransform)>,
+    mut control_parents: Query<&ControlParent>,
+    root: Query<&GlobalTransform, With<RootTransform>>,
+    mut params: ParamSet<(ObligatoryDragParams, Query<&GlobalTransform>)>,
+) {
+    let (control, child_of) = control_query.get(trigger.target()).unwrap();
+
+    let parent = child_of.parent();
+    let control_parent = control_parents.get_mut(parent).unwrap();
+
+    let (camera, camera_transform) = camera.single().unwrap();
+
+    let diff = {
+        let dist = (params.p1().get(control_parent.0).unwrap().translation()
+            - camera_transform.translation())
+        .length();
+
+        let mouse_start = camera
+            .viewport_to_world(
+                camera_transform,
+                trigger.pointer_location.position - trigger.delta,
+            )
+            .unwrap();
+
+        let mouse_end = camera
+            .viewport_to_world(camera_transform, trigger.pointer_location.position)
+            .unwrap();
+
+        let start = mouse_start.get_point(dist);
+        let end = mouse_end.get_point(dist);
+        root.single()
+            .unwrap()
+            .affine()
+            .inverse()
+            .transform_point3(end - start)
+    };
+
+    let axis = control.0;
+    let direction = (diff.dot(axis)) / (diff.length() * axis.length());
+    let translation = axis * direction * diff.length();
 }
 
 #[allow(clippy::complexity)]

@@ -63,12 +63,6 @@ impl Default for ControlStorage {
                     Color::from(BLUE_800),
                     Color::from(GRAY_500),
                 ),
-                ControlDirection::new(
-                    Vec3::new(0.0, 1.0, 1.0),
-                    Color::from(PURPLE_600),
-                    Color::from(PURPLE_800),
-                    Color::from(GRAY_500),
-                ),
             ],
         }
     }

@@ -261,7 +261,7 @@ pub fn enable_gizmo(
     if enabled.get(trigger.target()).is_ok() {
         entity.remove::<EnableTranslationControl>();
     } else {
-        entity.insert(EnableTranslationControl);
+        entity.insert(EnableTranslationControl::new(true));
     }
 }
 
@@ -276,7 +276,7 @@ pub fn enable_gizmo3d(
     if enabled.get(trigger.target()).is_ok() {
         entity.remove::<EnableTranslationControl>();
     } else {
-        entity.insert(EnableTranslationControl);
+        entity.insert(EnableTranslationControl::default());
     }
     println!("Sending log trace event");
     trace_log_writer.write(LogTrace::default());
