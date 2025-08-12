@@ -65,7 +65,7 @@ where
         }
 
         // Now that the probable min index is found, use binary search to actually find the min index.
-        // (clapmed)
+        // (clamped)
 
         let t0 = ((min_index - 1.0) / first_scans_counter as f64).max(0.0);
         let t1 = ((min_index + 1.0) / first_scans_counter as f64).min(1.0);
