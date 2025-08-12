@@ -9,6 +9,7 @@ use crate::history::plugin::HistoryLogEvent;
 use crate::nurbs::bezier::{
     de_casteljau, derive_after_de_casteljau, horner_scheme, shortest_distance_to_point,
 };
+use crate::nurbs::parametric::{Circle3D, MinDistanceToPoint, Parametric};
 use crate::nurbs::point::Point;
 use crate::picking3d::events::{HoveredBy, MoveIn, MoveOut, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
@@ -62,6 +63,7 @@ struct Control(Vec3);
 #[derive(Component)]
 struct ControlRotation {
     normal: Vec3,
+    radius: f64,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -270,6 +272,8 @@ fn show_transitional_controls(
         let parent_transform = transforms.get(entity).unwrap();
         let rotation_inverse = parent_transform.rotation.inverse();
 
+        let transform = Transform::from_xyz(0.0, 0.0, 0.0).with_rotation(rotation_inverse);
+
         commands.get_entity(entity).unwrap().with_children(|cmd| {
             cmd.spawn((
                 ControlParent(entity),
@@ -278,11 +282,13 @@ fn show_transitional_controls(
             ))
             .with_children(|parent| {
                 for arrow in arrows.as_ref().iter() {
-                    let mut transform =
-                        Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.normalized, Vec3::Y);
-                    transform.rotate(rotation_inverse);
                     parent
-                        .spawn((transform, Control(arrow.normalized), Visibility::default()))
+                        .spawn((
+                            Transform::from_xyz(0.0, 0.0, 0.0)
+                                .looking_to(arrow.normalized, Vec3::Y),
+                            Control(arrow.normalized),
+                            Visibility::default(),
+                        ))
                         .with_children(|parent| {
                             draw_arrow(
                                 parent,
@@ -303,9 +309,11 @@ fn show_transitional_controls(
                     if enabled_control.with_rotation {
                         parent
                             .spawn((
-                                transform,
+                                Transform::from_xyz(0.0, 0.0, 0.0)
+                                    .looking_to(arrow.normalized, Vec3::Y),
                                 ControlRotation {
                                     normal: arrow.normalized,
+                                    radius: 0.4 * scale as f64,
                                 },
                                 Visibility::default(),
                             ))
@@ -317,7 +325,8 @@ fn show_transitional_controls(
                                     &mut meshes,
                                     scale,
                                 );
-                            });
+                            })
+                            .observe(rotate_controller);
                     }
                 }
             });
@@ -715,21 +724,26 @@ fn drag_controller3d(
 #[allow(clippy::complexity)]
 fn rotate_controller(
     trigger: Trigger<Pointer<Drag>>,
-    control_query: Query<(&Control, &ChildOf)>,
-    camera: Query<(&Camera, &GlobalTransform)>,
+    control_query: Query<(&ControlRotation, &ChildOf)>,
+    camera: Query<(&Camera, &GlobalTransform), Without<RootTransform>>,
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
-    mut params: ParamSet<(ObligatoryDragParams, Query<&GlobalTransform>)>,
+    global_transforms: Query<&GlobalTransform, (Without<RootTransform>, Without<Camera>)>,
+    mut changable_transforms: Query<&mut Transform>,
 ) {
-    let (control, child_of) = control_query.get(trigger.target()).unwrap();
+    let (control_rotation, child_of) = control_query.get(trigger.target()).unwrap();
 
     let parent = child_of.parent();
     let control_parent = control_parents.get_mut(parent).unwrap();
+    let parent_transform = *changable_transforms.get(control_parent.0).unwrap();
 
     let (camera, camera_transform) = camera.single().unwrap();
 
-    let diff = {
-        let dist = (params.p1().get(control_parent.0).unwrap().translation()
+    let (start, diff) = {
+        let dist = (global_transforms
+            .get(control_parent.0)
+            .unwrap()
+            .translation()
             - camera_transform.translation())
         .length();
 
@@ -746,16 +760,36 @@ fn rotate_controller(
 
         let start = mouse_start.get_point(dist);
         let end = mouse_end.get_point(dist);
-        root.single()
-            .unwrap()
-            .affine()
-            .inverse()
-            .transform_point3(end - start)
+        (
+            start,
+            root.single()
+                .unwrap()
+                .affine()
+                .inverse()
+                .transform_point3(end - start),
+        )
     };
 
-    let axis = control.0;
+    let circle = Circle3D::new(
+        parent_transform.translation.into(),
+        control_rotation.radius,
+        control_rotation.normal.into(),
+    );
+
+    let closest = circle.min_distance_to_point(start.into());
+    let axis: Vec3 = circle.derive(&closest.params, 1).into();
+
     let direction = (diff.dot(axis)) / (diff.length() * axis.length());
-    let translation = axis * direction * diff.length();
+    let angle = direction * diff.length();
+
+    let inverse = {
+        let mut parent_transform = changable_transforms.get_mut(control_parent.0).unwrap();
+        parent_transform.rotation *= Quat::from_axis_angle(control_rotation.normal, angle);
+        parent_transform.rotation.inverse()
+    };
+
+    let mut arrow_transform = changable_transforms.get_mut(parent).unwrap();
+    arrow_transform.rotation = inverse;
 }
 
 #[allow(clippy::complexity)]

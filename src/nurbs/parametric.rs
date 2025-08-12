@@ -8,9 +8,9 @@ use super::{
 };
 
 pub struct MinDistanceResult<const PARAMS: usize, R> {
-    params: [f64; PARAMS],
-    value: R,
-    distance: f64,
+    pub params: [f64; PARAMS],
+    pub value: R,
+    pub distance: f64,
 }
 
 pub trait MinDistanceToPoint<const PARAMS: usize, R> {
