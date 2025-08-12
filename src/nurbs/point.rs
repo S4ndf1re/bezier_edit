@@ -32,6 +32,14 @@ impl Point {
             None,
         )
     }
+
+    pub fn normalize(&self) -> Point {
+        if self.magnitude() > 0.0 {
+            self * (1.0 / self.magnitude())
+        } else {
+            *self
+        }
+    }
 }
 
 impl Add<&Point> for &Point {
@@ -97,5 +105,11 @@ impl From<&Point> for [f32; 3] {
 impl From<Point> for [f32; 3] {
     fn from(value: Point) -> Self {
         [value.x as f32, value.y as f32, value.z as f32]
+    }
+}
+
+impl From<(f64, f64, f64)> for Point {
+    fn from((x, y, z): (f64, f64, f64)) -> Self {
+        Point::new(x, y, z, None)
     }
 }
