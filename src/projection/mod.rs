@@ -1,16 +1,53 @@
 use bevy::{
     asset::RenderAssetUsages,
+    color::palettes::tailwind::BLUE_500,
     prelude::*,
     render::{
-        render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
+        render_resource::{Extent3d, Face, TextureDimension, TextureFormat, TextureUsages},
         view::RenderLayers,
     },
 };
 
-use crate::RootTransform;
+use crate::{
+    RootTransform,
+    bezier_curve::{components::ControlState, render_info::RenderInformation},
+    picking3d::picking_3d::Picking3dInteractable,
+    translation_control::enable_gizmo,
+};
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+/// Display an entity in either Normal camera (0), Orthogonal camera(1) or both the normal and the
+/// orthogonal camera (1, 0).
+pub enum DisplayIn {
+    #[default]
+    BothNormalAndOrtho,
+    Normal,
+    Ortho,
+}
+
+impl From<DisplayIn> for RenderLayers {
+    fn from(value: DisplayIn) -> Self {
+        match value {
+            DisplayIn::BothNormalAndOrtho => RenderLayers::layer(0).with(1),
+            DisplayIn::Normal => RenderLayers::layer(0),
+            DisplayIn::Ortho => RenderLayers::layer(1),
+        }
+    }
+}
 
 #[derive(Component)]
-pub struct OrthoSurface;
+pub struct OrthoSurfaceParent {
+    camera: Entity,
+}
+
+impl OrthoSurfaceParent {
+    pub fn with_camera(camera: Entity) -> Self {
+        Self { camera }
+    }
+}
+
+#[derive(Component)]
+pub struct OrthoSurfacePlane;
 
 #[derive(Component)]
 #[require(Camera, Transform)]
@@ -22,7 +59,7 @@ pub struct OrthoCamera {
     projection_size: Vec2,
 
     /// The surface that belongs to this camera
-    surface: Entity,
+    surface_parent: Entity,
 }
 
 impl OrthoCamera {
@@ -31,12 +68,14 @@ impl OrthoCamera {
             image,
             bounding_volume_determining_entities: bounding_entities,
             projection_size: Vec2::new(1.0, 1.0),
-            surface,
+            surface_parent: surface,
         }
     }
 }
 
 #[derive(Event)]
+/// Enable an orthographic camera using global positioning.
+/// The Camera is then added to the root transform, to be able to get rotated.
 pub struct EnableOrthoCamera {
     transform: Transform,
     bounding_entities: Vec<Entity>,
@@ -51,9 +90,6 @@ impl EnableOrthoCamera {
     }
 }
 
-#[derive(Event)]
-pub struct DisableOrthoCamera;
-
 fn compute_new_transforms_for_cam_based_on_surface(surface: Transform) -> Option<Transform> {
     let mirroring_distance_seeking_ray = Ray3d::new(surface.translation, surface.forward());
     // the plane is perpendicular to th actual plane;
@@ -65,14 +101,16 @@ fn compute_new_transforms_for_cam_based_on_surface(surface: Transform) -> Option
     Some(Transform::from_translation(mirroring_point).looking_to(-surface.forward(), Vec3::Y))
 }
 
+#[allow(clippy::complexity)]
 fn handle_enable_ortho_camera(
     mut commands: Commands,
     mut reader: EventReader<EnableOrthoCamera>,
     mut images: ResMut<Assets<Image>>,
-    ortho_cameras: Query<Entity, With<OrthoCamera>>,
     root: Query<Entity, With<RootTransform>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    transforms: Query<&Transform>,
+    info: Res<RenderInformation>,
 ) {
     let mut transform = None;
     let mut bounding_entities = None;
@@ -85,10 +123,6 @@ fn handle_enable_ortho_camera(
     if let Some(transform) = transform
         && let Some(bounding_entities) = bounding_entities
     {
-        for entity in ortho_cameras {
-            commands.entity(entity).despawn();
-        }
-
         let size = Extent3d {
             width: 512,
             height: 512,
@@ -110,45 +144,88 @@ fn handle_enable_ortho_camera(
 
         let image_handle = images.add(image);
 
-        if let Some(cam_transform) = compute_new_transforms_for_cam_based_on_surface(transform) {
-            let root = root.single().unwrap();
-            commands.entity(root).with_children(|cmd| {
-                let surface = cmd
-                    .spawn((
-                        OrthoSurface,
-                        transform,
-                        Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 0.0001))),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color_texture: Some(image_handle.clone()),
-                            ..default()
-                        })),
-                        // This should only get rendered in layer 1
-                        RenderLayers::layer(1),
-                    ))
-                    .id();
+        let root = root.single().unwrap();
+        let root_transform = transforms.get(root).unwrap();
+        let affine = transform.compute_affine() * root_transform.compute_affine().inverse();
 
-                cmd.spawn((
-                    cam_transform,
-                    OrthoCamera::new(image_handle.clone(), bounding_entities, surface),
-                    Camera3d::default(),
-                    Projection::from(OrthographicProjection::default_3d()),
-                    Camera {
-                        target: image_handle.clone().into(),
-                        clear_color: Color::BLACK.into(),
-                        ..default()
-                    },
-                ));
+        let transform = Transform::from_matrix(affine.into());
+
+        if let Some(cam_transform) = compute_new_transforms_for_cam_based_on_surface(transform) {
+            info!("Transform: {:?}", transform);
+            info!("Camera Transform: {:?}", cam_transform);
+            let mut camera = None;
+            let mut surface_parent = None;
+
+            commands.entity(root).with_children(|cmd| {
+                // Spawn the controlling sphere in the center of the plane
+                surface_parent = Some(
+                    cmd.spawn((
+                        // NOTE: the OrthoSufaceParent Component will be added later, once the
+                        // camera is known. This is due to simpler deletes
+                        transform,
+                        Mesh3d(meshes.add(Sphere::new(0.1 * info.scale))),
+                        MeshMaterial3d(materials.add(StandardMaterial::from_color(BLUE_500))),
+                        Picking3dInteractable,
+                    ))
+                    .with_children(|cmd| {
+                        cmd.spawn((
+                            OrthoSurfacePlane,
+                            Transform::default(),
+                            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 0.0001))),
+                            MeshMaterial3d(materials.add(StandardMaterial {
+                                base_color_texture: Some(image_handle.clone()),
+                                cull_mode: Some(Face::Back),
+                                unlit: false,
+                                ..default()
+                            })),
+                            // This should only get rendered in layer 0
+                            RenderLayers::from(DisplayIn::Normal),
+                            Pickable::IGNORE,
+                        ));
+                    })
+                    .observe(handle_disable_ortho_camera)
+                    .observe(enable_gizmo)
+                    .id(),
+                );
+
+                camera = Some(
+                    cmd.spawn((
+                        cam_transform,
+                        OrthoCamera::new(
+                            image_handle.clone(),
+                            bounding_entities,
+                            surface_parent.expect("otherwise invalid code above"),
+                        ),
+                        Camera3d::default(),
+                        Projection::from(OrthographicProjection::default_3d()),
+                        Camera {
+                            target: image_handle.clone().into(),
+                            clear_color: Color::BLACK.into(),
+                            ..default()
+                        },
+                        RenderLayers::from(DisplayIn::Ortho),
+                    ))
+                    .id(),
+                );
             });
+
+            if let Some(camera) = camera
+                && let Some(surface_parent) = surface_parent
+            {
+                commands
+                    .entity(surface_parent)
+                    .insert(OrthoSurfaceParent::with_camera(camera));
+            }
         }
     }
 }
 
 fn update_ortho_camera_positions(
-    mut cameras: Query<(&OrthoCamera, &mut Transform), Without<OrthoSurface>>,
-    surfaces: Query<&Transform, (With<OrthoSurface>, Without<OrthoCamera>)>,
+    mut cameras: Query<(&OrthoCamera, &mut Transform), Without<OrthoSurfacePlane>>,
+    surfaces: Query<&Transform, (With<OrthoSurfaceParent>, Without<OrthoCamera>)>,
 ) {
     for (camera, mut camera_transform) in &mut cameras {
-        if let Ok(surface_transform) = surfaces.get(camera.surface)
+        if let Ok(surface_transform) = surfaces.get(camera.surface_parent)
             && let Some(new_camera_transform) =
                 compute_new_transforms_for_cam_based_on_surface(*surface_transform)
         {
@@ -169,13 +246,14 @@ fn update_ortho_camera_viewports(
             &GlobalTransform,
             &mut Projection,
         ),
-        Without<OrthoSurface>,
+        Without<OrthoSurfacePlane>,
     >,
     transforms: Query<&GlobalTransform>,
     mut images: ResMut<Assets<Image>>,
+    children: Query<&Children>,
     mut surfaces: Query<
         (&mut Mesh3d, &mut MeshMaterial3d<StandardMaterial>),
-        (With<OrthoSurface>, Without<OrthoCamera>),
+        (With<OrthoSurfacePlane>, Without<OrthoCamera>),
     >,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -204,6 +282,17 @@ fn update_ortho_camera_viewports(
             }
         }
 
+        if max_corner.x - min_corner.x < 0.5 {
+            max_corner.x = 0.25;
+            min_corner.x = -0.25;
+        }
+
+        if max_corner.y - min_corner.y < 0.5 {
+            max_corner.y = 0.25;
+            min_corner.y = -0.25;
+        }
+
+        info!("corners: {min_corner:?}, {max_corner:?}");
         let area = Rect::from_corners(min_corner, max_corner);
         *projection = Projection::from(OrthographicProjection {
             area,
@@ -226,6 +315,11 @@ fn update_ortho_camera_viewports(
             height: (dim_size * ratio_y) as u32,
             ..default()
         };
+        info!("Projection Size: {projection_size:?}");
+        info!("ratio x: {ratio_x:?}");
+        info!("ratio y: {ratio_y:?}");
+        info!("divider: {divider:?}");
+        info!("size: {size:?}");
 
         // This is the texture that will be rendered to.
         let mut image = Image::new_fill(
@@ -245,34 +339,44 @@ fn update_ortho_camera_viewports(
         ortho.image = image_handle.clone();
         ortho.projection_size = projection_size;
 
-        if let Ok((mut surface_mesh, mut surface_mat)) = surfaces.get_mut(ortho.surface) {
-            surface_mesh.0 = meshes.add(Cuboid::new(
-                ortho.projection_size.x,
-                ortho.projection_size.y,
-                0.0001,
-            ));
+        // NOTE: since the camera only points to the parent of the surface itself, first load all
+        // the children from the surfaces parent
+        for child in children.iter_descendants(ortho.surface_parent) {
+            if let Ok((mut surface_mesh, mut surface_mat)) = surfaces.get_mut(child) {
+                surface_mesh.0 = meshes.add(Cuboid::new(
+                    ortho.projection_size.x,
+                    ortho.projection_size.y,
+                    0.0001,
+                ));
 
-            surface_mat.0 = materials.add(StandardMaterial {
-                base_color_texture: Some(image_handle.clone()),
-                ..default()
-            })
+                surface_mat.0 = materials.add(StandardMaterial {
+                    base_color_texture: Some(image_handle.clone()),
+                    ..default()
+                })
+            }
         }
     }
 }
 
 fn handle_disable_ortho_camera(
-    mut reader: EventReader<DisableOrthoCamera>,
+    trigger: Trigger<Pointer<Click>>,
     mut commands: Commands,
-    cameras: Query<Entity, With<OrthoCamera>>,
+    points: Query<(Entity, &OrthoSurfaceParent)>,
+    state: Res<State<ControlState>>,
 ) {
-    if reader.is_empty() {
+    // Only run, when we are in the delete mode
+    if *state != ControlState::Delete {
         return;
     }
 
-    reader.clear();
+    if let Ok(to_delete_parent) = points.get(trigger.target()) {
+        if let Ok(mut entity) = commands.get_entity(to_delete_parent.1.camera) {
+            entity.despawn();
+        }
 
-    for cam in cameras {
-        commands.entity(cam).despawn();
+        if let Ok(mut entity) = commands.get_entity(to_delete_parent.0) {
+            entity.despawn();
+        }
     }
 }
 
@@ -280,18 +384,11 @@ pub struct ProjectionPlugin;
 
 impl Plugin for ProjectionPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            PostUpdate,
-            (
-                handle_enable_ortho_camera,
-                handle_disable_ortho_camera.before(handle_enable_ortho_camera),
-            ),
-        );
+        app.add_systems(PostUpdate, (handle_enable_ortho_camera,));
 
         // This will run before the post update camera system update
         app.add_systems(PreUpdate, update_ortho_camera_viewports);
-        app.add_systems(Update, update_ortho_camera_positions);
+        app.add_systems(PostUpdate, update_ortho_camera_positions);
         app.add_event::<EnableOrthoCamera>();
-        app.add_event::<DisableOrthoCamera>();
     }
 }

@@ -10,6 +10,7 @@ use super::helper_curves::{
 #[cfg(feature = "vr_enable")]
 use super::helper_curves::add_point_3d;
 
+use super::ortho_camera::create_camera_on_click;
 use super::render_info::{
     ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
     handle_box_dim_event, handle_change_surface_mode,
@@ -19,19 +20,22 @@ use super::surface_click::{
 };
 use super::util::{
     collect_control_points, compute_point_by_params, create_mesh_from_control_points,
-    curvature_to_color, enable_gizmo, enable_gizmo3d,
+    curvature_to_color,
 };
 use crate::RootTransform;
 use crate::bezier_curve::EntityDeletedEvent;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
 use crate::picking3d::picking_3d::Picking3dInteractable;
+use crate::projection::DisplayIn;
+use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::util::update_material_on;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::tailwind::*;
 use bevy::prelude::*;
 use bevy::render::mesh::PrimitiveTopology;
+use bevy::render::view::RenderLayers;
 use num::ToPrimitive;
 
 pub type Resolution = (u32, u32);
@@ -46,6 +50,9 @@ pub enum RedrawEvent {
 pub struct RedrawBoxesEvent;
 
 #[derive(Event)]
+pub struct CreateOrthoCameraEvent;
+
+#[derive(Event)]
 pub struct CreateCurveEvent;
 
 #[derive(Event)]
@@ -56,6 +63,18 @@ pub struct DeleteModeEvent;
 
 #[derive(Event)]
 pub struct EndModeEvent;
+
+fn handle_create_ortho_camera_event(
+    mut reader: EventReader<CreateOrthoCameraEvent>,
+    mut next_state: ResMut<NextState<ControlState>>,
+) {
+    if reader.is_empty() {
+        return;
+    }
+    reader.clear();
+
+    next_state.set(ControlState::CreateOrthoCamera);
+}
 
 fn handle_create_curve_event(
     mut reader: EventReader<CreateCurveEvent>,
@@ -209,6 +228,7 @@ fn generate_pointcloud(
                     ResultSurface,
                     Mesh3d(meshes.add(mesh)),
                     MeshMaterial3d(materials.add(mat)),
+                    RenderLayers::from(DisplayIn::Normal),
                 ))
                 .observe(bezier_surface_picking);
             });
@@ -249,6 +269,7 @@ fn generate_pointcloud(
                                 Mesh3d(meshes.add(mesh)),
                                 MeshMaterial3d(materials.add(Color::BLACK)),
                                 Pickable::IGNORE,
+                                RenderLayers::from(DisplayIn::Normal),
                             ));
                         }
                     });
@@ -329,6 +350,7 @@ pub fn redraw_boxes(
                     color.2 as f32,
                     1.0,
                 )))),
+                RenderLayers::from(DisplayIn::Normal),
             ));
         });
     }
@@ -389,6 +411,7 @@ pub fn generate_default_curve(
                     Mesh3d(sphere.clone()),
                     MeshMaterial3d(material.clone()),
                     Picking3dInteractable,
+                    RenderLayers::from(DisplayIn::BothNormalAndOrtho),
                 ))
                 .with_children(|cmd| {
                     // TODO: remove this once rotation is fixed
@@ -434,6 +457,7 @@ pub fn generate_default_curve(
                 RenderLine(p0_id, id),
                 MeshMaterial3d(materials.add(Color::BLACK)),
                 Mesh3d(meshes.add(mesh)),
+                RenderLayers::from(DisplayIn::BothNormalAndOrtho),
             ));
         }
 
@@ -458,6 +482,7 @@ pub fn generate_default_curve(
                 RenderLine(p0_id, id),
                 MeshMaterial3d(materials.add(Color::BLACK)),
                 Mesh3d(meshes.add(mesh)),
+                RenderLayers::from(DisplayIn::BothNormalAndOrtho),
             ));
         }
     }
@@ -507,18 +532,29 @@ impl Plugin for BezierRenderPlugin {
                 handle_state_change_event,
                 handle_change_curvature,
                 handle_box_dim_event,
+            ),
+        );
+
+        // Systems for handling state
+        app.add_systems(
+            PostUpdate,
+            (
                 handle_change_surface_mode.run_if(in_state(ControlState::Main)),
                 handle_create_curve_event.run_if(in_state(ControlState::Main)),
+                handle_create_ortho_camera_event.run_if(in_state(ControlState::Main)),
                 handle_create_plane_event.run_if(in_state(ControlState::Main)),
                 handle_delete_mode_event.run_if(in_state(ControlState::Main)),
+                create_camera_on_click.run_if(in_state(ControlState::CreateOrthoCamera)),
                 handle_end_mode.run_if(
                     in_state(ControlState::CreateCurve)
                         .or(in_state(ControlState::CreatePlane))
-                        .or(in_state(ControlState::Delete)),
+                        .or(in_state(ControlState::Delete))
+                        .or(in_state(ControlState::CreateOrthoCamera)),
                 ),
             ),
         );
 
+        // Systems for snapping curves creation
         app.add_systems(OnEnter(ControlState::CreateCurve), enter_create_curve_mode);
         app.add_systems(OnExit(ControlState::CreateCurve), commit_curve);
         app.add_systems(OnExit(ControlState::CreatePlane), commit_plane);
@@ -545,6 +581,7 @@ impl Plugin for BezierRenderPlugin {
         app.add_event::<RedrawCurvesEvent>();
         app.add_event::<CreateCurveEvent>();
         app.add_event::<CreatePlaneEvent>();
+        app.add_event::<CreateOrthoCameraEvent>();
         app.add_event::<DeleteModeEvent>();
         app.add_event::<EndModeEvent>();
         app.add_event::<EntityDeletedEvent>();

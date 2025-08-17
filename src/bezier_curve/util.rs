@@ -250,34 +250,3 @@ pub fn collect_control_points(
 
     multi_curves
 }
-
-pub fn enable_gizmo(
-    trigger: Trigger<Pointer<Click>>,
-    mut commands: Commands,
-    enabled: Query<&EnableTranslationControl>,
-) {
-    let mut entity = commands.get_entity(trigger.target()).unwrap();
-
-    if enabled.get(trigger.target()).is_ok() {
-        entity.remove::<EnableTranslationControl>();
-    } else {
-        entity.insert(EnableTranslationControl::new(true));
-    }
-}
-
-pub fn enable_gizmo3d(
-    trigger: Trigger<Pointer3d<events::Click>>,
-    mut commands: Commands,
-    enabled: Query<&EnableTranslationControl>,
-    mut trace_log_writer: EventWriter<LogTrace>,
-) {
-    let mut entity = commands.get_entity(trigger.target()).unwrap();
-
-    if enabled.get(trigger.target()).is_ok() {
-        entity.remove::<EnableTranslationControl>();
-    } else {
-        entity.insert(EnableTranslationControl::default());
-    }
-    println!("Sending log trace event");
-    trace_log_writer.write(LogTrace::default());
-}

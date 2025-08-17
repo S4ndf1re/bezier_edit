@@ -1,14 +1,9 @@
-use crate::RootTransform;
 use crate::bezier_curve::bezier_curve_renderer::RedrawEvent;
-use crate::bezier_curve::helper_curves::{
-    CurveCollection, RedrawCurvesEvent, TemporaryCurve, TemporaryCurvePoint,
-};
+use crate::bezier_curve::helper_curves::{CurveCollection, RedrawCurvesEvent};
 use crate::bezier_curve::render_info::RenderInformation;
 use crate::click_decider::LogTrace;
 use crate::history::plugin::HistoryLogEvent;
-use crate::nurbs::bezier::{
-    de_casteljau, derive_after_de_casteljau, horner_scheme, shortest_distance_to_point,
-};
+use crate::nurbs::bezier::{de_casteljau, derive_after_de_casteljau};
 use crate::nurbs::parametric::{Circle3D, MinDistanceToPoint, Parametric};
 use crate::nurbs::point::Point;
 use crate::picking3d::events::{HoveredBy, MoveIn, MoveOut, Pointer3d};
@@ -16,14 +11,19 @@ use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
-use bevy::color::palettes::tailwind::{RED_600, YELLOW_400, YELLOW_600};
+use crate::{MainCamera, RootTransform};
+use bevy::color::palettes::tailwind::{YELLOW_400, YELLOW_600};
 use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::ecs::system::SystemParam;
 use bevy::ecs::system::lifetimeless::{Read, Write};
-use bevy::picking::hover::PickingInteraction;
 use bevy::prelude::*;
 use std::collections::HashSet;
 use std::f32::consts::FRAC_PI_2;
+
+#[derive(Event)]
+pub struct MovedEvent {
+    delta: Vec3,
+}
 
 #[derive(Component)]
 struct SnappedPoint {
@@ -544,8 +544,10 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             ignore_curves.insert(curve.0);
         }
 
-        let control_point = self.transform_set.p0().get(control_parent.1.0).map(|v| *v);
+        let changed_entity = control_parent.1.0;
+        let control_point = self.transform_set.p0().get(control_parent.1.0).copied();
         if let Ok(t) = control_point {
+            let started_translation = t.translation;
             if self.state.curve_snapping == SnappingBehaviour::Snap {
                 if !is_already_snapped {
                     let shortest = self
@@ -634,6 +636,13 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                 let mut t = p0.get_mut(control_parent.1.0).unwrap();
                 t.translation += translation;
             }
+
+            // Trigger the moved event, so that linked entities (TODO) may update the position of the
+            // linked entity, correspondingly (using lokal transforms)
+            if let Ok(mut entity) = self.commands.get_entity(changed_entity) {
+                let delta = t.translation - started_translation;
+                entity.trigger(MovedEvent { delta });
+            }
         }
 
         self.redraw_writer.write(RedrawEvent::Fast);
@@ -645,7 +654,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
 fn drag_controller(
     trigger: Trigger<Pointer<Drag>>,
     control_query: Query<(&Control, &ChildOf)>,
-    camera: Query<(&Camera, &GlobalTransform)>,
+    camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
     mut params: ParamSet<(ObligatoryDragParams, Query<&GlobalTransform>)>,
@@ -655,40 +664,40 @@ fn drag_controller(
     let parent = child_of.parent();
     let control_parent = control_parents.get_mut(parent).unwrap();
 
-    let (camera, camera_transform) = camera.single().unwrap();
+    if let Ok((camera, camera_transform)) = camera.single() {
+        let diff = {
+            let dist = (params.p1().get(control_parent.0).unwrap().translation()
+                - camera_transform.translation())
+            .length();
 
-    let diff = {
-        let dist = (params.p1().get(control_parent.0).unwrap().translation()
-            - camera_transform.translation())
-        .length();
+            let mouse_start = camera
+                .viewport_to_world(
+                    camera_transform,
+                    trigger.pointer_location.position - trigger.delta,
+                )
+                .unwrap();
 
-        let mouse_start = camera
-            .viewport_to_world(
-                camera_transform,
-                trigger.pointer_location.position - trigger.delta,
-            )
-            .unwrap();
+            let mouse_end = camera
+                .viewport_to_world(camera_transform, trigger.pointer_location.position)
+                .unwrap();
 
-        let mouse_end = camera
-            .viewport_to_world(camera_transform, trigger.pointer_location.position)
-            .unwrap();
+            let start = mouse_start.get_point(dist);
+            let end = mouse_end.get_point(dist);
+            root.single()
+                .unwrap()
+                .affine()
+                .inverse()
+                .transform_point3(end - start)
+        };
 
-        let start = mouse_start.get_point(dist);
-        let end = mouse_end.get_point(dist);
-        root.single()
-            .unwrap()
-            .affine()
-            .inverse()
-            .transform_point3(end - start)
-    };
+        let axis = control.0;
+        let direction = (diff.dot(axis)) / (diff.length() * axis.length());
+        let translation = axis * direction * diff.length();
 
-    let axis = control.0;
-    let direction = (diff.dot(axis)) / (diff.length() * axis.length());
-    let translation = axis * direction * diff.length();
-
-    params
-        .p0()
-        .update_position_drag_universal((parent, control_parent), translation);
+        params
+            .p0()
+            .update_position_drag_universal((parent, control_parent), translation);
+    }
 }
 
 #[allow(clippy::complexity)]
@@ -725,7 +734,7 @@ fn drag_controller3d(
 fn rotate_controller(
     trigger: Trigger<Pointer<Drag>>,
     control_query: Query<(&ControlRotation, &ChildOf)>,
-    camera: Query<(&Camera, &GlobalTransform), Without<RootTransform>>,
+    camera: Query<(&Camera, &GlobalTransform), (Without<RootTransform>, With<MainCamera>)>,
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
     global_transforms: Query<&GlobalTransform, (Without<RootTransform>, Without<Camera>)>,
@@ -737,59 +746,60 @@ fn rotate_controller(
     let control_parent = control_parents.get_mut(parent).unwrap();
     let parent_transform = *changable_transforms.get(control_parent.0).unwrap();
 
-    let (camera, camera_transform) = camera.single().unwrap();
-
-    let (start, diff) = {
-        let dist = (global_transforms
-            .get(control_parent.0)
-            .unwrap()
-            .translation()
-            - camera_transform.translation())
-        .length();
-
-        let mouse_start = camera
-            .viewport_to_world(
-                camera_transform,
-                trigger.pointer_location.position - trigger.delta,
-            )
-            .unwrap();
-
-        let mouse_end = camera
-            .viewport_to_world(camera_transform, trigger.pointer_location.position)
-            .unwrap();
-
-        let start = mouse_start.get_point(dist);
-        let end = mouse_end.get_point(dist);
-        (
-            start,
-            root.single()
+    if let Ok((camera, camera_transform)) = camera.single() {
+        let (start, diff) = {
+            let dist = (global_transforms
+                .get(control_parent.0)
                 .unwrap()
-                .affine()
-                .inverse()
-                .transform_point3(end - start),
-        )
-    };
+                .translation()
+                - camera_transform.translation())
+            .length();
 
-    let circle = Circle3D::new(
-        parent_transform.translation.into(),
-        control_rotation.radius,
-        control_rotation.normal.into(),
-    );
+            let mouse_start = camera
+                .viewport_to_world(
+                    camera_transform,
+                    trigger.pointer_location.position - trigger.delta,
+                )
+                .unwrap();
 
-    let closest = circle.min_distance_to_point(start.into());
-    let axis: Vec3 = circle.derive(&closest.params, 1).into();
+            let mouse_end = camera
+                .viewport_to_world(camera_transform, trigger.pointer_location.position)
+                .unwrap();
 
-    let direction = (diff.dot(axis)) / (diff.length() * axis.length());
-    let angle = direction * diff.length();
+            let start = mouse_start.get_point(dist);
+            let end = mouse_end.get_point(dist);
+            (
+                start,
+                root.single()
+                    .unwrap()
+                    .affine()
+                    .inverse()
+                    .transform_point3(end - start),
+            )
+        };
 
-    let inverse = {
-        let mut parent_transform = changable_transforms.get_mut(control_parent.0).unwrap();
-        parent_transform.rotation *= Quat::from_axis_angle(control_rotation.normal, angle);
-        parent_transform.rotation.inverse()
-    };
+        let circle = Circle3D::new(
+            parent_transform.translation.into(),
+            control_rotation.radius,
+            control_rotation.normal.into(),
+        );
 
-    let mut arrow_transform = changable_transforms.get_mut(parent).unwrap();
-    arrow_transform.rotation = inverse;
+        let closest = circle.min_distance_to_point(start.into());
+        let axis: Vec3 = circle.derive(&closest.params, 1).into();
+
+        let direction = (diff.dot(axis)) / (diff.length() * axis.length());
+        let angle = direction * diff.length();
+
+        let inverse = {
+            let mut parent_transform = changable_transforms.get_mut(control_parent.0).unwrap();
+            parent_transform.rotation =
+                Quat::from_axis_angle(control_rotation.normal, angle) * parent_transform.rotation;
+            parent_transform.rotation.inverse()
+        };
+
+        let mut arrow_transform = changable_transforms.get_mut(parent).unwrap();
+        arrow_transform.rotation = inverse;
+    }
 }
 
 #[allow(clippy::complexity)]
@@ -853,5 +863,6 @@ impl Plugin for TranslationController {
 
         app.init_resource::<TranslationControllerState>();
         app.add_event::<ToggleSnappingBehaviour>();
+        app.add_event::<MovedEvent>();
     }
 }

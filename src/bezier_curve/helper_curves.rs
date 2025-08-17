@@ -1,13 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
-use super::{
-    components::ControlState, render_info::RenderInformation, util::enable_gizmo3d,
-    EntityDeletedEvent,
-};
+use super::bezier_curve_renderer::EndModeEvent;
+use super::{EntityDeletedEvent, components::ControlState, render_info::RenderInformation};
 use crate::nurbs::bezier::de_casteljau;
 use crate::picking3d::picking_3d::Picking3dInteractable;
+use crate::translation_control::enable_gizmo3d;
 use crate::translation_control::translation_controller::CantSnapToCurve;
 use crate::{
+    RootTransform,
     click_decider::LogTrace,
     nurbs::{
         bezier::{horner_scheme, shortest_distance_to_point},
@@ -15,7 +15,6 @@ use crate::{
     },
     picking3d::events::{self, Click, Pointer3d},
     translation_control::translation_controller::EnableTranslationControl,
-    RootTransform,
 };
 use bevy::color::palettes::tailwind::PURPLE_900;
 use bevy::{
@@ -23,7 +22,7 @@ use bevy::{
     color::palettes::tailwind::PURPLE_600,
     ecs::{
         query::QueryData,
-        system::{lifetimeless::Read, SystemParam},
+        system::{SystemParam, lifetimeless::Read},
     },
     prelude::*,
     render::mesh::PrimitiveTopology,
@@ -119,6 +118,7 @@ fn handle_click_on_curve_point(
     points: Query<(Entity, &ChildOf), With<ControlCurvePoint>>,
     children: Query<&Children>,
     mut delete_event: EventWriter<EntityDeletedEvent>,
+    mut end_mode_writer: EventWriter<EndModeEvent>,
 ) {
     // when clicked on a point that belongs to a curve, delete the curve and all its control
     // points. Trigger deleted events
@@ -139,9 +139,11 @@ fn handle_click_on_curve_point(
                 .unwrap()
                 .trigger(EntityDeletedEvent(parent))
                 .despawn();
+
+            end_mode_writer.write(EndModeEvent);
         }
     } else if *state == ControlState::Main {
-        enable_gizmo3d(trigger, commands, enabled, trace_log_writer);
+        enable_gizmo3d(trigger, commands, enabled, trace_log_writer, state);
     }
 }
 
@@ -152,12 +154,10 @@ pub fn commit_curve(
     root: Query<(Entity, &Transform), (With<RootTransform>, Without<TemporaryCurve>)>,
     tmp_curves: Query<Entity, With<TemporaryCurve>>,
     children: Query<&Children>,
-    mut tmp_points: Query<(Entity, &mut Transform, &TemporaryCurvePoint), Without<RootTransform>>,
+    mut tmp_points: Query<(Entity, &TemporaryCurvePoint), Without<RootTransform>>,
     mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
 ) {
     let root = root.single().unwrap();
-
-    let root_transform = root.1.clone().compute_affine().inverse();
 
     // Iterate over possible (actually only one) temporary curves
     for curve in tmp_curves.iter() {
@@ -169,8 +169,7 @@ pub fn commit_curve(
             let parent = commands.spawn((ControlCurve, ChildOf(root.0))).id();
 
             for child_point_entity in children.iter_descendants(curve) {
-                let (entity, mut transform, point) =
-                    tmp_points.get_mut(child_point_entity).unwrap();
+                let (entity, point) = tmp_points.get_mut(child_point_entity).unwrap();
 
                 let idx = point.0;
 

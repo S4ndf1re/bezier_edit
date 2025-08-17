@@ -7,6 +7,7 @@ pub enum ControlState {
     CreateCurve,
     CreatePlane,
     Delete,
+    CreateOrthoCamera,
 }
 
 #[derive(Component)]

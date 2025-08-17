@@ -24,6 +24,7 @@ use history::plugin::HistoryPlugin;
 
 use crate::bezier_curve::render_info::RenderInformation;
 use bevy::render::view::RenderLayers;
+use projection::DisplayIn;
 use translation_control::translation_controller::TranslationController;
 use ui::UiPlugin;
 
@@ -31,12 +32,17 @@ use ui::UiPlugin;
 #[require(Transform, Visibility)]
 pub struct RootTransform;
 
+#[derive(Component)]
+#[require(Camera)]
+pub struct MainCamera;
+
 #[cfg(not(feature = "vr_enable"))]
 fn setup(mut commands: Commands) {
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(-10.0, 0.0, 0.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
-        RenderLayers::layer(0).with(1),
+        RenderLayers::from(DisplayIn::Normal),
+        MainCamera,
     ));
 
     commands.spawn((
@@ -62,7 +68,7 @@ fn setup(
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 0.0, -10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
-        RenderLayers::layer(0).with(1),
+        RenderLayers::from(DisplayIn::Normal),
     ));
 
     commands.spawn((
@@ -83,6 +89,8 @@ fn setup(
 
 #[cfg(not(feature = "vr_enable"))]
 fn create_app() -> App {
+    use projection::ProjectionPlugin;
+
     info!("Creating Non-VR App");
     let mut app = App::new();
     app.add_plugins(DefaultPlugins)
@@ -92,6 +100,7 @@ fn create_app() -> App {
         .add_plugins(AdvancedOrbitControls)
         .add_plugins(TranslationController)
         .add_plugins(UiPlugin)
+        .add_plugins(ProjectionPlugin)
         .init_resource::<ControlStorage>()
         .add_systems(Startup, setup.before(generate_default_curve));
 
