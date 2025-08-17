@@ -9,4 +9,4 @@ pub mod util;
 use bevy::prelude::*;
 
 #[derive(Event)]
-pub struct EntityDeletedEvent(Entity);
+pub struct EntityDeletedEvent(pub Entity);
