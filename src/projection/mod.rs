@@ -254,7 +254,7 @@ fn update_ortho_camera_positions(
 fn update_ortho_camera_viewports(
     mut reader: EventReader<RedrawEvent>,
     mut cameras: Query<
-        (&Camera, &mut OrthoCamera, &GlobalTransform, &mut Projection),
+        (&mut OrthoCamera, &GlobalTransform, &mut Projection),
         Without<OrthoSurfacePlane>,
     >,
     transforms: Query<&GlobalTransform>,
@@ -272,7 +272,7 @@ fn update_ortho_camera_viewports(
     }
     reader.clear();
 
-    for (camera, mut ortho, camera_transform, mut projection) in &mut cameras {
+    for (mut ortho, camera_transform, mut projection) in &mut cameras {
         let mut min_corner = Vec2::new(f32::MAX, f32::MAX);
         let mut max_corner = Vec2::new(f32::MIN, f32::MIN);
         let mut far = f32::MIN;
@@ -287,6 +287,7 @@ fn update_ortho_camera_viewports(
                         let plane = InfinitePlane3d::new(surface_transform.forward());
                         let ray = Ray3d::new(transform.translation(), camera_transform.forward());
 
+                        // TODO: This is still buggy has hell
                         if let Some(hit) =
                             ray.intersect_plane(surface_transform.translation(), plane)
                         {
@@ -310,15 +311,18 @@ fn update_ortho_camera_viewports(
             }
         }
 
-        if max_corner.x - min_corner.x < 0.5 {
+        if max_corner.x - min_corner.x < 0.5 || max_corner.x - min_corner.x > 1000.0 {
             max_corner.x = 0.25;
             min_corner.x = -0.25;
         }
 
-        if max_corner.y - min_corner.y < 0.5 {
+        if max_corner.y - min_corner.y < 0.5 || max_corner.y - min_corner.y > 1000.0 {
             max_corner.y = 0.25;
             min_corner.y = -0.25;
         }
+
+        info!("min corner {min_corner}");
+        info!("max corner {max_corner}");
 
         // apply padding of 1 unit length on each side
         min_corner += Vec2::new(-1.0, -1.0);
