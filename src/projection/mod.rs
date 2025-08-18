@@ -365,6 +365,10 @@ fn update_ortho_camera_viewports(
                     0.0001,
                 ));
 
+                // NOTE: This is needed, since the MeshMaterial3d seems to not be able to
+                // invalidate the RenderTarget on image changes.
+                // So we have to create a complete new image. This causes flickering though.
+                // See https://github.com/bevyengine/bevy/issues/16159
                 materials.set_changed();
                 material.0 = materials.add(StandardMaterial {
                     base_color_texture: Some(ortho.image.clone()),
