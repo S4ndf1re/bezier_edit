@@ -275,61 +275,57 @@ fn show_transitional_controls(
         let transform = Transform::from_xyz(0.0, 0.0, 0.0).with_rotation(rotation_inverse);
 
         commands.get_entity(entity).unwrap().with_children(|cmd| {
-            cmd.spawn((
-                ControlParent(entity),
-                Transform::default(),
-                Visibility::default(),
-            ))
-            .with_children(|parent| {
-                for arrow in arrows.as_ref().iter() {
-                    parent
-                        .spawn((
-                            Transform::from_xyz(0.0, 0.0, 0.0)
-                                .looking_to(arrow.normalized, Vec3::Y),
-                            Control(arrow.normalized),
-                            Visibility::default(),
-                        ))
-                        .with_children(|parent| {
-                            draw_arrow(
-                                parent,
-                                materials.add(arrow.color),
-                                materials.add(arrow.hover_color),
-                                &mut meshes,
-                                scale,
-                                false,
-                            );
-                        })
-                        .observe(drag_controller)
-                        .observe(drag_controller3d)
-                        .observe(drag_start)
-                        .observe(drag_start3d)
-                        .observe(drag_end_trigger_redraw)
-                        .observe(drag_end3d_trigger_redraw);
-
-                    if enabled_control.with_rotation {
+            cmd.spawn((ControlParent(entity), transform, Visibility::default()))
+                .with_children(|parent| {
+                    for arrow in arrows.as_ref().iter() {
                         parent
                             .spawn((
                                 Transform::from_xyz(0.0, 0.0, 0.0)
                                     .looking_to(arrow.normalized, Vec3::Y),
-                                ControlRotation {
-                                    normal: arrow.normalized,
-                                    radius: 0.4 * scale as f64,
-                                },
+                                Control(arrow.normalized),
                                 Visibility::default(),
                             ))
                             .with_children(|parent| {
-                                draw_ring(
+                                draw_arrow(
                                     parent,
                                     materials.add(arrow.color),
                                     materials.add(arrow.hover_color),
                                     &mut meshes,
                                     scale,
+                                    false,
                                 );
                             })
-                            .observe(rotate_controller);
+                            .observe(drag_controller)
+                            .observe(drag_controller3d)
+                            .observe(drag_start)
+                            .observe(drag_start3d)
+                            .observe(drag_end_trigger_redraw)
+                            .observe(drag_end3d_trigger_redraw);
+
+                        if enabled_control.with_rotation {
+                            parent
+                                .spawn((
+                                    Transform::from_xyz(0.0, 0.0, 0.0)
+                                        .looking_to(arrow.normalized, Vec3::Y),
+                                    ControlRotation {
+                                        normal: arrow.normalized,
+                                        radius: 0.4 * scale as f64,
+                                    },
+                                    Visibility::default(),
+                                ))
+                                .with_children(|parent| {
+                                    draw_ring(
+                                        parent,
+                                        materials.add(arrow.color),
+                                        materials.add(arrow.hover_color),
+                                        &mut meshes,
+                                        scale,
+                                    );
+                                })
+                                .observe(rotate_controller);
+                        }
                     }
-                }
-            });
+                });
         });
     }
 }

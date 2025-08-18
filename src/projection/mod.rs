@@ -1,8 +1,9 @@
 use bevy::{
     asset::RenderAssetUsages,
-    color::palettes::tailwind::BLUE_500,
+    color::palettes::tailwind::{BLUE_500, GREEN_800, PINK_700, RED_600},
     prelude::*,
     render::{
+        camera::ScalingMode,
         render_resource::{Extent3d, Face, TextureDimension, TextureFormat, TextureUsages},
         view::RenderLayers,
     },
@@ -10,7 +11,10 @@ use bevy::{
 
 use crate::{
     RootTransform,
-    bezier_curve::{components::ControlState, render_info::RenderInformation},
+    bezier_curve::{
+        bezier_curve_renderer::EndModeEvent, components::ControlState,
+        render_info::RenderInformation,
+    },
     picking3d::picking_3d::Picking3dInteractable,
     translation_control::enable_gizmo,
 };
@@ -97,8 +101,10 @@ fn compute_new_transforms_for_cam_based_on_surface(surface: Transform) -> Option
     let hit = mirroring_distance_seeking_ray.intersect_plane(Vec3::ZERO, plane)?;
 
     let mirroring_point = mirroring_distance_seeking_ray.get_point(hit);
+    let dist = (surface.translation - mirroring_point).length();
+    let camera_point = surface.translation + surface.forward().normalize_or_zero() * 2.0 * dist;
 
-    Some(Transform::from_translation(mirroring_point).looking_to(-surface.forward(), Vec3::Y))
+    Some(Transform::from_translation(camera_point).looking_at(surface.translation, surface.up()))
 }
 
 #[allow(clippy::complexity)]
@@ -124,8 +130,8 @@ fn handle_enable_ortho_camera(
         && let Some(bounding_entities) = bounding_entities
     {
         let size = Extent3d {
-            width: 512,
-            height: 512,
+            width: 2048,
+            height: 2048,
             ..default()
         };
 
@@ -171,11 +177,11 @@ fn handle_enable_ortho_camera(
                         cmd.spawn((
                             OrthoSurfacePlane,
                             Transform::default(),
-                            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 0.0001))),
+                            Mesh3d(meshes.add(Cuboid::new(10.0, 10.0, 0.0001))),
                             MeshMaterial3d(materials.add(StandardMaterial {
                                 base_color_texture: Some(image_handle.clone()),
                                 cull_mode: Some(Face::Back),
-                                unlit: false,
+                                unlit: true,
                                 ..default()
                             })),
                             // This should only get rendered in layer 0
@@ -197,14 +203,28 @@ fn handle_enable_ortho_camera(
                             surface_parent.expect("otherwise invalid code above"),
                         ),
                         Camera3d::default(),
-                        Projection::from(OrthographicProjection::default_3d()),
+                        Projection::from(OrthographicProjection {
+                            // 6 world units per pixel of window height.
+                            scaling_mode: ScalingMode::FixedVertical {
+                                viewport_height: 10.0,
+                            },
+                            ..OrthographicProjection::default_3d()
+                        }),
                         Camera {
                             target: image_handle.clone().into(),
-                            clear_color: Color::BLACK.into(),
+                            clear_color: Color::WHITE.into(),
                             ..default()
                         },
                         RenderLayers::from(DisplayIn::Ortho),
                     ))
+                    .with_children(|cmd| {
+                        cmd.spawn((
+                            Transform::default(),
+                            Mesh3d(meshes.add(Cuboid::new(0.1, 0.1, 0.4))),
+                            MeshMaterial3d(materials.add(Color::from(GREEN_800))),
+                            RenderLayers::from(DisplayIn::Normal),
+                        ));
+                    })
                     .id(),
                 );
             });
@@ -240,25 +260,16 @@ fn update_ortho_camera_positions(
 /// any weird stretching. Set the target size plane.
 fn update_ortho_camera_viewports(
     mut cameras: Query<
-        (
-            &mut Camera,
-            &mut OrthoCamera,
-            &GlobalTransform,
-            &mut Projection,
-        ),
+        (&Camera, &mut OrthoCamera, &GlobalTransform, &mut Projection),
         Without<OrthoSurfacePlane>,
     >,
     transforms: Query<&GlobalTransform>,
     mut images: ResMut<Assets<Image>>,
     children: Query<&Children>,
-    mut surfaces: Query<
-        (&mut Mesh3d, &mut MeshMaterial3d<StandardMaterial>),
-        (With<OrthoSurfacePlane>, Without<OrthoCamera>),
-    >,
+    mut surfaces: Query<&mut Mesh3d, (With<OrthoSurfacePlane>, Without<OrthoCamera>)>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for (mut camera, mut ortho, camera_transform, mut projection) in &mut cameras {
+    for (camera, mut ortho, camera_transform, mut projection) in &mut cameras {
         let mut min_corner = Vec2::new(f32::MAX, f32::MAX);
         let mut max_corner = Vec2::new(f32::MIN, f32::MIN);
         let mut far = f32::MIN;
@@ -272,10 +283,10 @@ fn update_ortho_camera_viewports(
                     camera.world_to_viewport_with_depth(camera_transform, transform.translation())
             {
                 min_corner.x = min_corner.x.min(view.x);
-                min_corner.y = min_corner.x.min(view.y);
+                min_corner.y = min_corner.y.min(view.y);
 
                 max_corner.x = max_corner.x.max(view.x);
-                max_corner.y = max_corner.x.max(view.y);
+                max_corner.y = max_corner.y.max(view.y);
 
                 far = far.max(view.z);
                 near = near.min(view.z);
@@ -292,67 +303,47 @@ fn update_ortho_camera_viewports(
             min_corner.y = -0.25;
         }
 
-        info!("corners: {min_corner:?}, {max_corner:?}");
+        min_corner += Vec2::new(-1.0, -1.0);
+        max_corner += Vec2::new(1.0, 1.0);
+
+        // info!("corners: {min_corner:?}, {max_corner:?}");
         let area = Rect::from_corners(min_corner, max_corner);
-        *projection = Projection::from(OrthographicProjection {
-            area,
-            near,
-            far,
-            ..OrthographicProjection::default_3d()
-        });
 
         // Compute the projection size and the ratio, which will then be in the interval [0, 1]
         let projection_size = area.max - area.min;
         let mut ratio_x = projection_size.x;
         let mut ratio_y = projection_size.y;
-        let divider = ratio_y.max(ratio_y);
+        let divider = ratio_x.max(ratio_y);
         ratio_x /= divider;
         ratio_y /= divider;
 
-        let dim_size = 512.0;
+        let dim_size = 2048.0;
         let size = Extent3d {
             width: (dim_size * ratio_x) as u32,
             height: (dim_size * ratio_y) as u32,
             ..default()
         };
-        info!("Projection Size: {projection_size:?}");
-        info!("ratio x: {ratio_x:?}");
-        info!("ratio y: {ratio_y:?}");
-        info!("divider: {divider:?}");
-        info!("size: {size:?}");
+        // info!("Projection Size: {projection_size:?}");
+        // info!("ratio x: {ratio_x:?}");
+        // info!("ratio y: {ratio_y:?}");
+        // info!("divider: {divider:?}");
+        // info!("size: {size:?}");
 
         // This is the texture that will be rendered to.
-        let mut image = Image::new_fill(
-            size,
-            TextureDimension::D2,
-            &[0, 0, 0, 0],
-            TextureFormat::Bgra8UnormSrgb,
-            RenderAssetUsages::default(),
-        );
-
-        image.texture_descriptor.usage = TextureUsages::TEXTURE_BINDING
-            | TextureUsages::COPY_DST
-            | TextureUsages::RENDER_ATTACHMENT;
-
-        let image_handle = images.add(image);
-        camera.target = image_handle.clone().into();
-        ortho.image = image_handle.clone();
         ortho.projection_size = projection_size;
+        if let Some(image) = images.get_mut(ortho.image.id()) {
+            image.resize(size);
+        }
 
         // NOTE: since the camera only points to the parent of the surface itself, first load all
         // the children from the surfaces parent
         for child in children.iter_descendants(ortho.surface_parent) {
-            if let Ok((mut surface_mesh, mut surface_mat)) = surfaces.get_mut(child) {
+            if let Ok(mut surface_mesh) = surfaces.get_mut(child) {
                 surface_mesh.0 = meshes.add(Cuboid::new(
                     ortho.projection_size.x,
                     ortho.projection_size.y,
                     0.0001,
                 ));
-
-                surface_mat.0 = materials.add(StandardMaterial {
-                    base_color_texture: Some(image_handle.clone()),
-                    ..default()
-                })
             }
         }
     }
@@ -363,6 +354,7 @@ fn handle_disable_ortho_camera(
     mut commands: Commands,
     points: Query<(Entity, &OrthoSurfaceParent)>,
     state: Res<State<ControlState>>,
+    mut end_mode_writer: EventWriter<EndModeEvent>,
 ) {
     // Only run, when we are in the delete mode
     if *state != ControlState::Delete {
@@ -377,6 +369,8 @@ fn handle_disable_ortho_camera(
         if let Ok(mut entity) = commands.get_entity(to_delete_parent.0) {
             entity.despawn();
         }
+
+        end_mode_writer.write(EndModeEvent);
     }
 }
 
@@ -387,7 +381,7 @@ impl Plugin for ProjectionPlugin {
         app.add_systems(PostUpdate, (handle_enable_ortho_camera,));
 
         // This will run before the post update camera system update
-        app.add_systems(PreUpdate, update_ortho_camera_viewports);
+        // app.add_systems(PreUpdate, update_ortho_camera_viewports);
         app.add_systems(PostUpdate, update_ortho_camera_positions);
         app.add_event::<EnableOrthoCamera>();
     }

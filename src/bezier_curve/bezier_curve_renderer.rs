@@ -228,7 +228,7 @@ fn generate_pointcloud(
                     ResultSurface,
                     Mesh3d(meshes.add(mesh)),
                     MeshMaterial3d(materials.add(mat)),
-                    RenderLayers::from(DisplayIn::Normal),
+                    RenderLayers::from(DisplayIn::BothNormalAndOrtho),
                 ))
                 .observe(bezier_surface_picking);
             });

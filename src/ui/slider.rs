@@ -9,6 +9,7 @@ use bevy::{
 use bevy_lunex::{Rl, UiColor, UiDepth, UiLayout, UiMeshPlane3d, prelude::*};
 
 use crate::{
+    MainCamera,
     click_decider::LogTrace,
     picking3d::{self, events::Pointer3d, picking_3d::Picking3dInteractable},
 };
@@ -66,7 +67,7 @@ fn slider_value_change(
 #[allow(clippy::complexity)]
 fn slider_drag(
     trigger: Trigger<Pointer<Drag>>,
-    camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    camera: Query<(&Camera, &GlobalTransform), (With<Camera3d>, With<MainCamera>)>,
     mut slider: Query<(&mut UiSlider, &Children)>,
     slider_background: Query<Entity, With<SliderBackground>>,
     mut commands: Commands,
