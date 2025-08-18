@@ -228,7 +228,7 @@ fn generate_pointcloud(
                     ResultSurface,
                     Mesh3d(meshes.add(mesh)),
                     MeshMaterial3d(materials.add(mat)),
-                    RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                    RenderLayers::from(DisplayIn::Normal),
                 ))
                 .observe(bezier_surface_picking);
             });
@@ -269,7 +269,7 @@ fn generate_pointcloud(
                                 Mesh3d(meshes.add(mesh)),
                                 MeshMaterial3d(materials.add(Color::BLACK)),
                                 Pickable::IGNORE,
-                                RenderLayers::from(DisplayIn::Normal),
+                                RenderLayers::from(DisplayIn::BothNormalAndOrtho),
                             ));
                         }
                     });
@@ -424,8 +424,8 @@ pub fn generate_default_curve(
                 .observe(update_material_on::<Pointer<Over>>(material_hover.clone()))
                 .observe(update_material_on::<Pointer<Out>>(material.clone()))
                 //.observe(drag_point)
-                .observe(enable_gizmo)
-                .observe(enable_gizmo3d)
+                .observe(enable_gizmo::<false>)
+                .observe(enable_gizmo3d::<false>)
                 .id();
             ids.push(id);
         });

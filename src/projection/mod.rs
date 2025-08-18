@@ -3,7 +3,7 @@ use bevy::{
     color::palettes::tailwind::{BLUE_500, GREEN_800, PINK_700, RED_600},
     prelude::*,
     render::{
-        camera::ScalingMode,
+        camera::{CameraProjection, ScalingMode},
         render_resource::{Extent3d, Face, TextureDimension, TextureFormat, TextureUsages},
         view::RenderLayers,
     },
@@ -12,7 +12,8 @@ use bevy::{
 use crate::{
     RootTransform,
     bezier_curve::{
-        bezier_curve_renderer::EndModeEvent, components::ControlState,
+        bezier_curve_renderer::{EndModeEvent, RedrawEvent},
+        components::ControlState,
         render_info::RenderInformation,
     },
     picking3d::picking_3d::Picking3dInteractable,
@@ -190,7 +191,7 @@ fn handle_enable_ortho_camera(
                         ));
                     })
                     .observe(handle_disable_ortho_camera)
-                    .observe(enable_gizmo)
+                    .observe(enable_gizmo::<true>)
                     .id(),
                 );
 
@@ -204,9 +205,9 @@ fn handle_enable_ortho_camera(
                         ),
                         Camera3d::default(),
                         Projection::from(OrthographicProjection {
-                            // 6 world units per pixel of window height.
-                            scaling_mode: ScalingMode::FixedVertical {
-                                viewport_height: 10.0,
+                            scaling_mode: ScalingMode::Fixed {
+                                width: 10.0,
+                                height: 10.0,
                             },
                             ..OrthographicProjection::default_3d()
                         }),
@@ -217,14 +218,6 @@ fn handle_enable_ortho_camera(
                         },
                         RenderLayers::from(DisplayIn::Ortho),
                     ))
-                    .with_children(|cmd| {
-                        cmd.spawn((
-                            Transform::default(),
-                            Mesh3d(meshes.add(Cuboid::new(0.1, 0.1, 0.4))),
-                            MeshMaterial3d(materials.add(Color::from(GREEN_800))),
-                            RenderLayers::from(DisplayIn::Normal),
-                        ));
-                    })
                     .id(),
                 );
             });
@@ -259,6 +252,7 @@ fn update_ortho_camera_positions(
 /// exact curve. Also, adjust the image render target to have the correct aspect ratio to not cause
 /// any weird stretching. Set the target size plane.
 fn update_ortho_camera_viewports(
+    mut reader: EventReader<RedrawEvent>,
     mut cameras: Query<
         (&Camera, &mut OrthoCamera, &GlobalTransform, &mut Projection),
         Without<OrthoSurfacePlane>,
@@ -266,9 +260,18 @@ fn update_ortho_camera_viewports(
     transforms: Query<&GlobalTransform>,
     mut images: ResMut<Assets<Image>>,
     children: Query<&Children>,
-    mut surfaces: Query<&mut Mesh3d, (With<OrthoSurfacePlane>, Without<OrthoCamera>)>,
+    mut surfaces: Query<
+        (&mut Mesh3d, &mut MeshMaterial3d<StandardMaterial>),
+        (With<OrthoSurfacePlane>, Without<OrthoCamera>),
+    >,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    if reader.is_empty() {
+        return;
+    }
+    reader.clear();
+
     for (camera, mut ortho, camera_transform, mut projection) in &mut cameras {
         let mut min_corner = Vec2::new(f32::MAX, f32::MAX);
         let mut max_corner = Vec2::new(f32::MIN, f32::MIN);
@@ -278,18 +281,32 @@ fn update_ortho_camera_viewports(
         assert!(!ortho.bounding_volume_determining_entities.is_empty());
 
         for entity in &ortho.bounding_volume_determining_entities {
-            if let Ok(transform) = transforms.get(*entity)
-                && let Ok(view) =
-                    camera.world_to_viewport_with_depth(camera_transform, transform.translation())
-            {
-                min_corner.x = min_corner.x.min(view.x);
-                min_corner.y = min_corner.y.min(view.y);
+            if let Ok(transform) = transforms.get(*entity) {
+                for child in children.iter_descendants(ortho.surface_parent) {
+                    if let Ok(surface_transform) = transforms.get(child) {
+                        let plane = InfinitePlane3d::new(surface_transform.forward());
+                        let ray = Ray3d::new(transform.translation(), camera_transform.forward());
 
-                max_corner.x = max_corner.x.max(view.x);
-                max_corner.y = max_corner.y.max(view.y);
+                        if let Some(hit) =
+                            ray.intersect_plane(surface_transform.translation(), plane)
+                        {
+                            let point = ray.get_point(hit);
+                            let up = surface_transform.up().normalize_or_zero();
+                            let left = surface_transform.left().normalize_or_zero();
 
-                far = far.max(view.z);
-                near = near.min(view.z);
+                            let delta_p = surface_transform.translation() - point;
+
+                            let (u, v) = (delta_p.dot(left), delta_p.dot(up));
+                            min_corner.x = min_corner.x.min(u);
+                            min_corner.y = min_corner.y.min(v);
+
+                            max_corner.x = max_corner.x.max(u);
+                            max_corner.y = max_corner.y.max(v);
+                            far = far.max(hit);
+                            near = near.min(hit);
+                        }
+                    }
+                }
             }
         }
 
@@ -303,6 +320,7 @@ fn update_ortho_camera_viewports(
             min_corner.y = -0.25;
         }
 
+        // apply padding of 1 unit length on each side
         min_corner += Vec2::new(-1.0, -1.0);
         max_corner += Vec2::new(1.0, 1.0);
 
@@ -323,27 +341,37 @@ fn update_ortho_camera_viewports(
             height: (dim_size * ratio_y) as u32,
             ..default()
         };
-        // info!("Projection Size: {projection_size:?}");
-        // info!("ratio x: {ratio_x:?}");
-        // info!("ratio y: {ratio_y:?}");
-        // info!("divider: {divider:?}");
-        // info!("size: {size:?}");
 
-        // This is the texture that will be rendered to.
-        ortho.projection_size = projection_size;
         if let Some(image) = images.get_mut(ortho.image.id()) {
             image.resize(size);
         }
+        ortho.projection_size = projection_size;
+
+        *projection = Projection::from(OrthographicProjection {
+            scaling_mode: ScalingMode::Fixed {
+                width: ortho.projection_size.x,
+                height: ortho.projection_size.y,
+            },
+            ..OrthographicProjection::default_3d()
+        });
 
         // NOTE: since the camera only points to the parent of the surface itself, first load all
-        // the children from the surfaces parent
+        // the children from the surfaces parent (should only be one though)
         for child in children.iter_descendants(ortho.surface_parent) {
-            if let Ok(mut surface_mesh) = surfaces.get_mut(child) {
+            if let Ok((mut surface_mesh, mut material)) = surfaces.get_mut(child) {
                 surface_mesh.0 = meshes.add(Cuboid::new(
                     ortho.projection_size.x,
                     ortho.projection_size.y,
                     0.0001,
                 ));
+
+                materials.set_changed();
+                material.0 = materials.add(StandardMaterial {
+                    base_color_texture: Some(ortho.image.clone()),
+                    cull_mode: Some(Face::Back),
+                    unlit: true,
+                    ..default()
+                });
             }
         }
     }
@@ -381,8 +409,11 @@ impl Plugin for ProjectionPlugin {
         app.add_systems(PostUpdate, (handle_enable_ortho_camera,));
 
         // This will run before the post update camera system update
-        // app.add_systems(PreUpdate, update_ortho_camera_viewports);
-        app.add_systems(PostUpdate, update_ortho_camera_positions);
+        app.add_systems(PreUpdate, update_ortho_camera_viewports);
+        app.add_systems(
+            PostUpdate,
+            update_ortho_camera_positions.before(handle_enable_ortho_camera),
+        );
         app.add_event::<EnableOrthoCamera>();
     }
 }

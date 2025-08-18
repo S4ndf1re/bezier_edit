@@ -10,36 +10,38 @@ use crate::{
     picking3d::events::{self, Pointer3d},
 };
 
-pub fn enable_gizmo(
+pub fn enable_gizmo<const WITH_ROTATION: bool>(
     trigger: Trigger<Pointer<Click>>,
     mut commands: Commands,
     enabled: Query<&EnableTranslationControl>,
     state: Res<State<ControlState>>,
 ) {
+    #[allow(clippy::collapsible_if)]
     if *state == ControlState::Main {
         if let Ok(mut entity) = commands.get_entity(trigger.target()) {
             if enabled.get(trigger.target()).is_ok() {
                 entity.remove::<EnableTranslationControl>();
             } else {
-                entity.insert(EnableTranslationControl::new(true));
+                entity.insert(EnableTranslationControl::new(WITH_ROTATION));
             }
         }
     }
 }
 
-pub fn enable_gizmo3d(
+pub fn enable_gizmo3d<const WITH_ROTATION: bool>(
     trigger: Trigger<Pointer3d<events::Click>>,
     mut commands: Commands,
     enabled: Query<&EnableTranslationControl>,
     mut trace_log_writer: EventWriter<LogTrace>,
     state: Res<State<ControlState>>,
 ) {
+    #[allow(clippy::collapsible_if)]
     if *state == ControlState::Main {
         if let Ok(mut entity) = commands.get_entity(trigger.target()) {
             if enabled.get(trigger.target()).is_ok() {
                 entity.remove::<EnableTranslationControl>();
             } else {
-                entity.insert(EnableTranslationControl::default());
+                entity.insert(EnableTranslationControl::new(WITH_ROTATION));
             }
             println!("Sending log trace event");
             trace_log_writer.write(LogTrace::default());
