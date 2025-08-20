@@ -428,7 +428,7 @@ pub fn generate_default_curve(
                 .observe(update_material_on::<Pointer<Over>>(material_hover.clone()))
                 .observe(update_material_on::<Pointer<Out>>(material.clone()))
                 //.observe(drag_point)
-                .observe(enable_gizmo::<false>)
+                .observe(enable_gizmo::<true>)
                 .observe(enable_gizmo3d::<false>)
                 .id();
             ids.push(id);

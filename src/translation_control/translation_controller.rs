@@ -12,13 +12,17 @@ use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
 use crate::{MainCamera, RootTransform};
-use bevy::color::palettes::tailwind::{YELLOW_400, YELLOW_600};
+use bevy::color::palettes::tailwind::{
+    BLUE_800, PURPLE_900, RED_800, RED_900, YELLOW_400, YELLOW_600, YELLOW_900,
+};
 use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::ecs::system::SystemParam;
 use bevy::ecs::system::lifetimeless::{Read, Write};
 use bevy::prelude::*;
 use std::collections::HashSet;
 use std::f32::consts::FRAC_PI_2;
+
+use super::control_storage;
 
 #[derive(Event)]
 pub struct MovedEvent {
@@ -68,8 +72,8 @@ struct ControlRotation {
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SnappingBehaviour {
-    NoSnap,
     #[default]
+    NoSnap,
     Snap,
 }
 #[derive(Resource, Default)]
@@ -354,12 +358,13 @@ fn drag_start(
     let dragged_parent = dragged_childof.parent();
 
     let control_parent = control_parents.get(dragged_parent).unwrap();
-    let start_transform = all_transforms.get(control_parent.0).unwrap();
+    let mut start_transform = *all_transforms.get(control_parent.0).unwrap();
+    start_transform.rotation = Quat::IDENTITY;
 
     let scale = scale.scale;
 
     root.with_children(|cmd| {
-        cmd.spawn((ShadowMarker, *start_transform, Visibility::default()))
+        cmd.spawn((ShadowMarker, start_transform, Visibility::default()))
             .with_children(|parent| {
                 for arrow in arrows.as_ref().iter() {
                     parent
@@ -386,7 +391,7 @@ fn drag_start(
 
     history.write(HistoryLogEvent::Begin(
         control_parent.0,
-        Some(*start_transform),
+        Some(start_transform),
     ));
 }
 
@@ -740,12 +745,15 @@ fn rotate_controller(
     mut changable_transforms: Query<&mut Transform>,
     mut redraw_writer: EventWriter<RedrawEvent>,
     mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
+    control_storage: Res<ControlStorage>,
+    state: Res<TranslationControllerState>,
 ) {
     let (control_rotation, child_of) = control_query.get(trigger.target()).unwrap();
 
     let parent = child_of.parent();
     let control_parent = control_parents.get_mut(parent).unwrap();
     let parent_transform = *changable_transforms.get(control_parent.0).unwrap();
+    let root = root.single().unwrap();
 
     if let Ok((camera, camera_transform)) = camera.single() {
         let (start, diff) = {
@@ -769,14 +777,7 @@ fn rotate_controller(
 
             let start = mouse_start.get_point(dist);
             let end = mouse_end.get_point(dist);
-            (
-                start,
-                root.single()
-                    .unwrap()
-                    .affine()
-                    .inverse()
-                    .transform_point3(end - start),
-            )
+            (start, root.affine().inverse().transform_point3(end - start))
         };
 
         let circle = Circle3D::new(
@@ -786,17 +787,47 @@ fn rotate_controller(
         );
 
         let closest = circle.min_distance_to_point(start.into());
+
         let axis: Vec3 = circle.derive(&closest.params, 1).into();
+        info!("axis: {axis}");
 
         let direction = (diff.dot(axis)) / (diff.length() * axis.length());
+        info!("Direction {direction}");
         let angle = direction * diff.length();
 
-        let inverse = {
-            let mut parent_transform = changable_transforms.get_mut(control_parent.0).unwrap();
-            parent_transform.rotation =
-                Quat::from_axis_angle(control_rotation.normal, angle) * parent_transform.rotation;
-            parent_transform.rotation.inverse()
+        let mut parent_transform_mut = changable_transforms.get_mut(control_parent.0).unwrap();
+        let (mut inverse, forward, up) = {
+            parent_transform_mut.rotation = Quat::from_axis_angle(control_rotation.normal, angle)
+                * parent_transform_mut.rotation;
+            (
+                parent_transform_mut.rotation.inverse(),
+                parent_transform_mut.forward(),
+                parent_transform_mut.up(),
+            )
         };
+
+        if state.curve_snapping == SnappingBehaviour::Snap {
+            for axis in control_storage.iter() {
+                // info!(
+                //     "With axis {}, and forward {forward:?}, the diff is {}",
+                //     axis.normalized,
+                //     forward.normalize_or_zero().dot(axis.normalized)
+                // );
+                if axis.with_rotation
+                    && forward.normalize_or_zero().dot(axis.normalized).abs() > 0.990
+                {
+                    parent_transform_mut.look_to(axis.normalized, up);
+                    inverse = parent_transform_mut.rotation.inverse();
+                    break;
+                }
+
+                if axis.with_rotation && up.normalize_or_zero().dot(axis.normalized).abs() > 0.990 {
+                    parent_transform_mut.look_to(forward, axis.normalized);
+                    inverse = parent_transform_mut.rotation.inverse();
+                    break;
+                }
+            }
+        }
 
         let mut arrow_transform = changable_transforms.get_mut(parent).unwrap();
         arrow_transform.rotation = inverse;
@@ -810,7 +841,6 @@ fn rotate_controller(
 fn rotate_controller3d(
     trigger: Trigger<Pointer3d<crate::picking3d::events::Drag>>,
     control_query: Query<(&ControlRotation, &ChildOf)>,
-    camera: Query<(&Camera, &GlobalTransform), (Without<RootTransform>, With<MainCamera>)>,
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
     mut changable_transforms: Query<&mut Transform>,

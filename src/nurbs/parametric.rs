@@ -149,8 +149,7 @@ impl Parametric<1, Point> for Circle3D {
     }
 
     fn derive(&self, ts: &[f64; 1], _: usize) -> Point {
-        &self.origin
-            - &(&(self.radius * ts[0].sin() * &self.ortho1_unit)
-                + &(self.radius * ts[0].cos() * &self.ortho1_unit))
+        &(-self.radius * ts[0].sin() * &self.ortho1_unit)
+            + &(self.radius * ts[0].cos() * &self.ortho2_unit)
     }
 }

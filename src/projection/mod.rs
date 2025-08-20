@@ -105,7 +105,7 @@ fn compute_new_transforms_for_cam_based_on_surface(surface: Transform) -> Option
     let dist = (surface.translation - mirroring_point).length();
     let camera_point = surface.translation + surface.forward().normalize_or_zero() * 2.0 * dist;
 
-    Some(Transform::from_translation(camera_point).looking_at(surface.translation, surface.up()))
+    Some(Transform::from_translation(camera_point).looking_at(surface.translation, -surface.up()))
 }
 
 #[allow(clippy::complexity)]
@@ -179,7 +179,9 @@ fn handle_enable_ortho_camera(
                         cmd.spawn((
                             OrthoSurfacePlane,
                             Transform::default(),
-                            Mesh3d(meshes.add(Cuboid::new(10.0, 10.0, 0.0001))),
+                            Mesh3d(
+                                meshes.add(Plane3d::new(Vec3::NEG_Z, Vec2::new(10.0, 10.0) * 0.5)),
+                            ),
                             MeshMaterial3d(materials.add(StandardMaterial {
                                 base_color_texture: Some(image_handle.clone()),
                                 cull_mode: Some(Face::Back),
@@ -215,6 +217,10 @@ fn handle_enable_ortho_camera(
                             ..OrthographicProjection::default_3d()
                         }),
                         Camera {
+                            // NOTE: The order is important to render first this camera, to have the
+                            // image ready for the main render pass. Otherwise, flickering will
+                            // appear
+                            order: -1,
                             target: image_handle.clone().into(),
                             clear_color: Color::WHITE.into(),
                             ..default()
@@ -281,13 +287,11 @@ fn update_ortho_camera_viewports(
 
         assert!(!ortho.bounding_volume_determining_entities.is_empty());
 
-        let mut count = 0;
         for child in children.get(ortho.surface_parent).unwrap() {
             // Only continue, if the child is actually a surface
             if surfaces.get(*child).is_ok()
                 && let Ok(surface_transform) = transforms.get(*child)
             {
-                info!("Calculation count {count}");
                 for entity in &ortho.bounding_volume_determining_entities {
                     if let Ok(transform) = transforms.get(*entity) {
                         let plane = InfinitePlane3d::new(surface_transform.forward());
@@ -318,7 +322,6 @@ fn update_ortho_camera_viewports(
                     }
                 }
 
-                count += 1;
                 gizmos.rect(surface_transform.to_isometry(), max_distance * 2.0, RED_800);
             }
         }
@@ -367,17 +370,14 @@ fn update_ortho_camera_viewports(
         // the children from the surfaces parent (should only be one though)
         for child in children.iter_descendants(ortho.surface_parent) {
             if let Ok((mut surface_mesh, mut material)) = surfaces.get_mut(child) {
-                surface_mesh.0 = meshes.add(Cuboid::new(
-                    ortho.projection_size.x,
-                    ortho.projection_size.y,
-                    0.0001,
-                ));
+                surface_mesh.0 = meshes.add(Plane3d::new(Vec3::NEG_Z, ortho.projection_size * 0.5));
 
                 // NOTE: This is needed, since the MeshMaterial3d seems to not be able to
                 // invalidate the RenderTarget on image changes.
-                // So we have to create a complete new image. This causes flickering though.
+                // So we have to create a complete new image. This causes flickering though, if the
+                // camera order is wrong. Make sure the camera that renders to the image renders
+                // before the MainCamera.
                 // See https://github.com/bevyengine/bevy/issues/16159
-                materials.set_changed();
                 material.0 = materials.add(StandardMaterial {
                     base_color_texture: Some(ortho.image.clone()),
                     cull_mode: Some(Face::Back),
