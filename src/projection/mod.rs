@@ -1,6 +1,6 @@
 use bevy::{
     asset::RenderAssetUsages,
-    color::palettes::tailwind::{BLUE_500, GREEN_800, PINK_700, RED_600},
+    color::palettes::tailwind::{BLUE_500, GREEN_800, PINK_700, RED_600, RED_800},
     prelude::*,
     render::{
         camera::{CameraProjection, ScalingMode},
@@ -173,6 +173,7 @@ fn handle_enable_ortho_camera(
                         Mesh3d(meshes.add(Sphere::new(0.1 * info.scale))),
                         MeshMaterial3d(materials.add(StandardMaterial::from_color(BLUE_500))),
                         Picking3dInteractable,
+                        Name::new("Ortho Sufrace Parent"),
                     ))
                     .with_children(|cmd| {
                         cmd.spawn((
@@ -188,6 +189,7 @@ fn handle_enable_ortho_camera(
                             // This should only get rendered in layer 0
                             RenderLayers::from(DisplayIn::Normal),
                             Pickable::IGNORE,
+                            Name::new("Ortho Sufrace Plane"),
                         ));
                     })
                     .observe(handle_disable_ortho_camera)
@@ -198,6 +200,7 @@ fn handle_enable_ortho_camera(
                 camera = Some(
                     cmd.spawn((
                         cam_transform,
+                        Name::new("Ortho Camera"),
                         OrthoCamera::new(
                             image_handle.clone(),
                             bounding_entities,
@@ -266,6 +269,7 @@ fn update_ortho_camera_viewports(
     >,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut gizmos: Gizmos,
 ) {
     if reader.is_empty() {
         return;
@@ -273,17 +277,19 @@ fn update_ortho_camera_viewports(
     reader.clear();
 
     for (mut ortho, camera_transform, mut projection) in &mut cameras {
-        let mut min_corner = Vec2::new(f32::MAX, f32::MAX);
-        let mut max_corner = Vec2::new(f32::MIN, f32::MIN);
-        let mut far = f32::MIN;
-        let mut near = f32::MAX;
+        let mut max_distance = Vec2::new(f32::MIN, f32::MIN);
 
         assert!(!ortho.bounding_volume_determining_entities.is_empty());
 
-        for entity in &ortho.bounding_volume_determining_entities {
-            if let Ok(transform) = transforms.get(*entity) {
-                for child in children.iter_descendants(ortho.surface_parent) {
-                    if let Ok(surface_transform) = transforms.get(child) {
+        let mut count = 0;
+        for child in children.get(ortho.surface_parent).unwrap() {
+            // Only continue, if the child is actually a surface
+            if surfaces.get(*child).is_ok()
+                && let Ok(surface_transform) = transforms.get(*child)
+            {
+                info!("Calculation count {count}");
+                for entity in &ortho.bounding_volume_determining_entities {
+                    if let Ok(transform) = transforms.get(*entity) {
                         let plane = InfinitePlane3d::new(surface_transform.forward());
                         let ray = Ray3d::new(transform.translation(), camera_transform.forward());
 
@@ -292,47 +298,45 @@ fn update_ortho_camera_viewports(
                             ray.intersect_plane(surface_transform.translation(), plane)
                         {
                             let point = ray.get_point(hit);
+                            gizmos.ray(
+                                transform.translation(),
+                                point - transform.translation(),
+                                Color::from(RED_800),
+                            );
+                            gizmos.sphere(Isometry3d::from_translation(point), 0.1, RED_800);
                             let up = surface_transform.up().normalize_or_zero();
                             let left = surface_transform.left().normalize_or_zero();
 
                             let delta_p = surface_transform.translation() - point;
 
-                            let (u, v) = (delta_p.dot(left), delta_p.dot(up));
-                            min_corner.x = min_corner.x.min(u);
-                            min_corner.y = min_corner.y.min(v);
+                            let uv = Vec2::new(delta_p.dot(left), delta_p.dot(up));
+                            let origin = Vec2::new(Vec3::ZERO.dot(left), Vec3::ZERO.dot(up));
 
-                            max_corner.x = max_corner.x.max(u);
-                            max_corner.y = max_corner.y.max(v);
-                            far = far.max(hit);
-                            near = near.min(hit);
+                            max_distance.x = max_distance.x.max((origin.x - uv.x).abs());
+                            max_distance.y = max_distance.y.max((origin.y - uv.y).abs());
                         }
                     }
                 }
+
+                count += 1;
+                gizmos.rect(surface_transform.to_isometry(), max_distance * 2.0, RED_800);
             }
         }
 
-        if max_corner.x - min_corner.x < 0.5 || max_corner.x - min_corner.x > 1000.0 {
-            max_corner.x = 0.25;
-            min_corner.x = -0.25;
+        if max_distance.x < 0.5 {
+            max_distance.x = 0.5;
         }
 
-        if max_corner.y - min_corner.y < 0.5 || max_corner.y - min_corner.y > 1000.0 {
-            max_corner.y = 0.25;
-            min_corner.y = -0.25;
+        if max_distance.y < 0.5 {
+            max_distance.y = 0.5;
         }
-
-        info!("min corner {min_corner}");
-        info!("max corner {max_corner}");
 
         // apply padding of 1 unit length on each side
-        min_corner += Vec2::new(-1.0, -1.0);
-        max_corner += Vec2::new(1.0, 1.0);
-
-        // info!("corners: {min_corner:?}, {max_corner:?}");
-        let area = Rect::from_corners(min_corner, max_corner);
+        max_distance += Vec2::new(1.0, 1.0);
 
         // Compute the projection size and the ratio, which will then be in the interval [0, 1]
-        let projection_size = area.max - area.min;
+        // This is times to, in order to capture full projection
+        let projection_size = 2.0 * max_distance;
         let mut ratio_x = projection_size.x;
         let mut ratio_y = projection_size.y;
         let divider = ratio_x.max(ratio_y);
