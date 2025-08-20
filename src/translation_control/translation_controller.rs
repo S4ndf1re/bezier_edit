@@ -322,7 +322,10 @@ fn show_transitional_controls(
                                         scale,
                                     );
                                 })
-                                .observe(rotate_controller);
+                                .observe(rotate_controller)
+                                .observe(rotate_controller3d)
+                                .observe(rotate_end_trigger_redraw)
+                                .observe(rotate_end_trigger_redraw3d);
                         }
                     }
                 });
@@ -735,6 +738,8 @@ fn rotate_controller(
     root: Query<&GlobalTransform, With<RootTransform>>,
     global_transforms: Query<&GlobalTransform, (Without<RootTransform>, Without<Camera>)>,
     mut changable_transforms: Query<&mut Transform>,
+    mut redraw_writer: EventWriter<RedrawEvent>,
+    mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
 ) {
     let (control_rotation, child_of) = control_query.get(trigger.target()).unwrap();
 
@@ -795,7 +800,87 @@ fn rotate_controller(
 
         let mut arrow_transform = changable_transforms.get_mut(parent).unwrap();
         arrow_transform.rotation = inverse;
+
+        redraw_writer.write(RedrawEvent::Fast);
+        redraw_curves_writer.write(RedrawCurvesEvent);
     }
+}
+
+#[allow(clippy::complexity)]
+fn rotate_controller3d(
+    trigger: Trigger<Pointer3d<crate::picking3d::events::Drag>>,
+    control_query: Query<(&ControlRotation, &ChildOf)>,
+    camera: Query<(&Camera, &GlobalTransform), (Without<RootTransform>, With<MainCamera>)>,
+    mut control_parents: Query<&ControlParent>,
+    root: Query<&GlobalTransform, With<RootTransform>>,
+    mut changable_transforms: Query<&mut Transform>,
+    mut redraw_writer: EventWriter<RedrawEvent>,
+    mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
+) {
+    let (control_rotation, child_of) = control_query.get(trigger.target()).unwrap();
+
+    let parent = child_of.parent();
+    let control_parent = control_parents.get_mut(parent).unwrap();
+    let parent_transform = *changable_transforms.get(control_parent.0).unwrap();
+
+    let (start, diff) = {
+        let diff = trigger.event.delta;
+        let start = trigger.event.current_entity_position - diff;
+
+        (
+            start,
+            root.single()
+                .unwrap()
+                .affine()
+                .inverse()
+                .transform_point3(diff),
+        )
+    };
+
+    let circle = Circle3D::new(
+        parent_transform.translation.into(),
+        control_rotation.radius,
+        control_rotation.normal.into(),
+    );
+
+    let closest = circle.min_distance_to_point(start.into());
+    let axis: Vec3 = circle.derive(&closest.params, 1).into();
+
+    let direction = (diff.dot(axis)) / (diff.length() * axis.length());
+    let angle = direction * diff.length();
+
+    let inverse = {
+        let mut parent_transform = changable_transforms.get_mut(control_parent.0).unwrap();
+        parent_transform.rotation =
+            Quat::from_axis_angle(control_rotation.normal, angle) * parent_transform.rotation;
+        parent_transform.rotation.inverse()
+    };
+
+    let mut arrow_transform = changable_transforms.get_mut(parent).unwrap();
+    arrow_transform.rotation = inverse;
+
+    redraw_writer.write(RedrawEvent::Fast);
+    redraw_curves_writer.write(RedrawCurvesEvent);
+}
+
+#[allow(clippy::complexity)]
+fn rotate_end_trigger_redraw(
+    _: Trigger<Pointer<DragEnd>>,
+    mut redraw_writer: EventWriter<RedrawEvent>,
+    mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
+) {
+    redraw_writer.write(RedrawEvent::HighQuality);
+    redraw_curves_writer.write(RedrawCurvesEvent);
+}
+
+#[allow(clippy::complexity)]
+fn rotate_end_trigger_redraw3d(
+    _: Trigger<Pointer3d<crate::picking3d::events::DragEnd>>,
+    mut redraw_writer: EventWriter<RedrawEvent>,
+    mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
+) {
+    redraw_writer.write(RedrawEvent::HighQuality);
+    redraw_curves_writer.write(RedrawCurvesEvent);
 }
 
 #[allow(clippy::complexity)]
