@@ -92,6 +92,7 @@ pub fn bezier_surface_picking(
                 root.with_children(|ui| {
                     ui.spawn((
                         SurfaceClick { u, v },
+                        Name::new(format!("SurfaceClick({u}, {v})")),
                         MeshMaterial3d(material.clone()),
                         Mesh3d(sphere.clone()),
                         Transform::from_xyz(

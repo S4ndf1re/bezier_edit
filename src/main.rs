@@ -54,7 +54,7 @@ fn setup(mut commands: Commands) {
         RenderLayers::from(DisplayIn::BothNormalAndOrtho),
     ));
 
-    commands.spawn(RootTransform);
+    commands.spawn((RootTransform, Name::new("Root Transform")));
 }
 
 #[cfg(feature = "vr_enable")]
@@ -90,6 +90,7 @@ fn setup(
 
 #[cfg(not(feature = "vr_enable"))]
 fn create_app() -> App {
+    use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
     use projection::ProjectionPlugin;
 
     info!("Creating Non-VR App");
@@ -101,6 +102,8 @@ fn create_app() -> App {
         .add_plugins(AdvancedOrbitControls)
         .add_plugins(TranslationController)
         .add_plugins(UiPlugin)
+        .add_plugins(EguiPlugin::default())
+        .add_plugins(WorldInspectorPlugin::new())
         .add_plugins(ProjectionPlugin)
         .init_resource::<ControlStorage>()
         .add_systems(Startup, setup.before(generate_default_curve));

@@ -226,6 +226,7 @@ fn generate_pointcloud(
                 ui.spawn((
                     Transform::default(),
                     ResultSurface,
+                    Name::new("Result Surface"),
                     Mesh3d(meshes.add(mesh)),
                     MeshMaterial3d(materials.add(mat)),
                     RenderLayers::from(DisplayIn::Normal),
@@ -268,6 +269,7 @@ fn generate_pointcloud(
                             ui.spawn((
                                 Mesh3d(meshes.add(mesh)),
                                 MeshMaterial3d(materials.add(Color::BLACK)),
+                                Name::new("Iso Line"),
                                 Pickable::IGNORE,
                                 RenderLayers::from(DisplayIn::BothNormalAndOrtho),
                             ));
@@ -342,6 +344,7 @@ pub fn redraw_boxes(
                     Vec3::X,
                     Vec3::from(v_diff),
                 ),
+                Name::new("Box"),
                 CurveBox,
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(materials.add(Color::from(Srgba::new(
@@ -407,6 +410,7 @@ pub fn generate_default_curve(
                 .spawn((
                     BezierRender,
                     RenderPoint(p.0, p.1),
+                    Name::new(format!("Render Point {} {}", p.0, p.1)),
                     Transform::from_xyz(p.2 * scale, p.3 * scale + height, p.4 * scale),
                     Mesh3d(sphere.clone()),
                     MeshMaterial3d(material.clone()),
@@ -455,6 +459,7 @@ pub fn generate_default_curve(
             root.with_child((
                 Transform::from_xyz(0.0, 0.0, 0.0),
                 RenderLine(p0_id, id),
+                Name::new(format!("Render line {p0_id} {id}")),
                 MeshMaterial3d(materials.add(Color::BLACK)),
                 Mesh3d(meshes.add(mesh)),
                 RenderLayers::from(DisplayIn::BothNormalAndOrtho),
@@ -480,6 +485,7 @@ pub fn generate_default_curve(
             root.with_child((
                 Transform::from_xyz(0.0, 0.0, 0.0),
                 RenderLine(p0_id, id),
+                Name::new(format!("Render line {p0_id} {id}")),
                 MeshMaterial3d(materials.add(Color::BLACK)),
                 Mesh3d(meshes.add(mesh)),
                 RenderLayers::from(DisplayIn::BothNormalAndOrtho),
