@@ -8,6 +8,7 @@ use crate::nurbs::parametric::{Circle3D, MinDistanceToPoint, Parametric};
 use crate::nurbs::point::Point;
 use crate::picking3d::events::{HoveredBy, MoveIn, MoveOut, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
+use crate::projection::ProjectedSnappingDetector;
 use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
@@ -47,8 +48,9 @@ struct SnappedPoint {
 #[derive(Component)]
 pub struct ShadowMarker;
 
-#[derive(Component, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
+#[derive(Component, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Default)]
 pub enum EnableTranslationControl {
+    #[default]
     OnlyTranslation,
     WithRotation,
     OnlyOnPlane(Entity),
@@ -63,22 +65,6 @@ enum ArrowDirection {
 struct OnPlaneMovableMarker {
     plane: Entity,
     arrow_direction: ArrowDirection,
-}
-
-impl EnableTranslationControl {
-    pub fn new(with_rotation: bool) -> Self {
-        if with_rotation {
-            Self::WithRotation
-        } else {
-            Self::OnlyTranslation
-        }
-    }
-}
-
-impl Default for EnableTranslationControl {
-    fn default() -> Self {
-        Self::new(false)
-    }
 }
 
 #[derive(Component, Clone, Copy)]
@@ -98,8 +84,8 @@ struct ControlRotation {
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SnappingBehaviour {
-    #[default]
     NoSnap,
+    #[default]
     Snap,
 }
 
@@ -610,6 +596,7 @@ struct ObligatoryDragParams<'w, 's> {
         (
             Query<'w, 's, Write<Transform>, (Without<Control>, Without<ControlParent>)>,
             CurveCollection<'w, 's>,
+            ProjectedSnappingDetector<'w, 's>,
         ),
     >,
     redraw_writer: EventWriter<'w, RedrawEvent>,
@@ -637,8 +624,10 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         let control_point = self.transform_set.p0().get(control_parent.1.0).copied();
         if let Ok(t) = control_point {
             let started_translation = t.translation;
+
             let ending_translation = if self.state.curve_snapping == SnappingBehaviour::Snap {
                 if !is_already_snapped {
+                    // TODO: First check, if the point should actually snap to a projected point
                     let shortest = self.transform_set.p1().collect_shortest(
                         Point::from(t.translation),
                         cant_snap_to_curve.unwrap_or(&CantSnapToCurve::default()),
@@ -663,6 +652,9 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                             .unwrap()
                             .insert(SnappedPoint { u, curve });
 
+                        // Create a new arrow (directional), that follows the curvature of the
+                        // curve that the point was snapped to. The direction of the arrow is
+                        // updated each frame, to adhere to movement along the curve
                         self.commands
                             .get_entity(control_parent.0)
                             .unwrap()
@@ -688,12 +680,16 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                             });
                         t.translation
                     } else {
+                        // all curves are too far away to snap to
                         let mut p0 = self.transform_set.p0();
                         let mut t = p0.get_mut(control_parent.1.0).unwrap();
                         t.translation += translation;
                         t.translation
                     }
                 } else {
+                    // The entity is already snapped to a curve. Either continue snapping by moving
+                    // the entity back to the curve, or if the distance is to large, remove the
+                    // snapping
                     let point = Point::from(t.translation + translation);
 
                     let shortest = self.transform_set.p1().collect_shortest(
@@ -717,6 +713,10 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                             .get_entity(entity)
                             .unwrap()
                             .remove::<SnappedPoint>();
+
+                        // TODO: Once removed, consider the position (t.translation + translation,
+                        // as in the point in line 693) and check if it snaps to the projected
+                        // points
 
                         let mut p0 = self.transform_set.p0();
                         let mut t = p0.get_mut(control_parent.1.0).unwrap();

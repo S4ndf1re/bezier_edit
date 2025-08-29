@@ -9,8 +9,11 @@ use std::slice::Iter;
 
 use crate::{
     nurbs::{parametric::Parametric, plane::Plane3d},
-    translation_control::translation_controller::{
-        CantSnapToCurve, EnableTranslationControl, MoveEntityByDeltaEvent, MovedEntityEvent,
+    translation_control::{
+        enable_gizmo, enable_gizmo3d,
+        translation_controller::{
+            CantSnapToCurve, EnableTranslationControl, MoveEntityByDeltaEvent, MovedEntityEvent,
+        },
     },
 };
 
@@ -175,49 +178,21 @@ impl<'w, 's> SpawnLinkedEntities<'w, 's> {
         entity: Entity,
         positioning_type: ReversePositioningType,
     ) {
-        // let plane_transform = match positioning_type {
-        //     ReversePositioningType::OrthoProjectedOntoPlane(plane) => {
-        //         // This will get updated later on in the positional update system
-        //         if let Ok(transform) = self.set.p1().get(plane) {
-        //             Some(*transform)
-        //         } else {
-        //             None
-        //         }
-        //     }
-        //     ReversePositioningType::OneToOne(_) => None,
-        // };
-
         if let Ok((transform, mesh, material)) = self.set.p0().get(entity) {
-            let transform = match positioning_type {
-                ReversePositioningType::OrthoProjectedOntoPlane(_) => {
-                    // This will get updated later on in the positional update system
-                    // let plane_transform = plane_transform
-                    //     .expect("This must be present, otherwise the plane does not exist");
-                    //
-                    // let plane = Plane3d::from(plane_transform);
-                    // let projected = plane
-                    //     .point_projected_on_plane_orthogonal(transform.translation.into())
-                    //     .map(|(u, v)| plane.f(&[u, v]));
-                    //
-                    // if let Some(projected) = projected {
-                    //     let mut transform = *transform;
-                    //     transform.translation = projected.into();
-                    //     Some(transform)
-                    // } else {
-                    //     None
-                    // }
-
-                    Some(*transform)
+            let transform_control = match positioning_type {
+                ReversePositioningType::OrthoProjectedOntoPlane(plane) => {
+                    (*transform, EnableTranslationControl::OnlyOnPlane(plane))
                 }
                 ReversePositioningType::OneToOne(offset) => {
                     let mut transform = *transform;
                     transform.translation += offset;
-                    Some(transform)
+                    (transform, EnableTranslationControl::OnlyTranslation)
                 }
             };
 
-            if let Some(transform) = transform {
-                root_spawner.spawn((
+            let (transform, enable_translation_control) = transform_control;
+            root_spawner
+                .spawn((
                     transform,
                     mesh.clone(),
                     material.clone(),
@@ -226,8 +201,9 @@ impl<'w, 's> SpawnLinkedEntities<'w, 's> {
                         parent: entity,
                         position_type: positioning_type,
                     },
-                ));
-            }
+                ))
+                .observe(enable_gizmo(enable_translation_control))
+                .observe(enable_gizmo3d(enable_translation_control));
         }
     }
 }

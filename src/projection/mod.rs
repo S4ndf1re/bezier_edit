@@ -1,9 +1,10 @@
 use bevy::{
     asset::RenderAssetUsages,
-    color::palettes::tailwind::{BLUE_500, GREEN_800, PINK_700, RED_600, RED_800},
+    color::palettes::tailwind::{BLUE_500, RED_800},
+    ecs::system::{SystemParam, lifetimeless::Read},
     prelude::*,
     render::{
-        camera::{CameraProjection, ScalingMode},
+        camera::ScalingMode,
         render_resource::{Extent3d, Face, TextureDimension, TextureFormat, TextureUsages},
         view::RenderLayers,
     },
@@ -19,7 +20,9 @@ use crate::{
     linked_entities::{RemoveLinkedEntities, ReversePositioningType, SpawnLinkedEntities},
     nurbs::parametric::Parametric,
     picking3d::picking_3d::Picking3dInteractable,
-    translation_control::enable_gizmo,
+    translation_control::{
+        enable_gizmo, enable_gizmo3d, translation_controller::EnableTranslationControl,
+    },
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -198,7 +201,8 @@ fn handle_enable_ortho_camera(
                         ));
                     })
                     .observe(handle_disable_ortho_camera)
-                    .observe(enable_gizmo::<true>)
+                    .observe(enable_gizmo(EnableTranslationControl::WithRotation))
+                    .observe(enable_gizmo3d(EnableTranslationControl::WithRotation))
                     .id(),
                 );
 
@@ -276,7 +280,7 @@ fn update_ortho_camera_positions(
 fn update_ortho_camera_viewports(
     mut reader: EventReader<RedrawEvent>,
     mut cameras: Query<(&mut OrthoCamera, &mut Projection), Without<OrthoSurfacePlane>>,
-    transforms: Query<&GlobalTransform>,
+    transforms: Query<&Transform>,
     mut images: ResMut<Assets<Image>>,
     children: Query<&Children>,
     mut surfaces: Query<
@@ -301,20 +305,19 @@ fn update_ortho_camera_viewports(
         if let Ok(surface_transform) = transforms.get(ortho.surface_parent) {
             for entity in &ortho.bounding_volume_determining_entities {
                 if let Ok(transform) = transforms.get(*entity) {
-                    let plane =
-                        super::nurbs::plane::Plane3d::from(surface_transform.compute_transform());
+                    let plane = super::nurbs::plane::Plane3d::from(*surface_transform);
 
                     if let Some((u, v)) =
-                        plane.point_projected_on_plane_orthogonal(transform.translation().into())
+                        plane.point_projected_on_plane_orthogonal(transform.translation.into())
                         && let Some((origin_x, origin_y)) = plane
                             .point_projected_on_plane_orthogonal(
-                                surface_transform.translation().into(),
+                                surface_transform.translation.into(),
                             )
                     {
                         let point: Vec3 = plane.f(&[u, v]).into();
                         gizmos.ray(
-                            transform.translation(),
-                            point - transform.translation(),
+                            transform.translation,
+                            point - transform.translation,
                             Color::from(RED_800),
                         );
                         gizmos.sphere(Isometry3d::from_translation(point), 0.1, RED_800);
@@ -418,6 +421,65 @@ fn handle_disable_ortho_camera(
         despawner.remove_link_for_all_on_same_plane(to_delete_parent.0);
 
         end_mode_writer.write(EndModeEvent);
+    }
+}
+
+#[derive(SystemParam)]
+/// Detect the direction(with magnitude) to the closest projected point for all cameras
+pub struct ProjectedSnappingDetector<'w, 's> {
+    cameras: Query<'w, 's, Read<OrthoCamera>, Without<OrthoSurfaceParent>>,
+    surfaces: Query<'w, 's, Read<Transform>, (With<OrthoSurfaceParent>, Without<OrthoCamera>)>,
+    transform: Query<'w, 's, Read<Transform>, (Without<OrthoCamera>, Without<OrthoSurfaceParent>)>,
+}
+
+impl<'w, 's> ProjectedSnappingDetector<'w, 's> {
+    /// Detect the closest point on any projection. Return the Directional vector that the
+    /// snappable_entity must move in order to snap exactly over the projected entity
+    pub fn detect_closest_projected(&self, snappable_entity: Entity) -> Option<Vec3> {
+        let mut min_uv_distance = Vec::new();
+
+        for camera in self.cameras {
+            if let Ok(surface_transform) = self.surfaces.get(camera.surface_parent).copied()
+                && let Ok(snappable_entity_transform) =
+                    self.transform.get(snappable_entity).copied()
+            {
+                let plane = crate::nurbs::plane::Plane3d::from(surface_transform);
+
+                if let Some(snapped_uv) = plane.point_projected_on_plane_orthogonal(
+                    snappable_entity_transform.translation.into(),
+                ) {
+                    let snapped_uv_vec = Vec2::new(snapped_uv.0 as f32, snapped_uv.1 as f32);
+
+                    for point in &camera.bounding_volume_determining_entities {
+                        if let Ok(transform) = self.transform.get(*point)
+                            && let Some(uv) = plane
+                                .point_projected_on_plane_orthogonal(transform.translation.into())
+                        {
+                            let uv_vec = Vec2::new(uv.0 as f32, uv.1 as f32);
+                            let dist = (uv_vec - snapped_uv_vec).length();
+                            min_uv_distance.push((dist, snapped_uv, uv, camera.surface_parent));
+                        }
+                    }
+                }
+            }
+        }
+
+        min_uv_distance.sort_by(|a, b| a.0.total_cmp(&b.0));
+
+        if let Some((_, snapped_uv, uv_closest, plane)) = min_uv_distance.first()
+            && let Ok(surface_transform) = self.surfaces.get(*plane)
+        {
+            let plane = crate::nurbs::plane::Plane3d::from(*surface_transform);
+
+            // compute the direction on the plane the the point must move, to snap to the current
+            // point
+            let original: Vec3 = plane.f(&[snapped_uv.0, snapped_uv.1]).into();
+            let closest: Vec3 = plane.f(&[uv_closest.0, uv_closest.1]).into();
+            let diff = closest - original;
+            Some(diff)
+        } else {
+            None
+        }
     }
 }
 

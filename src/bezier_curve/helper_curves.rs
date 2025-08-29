@@ -143,7 +143,13 @@ fn handle_click_on_curve_point(
             end_mode_writer.write(EndModeEvent);
         }
     } else if *state == ControlState::Main {
-        enable_gizmo3d::<false>(trigger, commands, enabled, trace_log_writer, state);
+        enable_gizmo3d(EnableTranslationControl::OnlyTranslation)(
+            trigger,
+            commands,
+            enabled,
+            trace_log_writer,
+            state,
+        );
     }
 }
 

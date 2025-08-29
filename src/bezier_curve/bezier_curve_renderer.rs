@@ -28,6 +28,7 @@ use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::projection::DisplayIn;
+use crate::translation_control::translation_controller::EnableTranslationControl;
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::util::update_material_on;
 use bevy::app::App;
@@ -428,8 +429,8 @@ pub fn generate_default_curve(
                 .observe(update_material_on::<Pointer<Over>>(material_hover.clone()))
                 .observe(update_material_on::<Pointer<Out>>(material.clone()))
                 //.observe(drag_point)
-                .observe(enable_gizmo::<true>)
-                .observe(enable_gizmo3d::<false>)
+                .observe(enable_gizmo(EnableTranslationControl::WithRotation))
+                .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
                 .id();
             ids.push(id);
         });

@@ -10,41 +10,49 @@ use crate::{
     picking3d::events::{self, Pointer3d},
 };
 
-pub fn enable_gizmo<const WITH_ROTATION: bool>(
-    trigger: Trigger<Pointer<Click>>,
-    mut commands: Commands,
-    enabled: Query<&EnableTranslationControl>,
-    state: Res<State<ControlState>>,
-) {
-    #[allow(clippy::collapsible_if)]
-    if *state == ControlState::Main {
-        if let Ok(mut entity) = commands.get_entity(trigger.target()) {
-            if enabled.get(trigger.target()).is_ok() {
-                entity.remove::<EnableTranslationControl>();
-            } else {
-                entity.insert(EnableTranslationControl::new(WITH_ROTATION));
+pub fn enable_gizmo(
+    enable_translation_control: EnableTranslationControl,
+) -> impl Fn(
+    Trigger<Pointer<Click>>,
+    Commands,
+    Query<&EnableTranslationControl>,
+    Res<State<ControlState>>,
+) -> () {
+    move |trigger, mut commands, enabled, state| {
+        #[allow(clippy::collapsible_if)]
+        if *state == ControlState::Main {
+            if let Ok(mut entity) = commands.get_entity(trigger.target()) {
+                if enabled.get(trigger.target()).is_ok() {
+                    entity.remove::<EnableTranslationControl>();
+                } else {
+                    entity.insert(enable_translation_control);
+                }
             }
         }
     }
 }
 
-pub fn enable_gizmo3d<const WITH_ROTATION: bool>(
-    trigger: Trigger<Pointer3d<events::Click>>,
-    mut commands: Commands,
-    enabled: Query<&EnableTranslationControl>,
-    mut trace_log_writer: EventWriter<LogTrace>,
-    state: Res<State<ControlState>>,
-) {
-    #[allow(clippy::collapsible_if)]
-    if *state == ControlState::Main {
-        if let Ok(mut entity) = commands.get_entity(trigger.target()) {
-            if enabled.get(trigger.target()).is_ok() {
-                entity.remove::<EnableTranslationControl>();
-            } else {
-                entity.insert(EnableTranslationControl::new(WITH_ROTATION));
+pub fn enable_gizmo3d(
+    enable_translation_control: EnableTranslationControl,
+) -> impl Fn(
+    Trigger<Pointer3d<events::Click>>,
+    Commands,
+    Query<&EnableTranslationControl>,
+    EventWriter<LogTrace>,
+    Res<State<ControlState>>,
+) -> () {
+    move |trigger, mut commands, enabled, mut trace_log_writer, state| {
+        #[allow(clippy::collapsible_if)]
+        if *state == ControlState::Main {
+            if let Ok(mut entity) = commands.get_entity(trigger.target()) {
+                if enabled.get(trigger.target()).is_ok() {
+                    entity.remove::<EnableTranslationControl>();
+                } else {
+                    entity.insert(enable_translation_control);
+                }
+                println!("Sending log trace event");
+                trace_log_writer.write(LogTrace::default());
             }
-            println!("Sending log trace event");
-            trace_log_writer.write(LogTrace::default());
         }
     }
 }
