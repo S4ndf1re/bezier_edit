@@ -13,20 +13,29 @@ use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
 use crate::{MainCamera, RootTransform};
 use bevy::color::palettes::tailwind::{
-    BLUE_800, PURPLE_900, RED_800, RED_900, YELLOW_400, YELLOW_600, YELLOW_900,
+    BLUE_600, BLUE_800, GRAY_500, PURPLE_900, RED_600, RED_800, RED_900, YELLOW_400, YELLOW_600,
+    YELLOW_900,
 };
 use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::ecs::system::SystemParam;
 use bevy::ecs::system::lifetimeless::{Read, Write};
+use bevy::input_focus::directional_navigation;
 use bevy::prelude::*;
 use std::collections::HashSet;
 use std::f32::consts::FRAC_PI_2;
 
-use super::control_storage;
+use super::control_storage::{self, ControlDirection};
 
 #[derive(Event)]
-pub struct MovedEvent {
-    delta: Vec3,
+pub struct MovedEntityEvent {
+    pub entity: Entity,
+    pub delta: Vec3,
+}
+
+#[derive(Event)]
+pub struct MoveEntityByDeltaEvent {
+    pub delta: Vec3,
+    pub entity: Entity,
 }
 
 #[derive(Component)]
@@ -38,14 +47,31 @@ struct SnappedPoint {
 #[derive(Component)]
 pub struct ShadowMarker;
 
+#[derive(Component, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
+pub enum EnableTranslationControl {
+    OnlyTranslation,
+    WithRotation,
+    OnlyOnPlane(Entity),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ArrowDirection {
+    Up,
+    Left,
+}
 #[derive(Component)]
-pub struct EnableTranslationControl {
-    with_rotation: bool,
+struct OnPlaneMovableMarker {
+    plane: Entity,
+    arrow_direction: ArrowDirection,
 }
 
 impl EnableTranslationControl {
     pub fn new(with_rotation: bool) -> Self {
-        Self { with_rotation }
+        if with_rotation {
+            Self::WithRotation
+        } else {
+            Self::OnlyTranslation
+        }
     }
 }
 
@@ -76,6 +102,7 @@ pub enum SnappingBehaviour {
     NoSnap,
     Snap,
 }
+
 #[derive(Resource, Default)]
 struct TranslationControllerState {
     curve_snapping: SnappingBehaviour,
@@ -84,8 +111,14 @@ struct TranslationControllerState {
 #[derive(Event)]
 pub struct ToggleSnappingBehaviour;
 
-#[derive(Component)]
-pub struct CantSnapToCurve(pub Entity);
+#[derive(Component, Clone, Default)]
+pub enum CantSnapToCurve {
+    #[default]
+    None,
+    All,
+    Single(Entity),
+    Multiple(HashSet<Entity>),
+}
 
 fn handle_toggle_snapping(
     mut reader: EventReader<ToggleSnappingBehaviour>,
@@ -281,55 +314,111 @@ fn show_transitional_controls(
         commands.get_entity(entity).unwrap().with_children(|cmd| {
             cmd.spawn((ControlParent(entity), transform, Visibility::default()))
                 .with_children(|parent| {
-                    for arrow in arrows.as_ref().iter() {
-                        parent
-                            .spawn((
-                                Transform::from_xyz(0.0, 0.0, 0.0)
-                                    .looking_to(arrow.normalized, Vec3::Y),
-                                Control(arrow.normalized),
-                                Visibility::default(),
-                            ))
-                            .with_children(|parent| {
-                                draw_arrow(
-                                    parent,
-                                    materials.add(arrow.color),
-                                    materials.add(arrow.hover_color),
-                                    &mut meshes,
-                                    scale,
-                                    false,
-                                );
-                            })
-                            .observe(drag_controller)
-                            .observe(drag_controller3d)
-                            .observe(drag_start)
-                            .observe(drag_start3d)
-                            .observe(drag_end_trigger_redraw)
-                            .observe(drag_end3d_trigger_redraw);
-
-                        if enabled_control.with_rotation {
+                    if *enabled_control == EnableTranslationControl::OnlyTranslation
+                        || *enabled_control == EnableTranslationControl::WithRotation
+                    {
+                        for arrow in arrows.as_ref().iter() {
                             parent
                                 .spawn((
                                     Transform::from_xyz(0.0, 0.0, 0.0)
                                         .looking_to(arrow.normalized, Vec3::Y),
-                                    ControlRotation {
-                                        normal: arrow.normalized,
-                                        radius: 0.4 * scale as f64,
-                                    },
+                                    Control(arrow.normalized),
                                     Visibility::default(),
                                 ))
                                 .with_children(|parent| {
-                                    draw_ring(
+                                    draw_arrow(
                                         parent,
                                         materials.add(arrow.color),
                                         materials.add(arrow.hover_color),
                                         &mut meshes,
                                         scale,
+                                        false,
                                     );
                                 })
-                                .observe(rotate_controller)
-                                .observe(rotate_controller3d)
-                                .observe(rotate_end_trigger_redraw)
-                                .observe(rotate_end_trigger_redraw3d);
+                                .observe(drag_controller)
+                                .observe(drag_controller3d)
+                                .observe(drag_start)
+                                .observe(drag_start3d)
+                                .observe(drag_end_trigger_redraw)
+                                .observe(drag_end3d_trigger_redraw);
+
+                            if *enabled_control == EnableTranslationControl::WithRotation {
+                                parent
+                                    .spawn((
+                                        Transform::from_xyz(0.0, 0.0, 0.0)
+                                            .looking_to(arrow.normalized, Vec3::Y),
+                                        ControlRotation {
+                                            normal: arrow.normalized,
+                                            radius: 0.4 * scale as f64,
+                                        },
+                                        Visibility::default(),
+                                    ))
+                                    .with_children(|parent| {
+                                        draw_ring(
+                                            parent,
+                                            materials.add(arrow.color),
+                                            materials.add(arrow.hover_color),
+                                            &mut meshes,
+                                            scale,
+                                        );
+                                    })
+                                    .observe(rotate_controller)
+                                    .observe(rotate_controller3d)
+                                    .observe(rotate_end_trigger_redraw)
+                                    .observe(rotate_end_trigger_redraw3d);
+                            }
+                        }
+                    } else if let EnableTranslationControl::OnlyOnPlane(plane_entity) =
+                        *enabled_control
+                        && let Ok(plane_transform) = transforms.get(plane_entity)
+                    {
+                        let up_direction = ControlDirection::new(
+                            plane_transform.up().as_vec3(),
+                            Color::from(BLUE_600),
+                            Color::from(BLUE_800),
+                            Color::from(GRAY_500),
+                            false,
+                        );
+
+                        let left_direction = ControlDirection::new(
+                            plane_transform.up().as_vec3(),
+                            Color::from(RED_600),
+                            Color::from(RED_800),
+                            Color::from(GRAY_500),
+                            false,
+                        );
+
+                        for (arrow, direction) in [
+                            (up_direction, ArrowDirection::Up),
+                            (left_direction, ArrowDirection::Left),
+                        ] {
+                            parent
+                                .spawn((
+                                    Transform::from_xyz(0.0, 0.0, 0.0)
+                                        .looking_to(arrow.normalized, Vec3::Y),
+                                    Control(arrow.normalized),
+                                    Visibility::default(),
+                                    OnPlaneMovableMarker {
+                                        plane: plane_entity,
+                                        arrow_direction: direction,
+                                    },
+                                ))
+                                .with_children(|parent| {
+                                    draw_arrow(
+                                        parent,
+                                        materials.add(arrow.color),
+                                        materials.add(arrow.hover_color),
+                                        &mut meshes,
+                                        scale,
+                                        false,
+                                    );
+                                })
+                                .observe(drag_controller)
+                                .observe(drag_controller3d)
+                                .observe(drag_start)
+                                .observe(drag_start3d)
+                                .observe(drag_end_trigger_redraw)
+                                .observe(drag_end3d_trigger_redraw);
                         }
                     }
                 });
@@ -530,8 +619,8 @@ struct ObligatoryDragParams<'w, 's> {
     state: Res<'w, TranslationControllerState>,
     materials: ResMut<'w, Assets<StandardMaterial>>,
     meshes: ResMut<'w, Assets<Mesh>>,
-    gizmos: Gizmos<'w, 's>,
     cant_snap_to_curve: Query<'w, 's, Read<CantSnapToCurve>>,
+    moved_entity_writer: EventWriter<'w, MovedEntityEvent>,
 }
 
 impl<'w, 's> ObligatoryDragParams<'w, 's> {
@@ -543,21 +632,17 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         // Only adjust the control parent
         let is_already_snapped = self.snapped.get(control_parent.1.0).is_ok();
         let cant_snap_to_curve = self.cant_snap_to_curve.get(control_parent.1.0).ok();
-        let mut ignore_curves = HashSet::new();
-        if let Some(curve) = cant_snap_to_curve {
-            ignore_curves.insert(curve.0);
-        }
 
         let changed_entity = control_parent.1.0;
         let control_point = self.transform_set.p0().get(control_parent.1.0).copied();
         if let Ok(t) = control_point {
             let started_translation = t.translation;
-            if self.state.curve_snapping == SnappingBehaviour::Snap {
+            let ending_translation = if self.state.curve_snapping == SnappingBehaviour::Snap {
                 if !is_already_snapped {
-                    let shortest = self
-                        .transform_set
-                        .p1()
-                        .collect_shortest(Point::from(t.translation), ignore_curves);
+                    let shortest = self.transform_set.p1().collect_shortest(
+                        Point::from(t.translation),
+                        cant_snap_to_curve.unwrap_or(&CantSnapToCurve::default()),
+                    );
 
                     if let Some((curve, u, p, dist, points)) = shortest
                         && dist < 0.05 * self.info.scale as f64
@@ -601,18 +686,20 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                                 .observe(drag_controller)
                                 .observe(drag_controller3d);
                             });
+                        t.translation
                     } else {
                         let mut p0 = self.transform_set.p0();
                         let mut t = p0.get_mut(control_parent.1.0).unwrap();
                         t.translation += translation;
+                        t.translation
                     }
                 } else {
                     let point = Point::from(t.translation + translation);
 
-                    let shortest = self
-                        .transform_set
-                        .p1()
-                        .collect_shortest(point, ignore_curves);
+                    let shortest = self.transform_set.p1().collect_shortest(
+                        point,
+                        cant_snap_to_curve.unwrap_or(&CantSnapToCurve::default()),
+                    );
                     if let Some((curve, u, p, dist, _)) = shortest
                         && dist < 0.05 * self.info.scale as f64
                     {
@@ -623,6 +710,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                         let mut p0 = self.transform_set.p0();
                         let mut t = p0.get_mut(control_parent.1.0).unwrap();
                         t.translation = p.into();
+                        t.translation
                     } else {
                         let entity = self.snapped.get(control_parent.1.0).unwrap().0;
                         self.commands
@@ -633,24 +721,50 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                         let mut p0 = self.transform_set.p0();
                         let mut t = p0.get_mut(control_parent.1.0).unwrap();
                         t.translation = point.into();
+                        t.translation
                     }
                 }
             } else {
                 let mut p0 = self.transform_set.p0();
                 let mut t = p0.get_mut(control_parent.1.0).unwrap();
                 t.translation += translation;
-            }
+                t.translation
+            };
 
             // Trigger the moved event, so that linked entities (TODO) may update the position of the
             // linked entity, correspondingly (using lokal transforms)
             if let Ok(mut entity) = self.commands.get_entity(changed_entity) {
-                let delta = t.translation - started_translation;
-                entity.trigger(MovedEvent { delta });
+                let delta = ending_translation - started_translation;
+                entity.trigger(MovedEntityEvent {
+                    entity: changed_entity,
+                    delta,
+                });
+                self.moved_entity_writer.write(MovedEntityEvent {
+                    entity: changed_entity,
+                    delta,
+                });
             }
         }
 
         self.redraw_writer.write(RedrawEvent::Fast);
         self.redraw_curves_writer.write(RedrawCurvesEvent);
+    }
+}
+
+fn handle_translate_by_delta_event(
+    mut reader: EventReader<MoveEntityByDeltaEvent>,
+    mut obligatory: ObligatoryDragParams,
+    children: Query<&Children>,
+    control_parents: Query<(Entity, &ControlParent)>,
+) {
+    for evt in reader.read() {
+        if let Ok(children) = children.get(evt.entity) {
+            for child in children {
+                if let Ok(control_parent) = control_parents.get(*child) {
+                    obligatory.update_position_drag_universal(control_parent, evt.delta);
+                }
+            }
+        }
     }
 }
 
@@ -942,7 +1056,7 @@ fn update_snapped_points(
                 transform.translation = p.into();
 
                 let deriv = derive_after_de_casteljau(&de_casteljau(curve, snap.u), 1);
-                arrow.0 = Vec3::from(deriv);
+                arrow.0 = Vec3::from(deriv).normalize();
                 t.look_to(Vec3::from(deriv), Vec3::Y);
             } else {
                 commands
@@ -953,6 +1067,40 @@ fn update_snapped_points(
             }
         } else {
             commands.get_entity(arrow_entity).unwrap().despawn();
+        }
+    }
+}
+
+/// Update the arrow directions for the arrows that are snapped to planes.
+/// Up and left direction will get updated according to the current transform of the plane entity
+fn update_plane_directions(
+    mut commands: Commands,
+    transforms: Query<&Transform, Without<OnPlaneMovableMarker>>,
+    mut arrows: Query<(
+        &ChildOf,
+        &mut Transform,
+        &OnPlaneMovableMarker,
+        &mut Control,
+    )>,
+) {
+    for (arrow_childof, mut arrow_transform, plane_info, mut control) in &mut arrows {
+        if let Ok(transform) = transforms.get(plane_info.plane) {
+            match plane_info.arrow_direction {
+                ArrowDirection::Up => {
+                    arrow_transform.look_to(transform.up(), Vec3::Y);
+                    control.0 = transform.up().normalize();
+                }
+                ArrowDirection::Left => {
+                    arrow_transform.look_to(transform.left(), Vec3::Y);
+                    control.0 = transform.left().normalize();
+                }
+            }
+        } else {
+            // Despawn, since the plane entity does not exist any longer. Meaning the controls
+            // should despawn
+            let _ = commands
+                .get_entity(arrow_childof.parent())
+                .map(|mut entity| entity.despawn());
         }
     }
 }
@@ -968,12 +1116,15 @@ impl Plugin for TranslationController {
                 register_deletes,
                 handle_toggle_snapping.run_if(on_event::<ToggleSnappingBehaviour>),
                 update_snapped_points,
+                update_plane_directions,
+                handle_translate_by_delta_event,
             ),
         );
         app.init_resource::<ControlStorage>();
 
         app.init_resource::<TranslationControllerState>();
         app.add_event::<ToggleSnappingBehaviour>();
-        app.add_event::<MovedEvent>();
+        app.add_event::<MovedEntityEvent>();
+        app.add_event::<MoveEntityByDeltaEvent>();
     }
 }
