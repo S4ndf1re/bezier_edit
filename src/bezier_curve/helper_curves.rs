@@ -182,7 +182,7 @@ pub fn commit_curve(
                     .insert((
                         ControlCurvePoint(idx),
                         Picking3dInteractable,
-                        CantSnapToCurve(parent),
+                        CantSnapToCurve::Single(parent),
                     ))
                     .observe(handle_click_on_curve_point);
             }
@@ -224,7 +224,7 @@ impl<'w, 's> CurveCollection<'w, 's> {
     pub fn collect_shortest(
         &self,
         point: Point,
-        ignore_curves: HashSet<Entity>,
+        ignore_curves: &CantSnapToCurve,
     ) -> Option<(Entity, f64, Point, f64, Vec<Point>)> {
         let mut min = f64::MAX;
         let mut min_u = None;
@@ -234,8 +234,21 @@ impl<'w, 's> CurveCollection<'w, 's> {
 
         let collected = self.collect();
         for (curve, points) in collected {
-            if ignore_curves.contains(&curve) {
-                continue;
+            match ignore_curves {
+                CantSnapToCurve::All => {
+                    continue;
+                }
+                CantSnapToCurve::Single(ignore_curve) => {
+                    if *ignore_curve == curve {
+                        continue;
+                    }
+                }
+                CantSnapToCurve::Multiple(ignore_curves) => {
+                    if ignore_curves.contains(&curve) {
+                        continue;
+                    }
+                }
+                _ => {}
             }
             let (u, p, dist) = shortest_distance_to_point(&points, point);
             if dist < min {
