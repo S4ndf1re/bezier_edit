@@ -16,6 +16,8 @@ use crate::{
         components::ControlState,
         render_info::RenderInformation,
     },
+    linked_entities::{RemoveLinkedEntities, ReversePositioningType, SpawnLinkedEntities},
+    nurbs::parametric::Parametric,
     picking3d::picking_3d::Picking3dInteractable,
     translation_control::enable_gizmo,
 };
@@ -118,6 +120,7 @@ fn handle_enable_ortho_camera(
     mut materials: ResMut<Assets<StandardMaterial>>,
     transforms: Query<&Transform>,
     info: Res<RenderInformation>,
+    mut linked_spawner: SpawnLinkedEntities,
 ) {
     let mut transform = None;
     let mut bounding_entities = None;
@@ -199,6 +202,16 @@ fn handle_enable_ortho_camera(
                     .id(),
                 );
 
+                for entity in &bounding_entities {
+                    if let Some(surface) = surface_parent {
+                        linked_spawner.spawn_linked_to_entity(
+                            cmd,
+                            *entity,
+                            ReversePositioningType::OrthoProjectedOntoPlane(surface),
+                        );
+                    }
+                }
+
                 camera = Some(
                     cmd.spawn((
                         cam_transform,
@@ -243,7 +256,7 @@ fn handle_enable_ortho_camera(
 }
 
 fn update_ortho_camera_positions(
-    mut cameras: Query<(&OrthoCamera, &mut Transform), Without<OrthoSurfacePlane>>,
+    mut cameras: Query<(&OrthoCamera, &mut Transform), Without<OrthoSurfaceParent>>,
     surfaces: Query<&Transform, (With<OrthoSurfaceParent>, Without<OrthoCamera>)>,
 ) {
     for (camera, mut camera_transform) in &mut cameras {
@@ -262,10 +275,7 @@ fn update_ortho_camera_positions(
 /// any weird stretching. Set the target size plane.
 fn update_ortho_camera_viewports(
     mut reader: EventReader<RedrawEvent>,
-    mut cameras: Query<
-        (&mut OrthoCamera, &GlobalTransform, &mut Projection),
-        Without<OrthoSurfacePlane>,
-    >,
+    mut cameras: Query<(&mut OrthoCamera, &mut Projection), Without<OrthoSurfacePlane>>,
     transforms: Query<&GlobalTransform>,
     mut images: ResMut<Assets<Image>>,
     children: Query<&Children>,
@@ -282,50 +292,44 @@ fn update_ortho_camera_viewports(
     }
     reader.clear();
 
-    for (mut ortho, camera_transform, mut projection) in &mut cameras {
-        let mut max_distance = Vec2::new(f32::MIN, f32::MIN);
+    for (mut ortho, mut projection) in &mut cameras {
+        let mut max_distance = (f64::MIN, f64::MIN);
 
         assert!(!ortho.bounding_volume_determining_entities.is_empty());
 
-        for child in children.get(ortho.surface_parent).unwrap() {
-            // Only continue, if the child is actually a surface
-            if surfaces.get(*child).is_ok()
-                && let Ok(surface_transform) = transforms.get(*child)
-            {
-                for entity in &ortho.bounding_volume_determining_entities {
-                    if let Ok(transform) = transforms.get(*entity) {
-                        let plane = InfinitePlane3d::new(surface_transform.forward());
-                        let ray = Ray3d::new(transform.translation(), camera_transform.forward());
+        // Only continue, if the child is actually a surface
+        if let Ok(surface_transform) = transforms.get(ortho.surface_parent) {
+            for entity in &ortho.bounding_volume_determining_entities {
+                if let Ok(transform) = transforms.get(*entity) {
+                    let plane =
+                        super::nurbs::plane::Plane3d::from(surface_transform.compute_transform());
 
-                        // TODO: This is still buggy has hell
-                        if let Some(hit) =
-                            ray.intersect_plane(surface_transform.translation(), plane)
-                        {
-                            let point = ray.get_point(hit);
-                            gizmos.ray(
-                                transform.translation(),
-                                point - transform.translation(),
-                                Color::from(RED_800),
-                            );
-                            gizmos.sphere(Isometry3d::from_translation(point), 0.1, RED_800);
-                            let up = surface_transform.up().normalize_or_zero();
-                            let left = surface_transform.left().normalize_or_zero();
+                    if let Some((u, v)) =
+                        plane.point_projected_on_plane_orthogonal(transform.translation().into())
+                        && let Some((origin_x, origin_y)) = plane
+                            .point_projected_on_plane_orthogonal(
+                                surface_transform.translation().into(),
+                            )
+                    {
+                        let point: Vec3 = plane.f(&[u, v]).into();
+                        gizmos.ray(
+                            transform.translation(),
+                            point - transform.translation(),
+                            Color::from(RED_800),
+                        );
+                        gizmos.sphere(Isometry3d::from_translation(point), 0.1, RED_800);
 
-                            let delta_p = surface_transform.translation() - point;
-
-                            let uv = Vec2::new(delta_p.dot(left), delta_p.dot(up));
-                            let origin = Vec2::new(Vec3::ZERO.dot(left), Vec3::ZERO.dot(up));
-
-                            max_distance.x = max_distance.x.max((origin.x - uv.x).abs());
-                            max_distance.y = max_distance.y.max((origin.y - uv.y).abs());
-                        }
+                        max_distance.0 = max_distance.0.max((origin_x - u).abs());
+                        max_distance.1 = max_distance.1.max((origin_y - v).abs());
                     }
                 }
-
-                gizmos.rect(surface_transform.to_isometry(), max_distance * 2.0, RED_800);
             }
+
+            let tmp_size = Vec2::new(max_distance.0 as f32, max_distance.1 as f32);
+            gizmos.rect(surface_transform.to_isometry(), tmp_size * 2.0, RED_800);
         }
 
+        let mut max_distance = Vec2::new(max_distance.0 as f32, max_distance.1 as f32);
         if max_distance.x < 0.5 {
             max_distance.x = 0.5;
         }
@@ -335,7 +339,7 @@ fn update_ortho_camera_viewports(
         }
 
         // apply padding of 1 unit length on each side
-        max_distance += Vec2::new(1.0, 1.0);
+        max_distance += Vec2::ONE;
 
         // Compute the projection size and the ratio, which will then be in the interval [0, 1]
         // This is times to, in order to capture full projection
@@ -395,6 +399,7 @@ fn handle_disable_ortho_camera(
     points: Query<(Entity, &OrthoSurfaceParent)>,
     state: Res<State<ControlState>>,
     mut end_mode_writer: EventWriter<EndModeEvent>,
+    mut despawner: RemoveLinkedEntities,
 ) {
     // Only run, when we are in the delete mode
     if *state != ControlState::Delete {
@@ -409,6 +414,8 @@ fn handle_disable_ortho_camera(
         if let Ok(mut entity) = commands.get_entity(to_delete_parent.0) {
             entity.despawn();
         }
+
+        despawner.remove_link_for_all_on_same_plane(to_delete_parent.0);
 
         end_mode_writer.write(EndModeEvent);
     }

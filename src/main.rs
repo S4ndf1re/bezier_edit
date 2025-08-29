@@ -4,6 +4,7 @@ mod advanced_orbit_controls;
 mod bezier_curve;
 pub mod click_decider;
 mod history;
+pub mod linked_entities;
 mod nurbs;
 pub mod picking3d;
 pub mod projection;
@@ -91,6 +92,7 @@ fn setup(
 #[cfg(not(feature = "vr_enable"))]
 fn create_app() -> App {
     use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
+    use linked_entities::LinkedEntitiesPlugin;
     use projection::ProjectionPlugin;
 
     info!("Creating Non-VR App");
@@ -105,6 +107,7 @@ fn create_app() -> App {
         .add_plugins(EguiPlugin::default())
         .add_plugins(WorldInspectorPlugin::new())
         .add_plugins(ProjectionPlugin)
+        .add_plugins(LinkedEntitiesPlugin)
         .init_resource::<ControlStorage>()
         .add_systems(Startup, setup.before(generate_default_curve));
 
