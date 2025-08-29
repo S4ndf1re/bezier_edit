@@ -26,7 +26,7 @@ impl PickingState {
         }
     }
 
-    fn check_is_dragging(&self, controller: &HoveredBy) -> bool {
+    pub fn check_is_dragging(&self, controller: &HoveredBy) -> bool {
         match controller {
             HoveredBy::Left => self.is_dragging_left,
             HoveredBy::Right => self.is_dragging_right,

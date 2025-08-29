@@ -361,10 +361,7 @@ fn handle_input_grab(
             for (_, _, entity) in moved_marked_query.iter() {
                 commands.get_entity(entity).unwrap().despawn();
             }
-        } else if current_state
-            && pointer_state.is_grabbing(&hover_by)
-            && !pointer_state.is_just_toggled(&hover_by)
-        {
+        } else if current_state && pointer_state.is_grabbing(&hover_by) {
             // Either start dragging here, since we crossed the n tick mark, or continue dragging
             if !is_dragging {
                 let mut dragging_should_start = false;
@@ -412,7 +409,7 @@ fn handle_input_grab(
                 }
             }
 
-            if !pointer_state.is_just_toggled(&hover_by) {
+            if picking_state.check_is_dragging(&hover_by) {
                 for (transform, mut marker, _) in moved_marked_query.iter_mut() {
                     if picking_state.contains_entity(&marker.entity, &hover_by) {
                         let entity_global_position = transform_query.get(marker.entity).unwrap();
