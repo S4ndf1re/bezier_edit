@@ -280,7 +280,8 @@ fn update_ortho_camera_positions(
 fn update_ortho_camera_viewports(
     mut reader: EventReader<RedrawEvent>,
     mut cameras: Query<(&mut OrthoCamera, &mut Projection), Without<OrthoSurfacePlane>>,
-    transforms: Query<&Transform>,
+    root: Query<&Transform, With<RootTransform>>,
+    transforms: Query<&Transform, Without<RootTransform>>,
     mut images: ResMut<Assets<Image>>,
     children: Query<&Children>,
     mut surfaces: Query<
@@ -295,6 +296,8 @@ fn update_ortho_camera_viewports(
         return;
     }
     reader.clear();
+
+    let root = root.single().unwrap();
 
     for (mut ortho, mut projection) in &mut cameras {
         let mut max_distance = (f64::MIN, f64::MIN);
@@ -316,11 +319,16 @@ fn update_ortho_camera_viewports(
                     {
                         let point: Vec3 = plane.f(&[u, v]).into();
                         gizmos.ray(
-                            transform.translation,
-                            point - transform.translation,
+                            root.transform_point(transform.translation),
+                            root.transform_point(point - transform.translation),
                             Color::from(RED_800),
                         );
-                        gizmos.sphere(Isometry3d::from_translation(point), 0.1, RED_800);
+
+                        gizmos.sphere(
+                            Isometry3d::from_translation(root.transform_point(point)),
+                            0.1,
+                            RED_800,
+                        );
 
                         max_distance.0 = max_distance.0.max((origin_x - u).abs());
                         max_distance.1 = max_distance.1.max((origin_y - v).abs());
@@ -329,7 +337,12 @@ fn update_ortho_camera_viewports(
             }
 
             let tmp_size = Vec2::new(max_distance.0 as f32, max_distance.1 as f32);
-            gizmos.rect(surface_transform.to_isometry(), tmp_size * 2.0, RED_800);
+
+            gizmos.rect(
+                root.mul_transform(*surface_transform).to_isometry(),
+                tmp_size * 2.0,
+                RED_800,
+            );
         }
 
         let mut max_distance = Vec2::new(max_distance.0 as f32, max_distance.1 as f32);
@@ -435,7 +448,11 @@ pub struct ProjectedSnappingDetector<'w, 's> {
 impl<'w, 's> ProjectedSnappingDetector<'w, 's> {
     /// Detect the closest point on any projection. Return the Directional vector that the
     /// snappable_entity must move in order to snap exactly over the projected entity
-    pub fn detect_closest_projected(&self, snappable_entity: Entity) -> Option<Vec3> {
+    pub fn detect_closest_projected(
+        &self,
+        snappable_entity: Entity,
+        next_move_delta: Vec3,
+    ) -> Option<Vec3> {
         let mut min_uv_distance = Vec::new();
 
         for camera in self.cameras {
@@ -446,12 +463,13 @@ impl<'w, 's> ProjectedSnappingDetector<'w, 's> {
                 let plane = crate::nurbs::plane::Plane3d::from(surface_transform);
 
                 if let Some(snapped_uv) = plane.point_projected_on_plane_orthogonal(
-                    snappable_entity_transform.translation.into(),
+                    (snappable_entity_transform.translation + next_move_delta).into(),
                 ) {
                     let snapped_uv_vec = Vec2::new(snapped_uv.0 as f32, snapped_uv.1 as f32);
 
                     for point in &camera.bounding_volume_determining_entities {
-                        if let Ok(transform) = self.transform.get(*point)
+                        if *point != snappable_entity
+                            && let Ok(transform) = self.transform.get(*point)
                             && let Some(uv) = plane
                                 .point_projected_on_plane_orthogonal(transform.translation.into())
                         {

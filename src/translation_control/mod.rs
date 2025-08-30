@@ -1,4 +1,5 @@
 pub mod control_storage;
+pub mod obligatory_drag_params;
 pub mod translation_controller;
 
 use bevy::prelude::*;

@@ -5,27 +5,20 @@ use crate::click_decider::LogTrace;
 use crate::history::plugin::HistoryLogEvent;
 use crate::nurbs::bezier::{de_casteljau, derive_after_de_casteljau};
 use crate::nurbs::parametric::{Circle3D, MinDistanceToPoint, Parametric};
-use crate::nurbs::point::Point;
 use crate::picking3d::events::{HoveredBy, MoveIn, MoveOut, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
-use crate::projection::ProjectedSnappingDetector;
 use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
 use crate::{MainCamera, RootTransform};
-use bevy::color::palettes::tailwind::{
-    BLUE_600, BLUE_800, GRAY_500, PURPLE_900, RED_600, RED_800, RED_900, YELLOW_400, YELLOW_600,
-    YELLOW_900,
-};
+use bevy::color::palettes::tailwind::{BLUE_600, BLUE_800, GRAY_500, RED_600, RED_800};
 use bevy::ecs::relationship::RelatedSpawnerCommands;
-use bevy::ecs::system::SystemParam;
-use bevy::ecs::system::lifetimeless::{Read, Write};
-use bevy::input_focus::directional_navigation;
 use bevy::prelude::*;
 use std::collections::HashSet;
 use std::f32::consts::FRAC_PI_2;
 
-use super::control_storage::{self, ControlDirection};
+use super::control_storage::ControlDirection;
+use super::obligatory_drag_params::ObligatoryDragParams;
 
 #[derive(Event)]
 pub struct MovedEntityEvent {
@@ -39,10 +32,10 @@ pub struct MoveEntityByDeltaEvent {
     pub entity: Entity,
 }
 
-#[derive(Component)]
-struct SnappedPoint {
-    u: f64,
-    curve: Entity,
+#[derive(Component, Clone, Copy)]
+pub enum SnappedPoint {
+    ToCurve { u: f64, curve: Entity },
+    ToProjection,
 }
 
 #[derive(Component)]
@@ -57,29 +50,29 @@ pub enum EnableTranslationControl {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum ArrowDirection {
+pub enum ArrowDirection {
     Up,
     Left,
 }
 #[derive(Component)]
-struct OnPlaneMovableMarker {
-    plane: Entity,
-    arrow_direction: ArrowDirection,
+pub struct OnPlaneMovableMarker {
+    pub plane: Entity,
+    pub arrow_direction: ArrowDirection,
 }
 
 #[derive(Component, Clone, Copy)]
-struct SnappedArrow;
+pub struct SnappedArrow;
 
 #[derive(Component)]
-struct ControlParent(Entity);
+pub struct ControlParent(pub Entity);
 
 #[derive(Component)]
-struct Control(Vec3);
+pub struct Control(pub Vec3);
 
 #[derive(Component)]
-struct ControlRotation {
-    normal: Vec3,
-    radius: f64,
+pub struct ControlRotation {
+    pub normal: Vec3,
+    pub radius: f64,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -90,8 +83,8 @@ pub enum SnappingBehaviour {
 }
 
 #[derive(Resource, Default)]
-struct TranslationControllerState {
-    curve_snapping: SnappingBehaviour,
+pub struct TranslationControllerState {
+    pub curve_snapping: SnappingBehaviour,
 }
 
 #[derive(Event)]
@@ -103,6 +96,7 @@ pub enum CantSnapToCurve {
     None,
     All,
     Single(Entity),
+    #[allow(unused)]
     Multiple(HashSet<Entity>),
 }
 
@@ -143,7 +137,7 @@ fn register_deletes(
     }
 }
 
-fn draw_arrow(
+pub fn draw_arrow(
     child_builder: &mut RelatedSpawnerCommands<ChildOf>,
     mat: Handle<StandardMaterial>,
     mat_hover: Handle<StandardMaterial>,
@@ -586,172 +580,7 @@ fn drag_end3d_trigger_redraw(
     trace_log_writer.write(LogTrace::default());
 }
 
-#[allow(clippy::complexity)]
-#[derive(SystemParam)]
-struct ObligatoryDragParams<'w, 's> {
-    commands: Commands<'w, 's>,
-    transform_set: ParamSet<
-        'w,
-        's,
-        (
-            Query<'w, 's, Write<Transform>, (Without<Control>, Without<ControlParent>)>,
-            CurveCollection<'w, 's>,
-            ProjectedSnappingDetector<'w, 's>,
-        ),
-    >,
-    redraw_writer: EventWriter<'w, RedrawEvent>,
-    redraw_curves_writer: EventWriter<'w, RedrawCurvesEvent>,
-    snapped: Query<'w, 's, (Entity, Write<SnappedPoint>)>,
-    info: Res<'w, RenderInformation>,
-    state: Res<'w, TranslationControllerState>,
-    materials: ResMut<'w, Assets<StandardMaterial>>,
-    meshes: ResMut<'w, Assets<Mesh>>,
-    cant_snap_to_curve: Query<'w, 's, Read<CantSnapToCurve>>,
-    moved_entity_writer: EventWriter<'w, MovedEntityEvent>,
-}
-
-impl<'w, 's> ObligatoryDragParams<'w, 's> {
-    fn update_position_drag_universal(
-        &mut self,
-        control_parent: (Entity, &ControlParent),
-        translation: Vec3,
-    ) {
-        // Only adjust the control parent
-        let is_already_snapped = self.snapped.get(control_parent.1.0).is_ok();
-        let cant_snap_to_curve = self.cant_snap_to_curve.get(control_parent.1.0).ok();
-
-        let changed_entity = control_parent.1.0;
-        let control_point = self.transform_set.p0().get(control_parent.1.0).copied();
-        if let Ok(t) = control_point {
-            let started_translation = t.translation;
-
-            let ending_translation = if self.state.curve_snapping == SnappingBehaviour::Snap {
-                if !is_already_snapped {
-                    // TODO: First check, if the point should actually snap to a projected point
-                    let shortest = self.transform_set.p1().collect_shortest(
-                        Point::from(t.translation),
-                        cant_snap_to_curve.unwrap_or(&CantSnapToCurve::default()),
-                    );
-
-                    if let Some((curve, u, p, dist, points)) = shortest
-                        && dist < 0.05 * self.info.scale as f64
-                    {
-                        let mut p0 = self.transform_set.p0();
-                        let mut t = p0.get_mut(control_parent.1.0).unwrap();
-
-                        t.translation = p.into();
-
-                        let mat = self.materials.add(StandardMaterial::from_color(YELLOW_600));
-                        let mat_hover =
-                            self.materials.add(StandardMaterial::from_color(YELLOW_400));
-
-                        let deriv = derive_after_de_casteljau(&de_casteljau(&points, u), 1);
-
-                        self.commands
-                            .get_entity(control_parent.1.0)
-                            .unwrap()
-                            .insert(SnappedPoint { u, curve });
-
-                        // Create a new arrow (directional), that follows the curvature of the
-                        // curve that the point was snapped to. The direction of the arrow is
-                        // updated each frame, to adhere to movement along the curve
-                        self.commands
-                            .get_entity(control_parent.0)
-                            .unwrap()
-                            .with_children(|cmd| {
-                                cmd.spawn((
-                                    Control(Vec3::from(deriv)),
-                                    SnappedArrow,
-                                    Transform::default().looking_to(Vec3::from(deriv), Vec3::Y),
-                                    Visibility::Inherited,
-                                ))
-                                .with_children(|cmd| {
-                                    draw_arrow(
-                                        cmd,
-                                        mat,
-                                        mat_hover,
-                                        &mut self.meshes,
-                                        self.info.scale,
-                                        false,
-                                    );
-                                })
-                                .observe(drag_controller)
-                                .observe(drag_controller3d);
-                            });
-                        t.translation
-                    } else {
-                        // all curves are too far away to snap to
-                        let mut p0 = self.transform_set.p0();
-                        let mut t = p0.get_mut(control_parent.1.0).unwrap();
-                        t.translation += translation;
-                        t.translation
-                    }
-                } else {
-                    // The entity is already snapped to a curve. Either continue snapping by moving
-                    // the entity back to the curve, or if the distance is to large, remove the
-                    // snapping
-                    let point = Point::from(t.translation + translation);
-
-                    let shortest = self.transform_set.p1().collect_shortest(
-                        point,
-                        cant_snap_to_curve.unwrap_or(&CantSnapToCurve::default()),
-                    );
-                    if let Some((curve, u, p, dist, _)) = shortest
-                        && dist < 0.05 * self.info.scale as f64
-                    {
-                        let mut snap = self.snapped.get_mut(control_parent.1.0).unwrap().1;
-                        snap.curve = curve;
-                        snap.u = u;
-
-                        let mut p0 = self.transform_set.p0();
-                        let mut t = p0.get_mut(control_parent.1.0).unwrap();
-                        t.translation = p.into();
-                        t.translation
-                    } else {
-                        let entity = self.snapped.get(control_parent.1.0).unwrap().0;
-                        self.commands
-                            .get_entity(entity)
-                            .unwrap()
-                            .remove::<SnappedPoint>();
-
-                        // TODO: Once removed, consider the position (t.translation + translation,
-                        // as in the point in line 693) and check if it snaps to the projected
-                        // points
-
-                        let mut p0 = self.transform_set.p0();
-                        let mut t = p0.get_mut(control_parent.1.0).unwrap();
-                        t.translation = point.into();
-                        t.translation
-                    }
-                }
-            } else {
-                let mut p0 = self.transform_set.p0();
-                let mut t = p0.get_mut(control_parent.1.0).unwrap();
-                t.translation += translation;
-                t.translation
-            };
-
-            // Trigger the moved event, so that linked entities (TODO) may update the position of the
-            // linked entity, correspondingly (using lokal transforms)
-            if let Ok(mut entity) = self.commands.get_entity(changed_entity) {
-                let delta = ending_translation - started_translation;
-                entity.trigger(MovedEntityEvent {
-                    entity: changed_entity,
-                    delta,
-                });
-                self.moved_entity_writer.write(MovedEntityEvent {
-                    entity: changed_entity,
-                    delta,
-                });
-            }
-        }
-
-        self.redraw_writer.write(RedrawEvent::Fast);
-        self.redraw_curves_writer.write(RedrawCurvesEvent);
-    }
-}
-
-fn handle_translate_by_delta_event(
+pub fn handle_translate_by_delta_event(
     mut reader: EventReader<MoveEntityByDeltaEvent>,
     mut obligatory: ObligatoryDragParams,
     children: Query<&Children>,
@@ -769,7 +598,7 @@ fn handle_translate_by_delta_event(
 }
 
 #[allow(clippy::complexity)]
-fn drag_controller(
+pub fn drag_controller(
     trigger: Trigger<Pointer<Drag>>,
     control_query: Query<(&Control, &ChildOf)>,
     camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
@@ -819,7 +648,7 @@ fn drag_controller(
 }
 
 #[allow(clippy::complexity)]
-fn drag_controller3d(
+pub fn drag_controller3d(
     trigger: Trigger<Pointer3d<crate::picking3d::events::Drag>>,
     control_query: Query<(&Control, &ChildOf)>,
     mut control_parents: Query<&ControlParent>,
@@ -1050,12 +879,22 @@ fn update_snapped_points(
     for (mut t, mut arrow, arrow_entity, relation) in &mut arrows {
         let parent = relation.parent();
         let control_parent = control_parents.get(parent).unwrap();
-        if let Ok((mut transform, snap, entity)) = snapped.get_mut(control_parent.0) {
-            if let Some(curve) = curves.get(&snap.curve) {
-                let p = *de_casteljau(curve, snap.u).last().unwrap().last().unwrap();
+        // Only use the SnappedPoint::ToCurve snapping mode to update. the other mode may not snap
+        // permanently
+        if let Ok((
+            mut transform,
+            SnappedPoint::ToCurve {
+                u: snap_u,
+                curve: snap_curve,
+            },
+            entity,
+        )) = snapped.get_mut(control_parent.0)
+        {
+            if let Some(curve) = curves.get(snap_curve) {
+                let p = *de_casteljau(curve, *snap_u).last().unwrap().last().unwrap();
                 transform.translation = p.into();
 
-                let deriv = derive_after_de_casteljau(&de_casteljau(curve, snap.u), 1);
+                let deriv = derive_after_de_casteljau(&de_casteljau(curve, *snap_u), 1);
                 arrow.0 = Vec3::from(deriv).normalize();
                 t.look_to(Vec3::from(deriv), Vec3::Y);
             } else {
