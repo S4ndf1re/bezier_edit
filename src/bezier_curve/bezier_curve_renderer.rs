@@ -10,7 +10,10 @@ use super::helper_curves::{
 #[cfg(feature = "vr_enable")]
 use super::helper_curves::add_point_3d;
 
-use super::ortho_camera::{create_camera_on_click, create_camera_on_click3d};
+use super::ortho_camera::create_camera_on_click;
+
+#[cfg(feature = "vr_enable")]
+use super::ortho_camera::create_camera_on_click3d;
 use super::render_info::{
     ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
     handle_box_dim_event, handle_change_surface_mode,
@@ -552,6 +555,7 @@ impl Plugin for BezierRenderPlugin {
                 handle_create_plane_event.run_if(in_state(ControlState::Main)),
                 handle_delete_mode_event.run_if(in_state(ControlState::Main)),
                 create_camera_on_click.run_if(in_state(ControlState::CreateOrthoCamera)),
+                #[cfg(feature = "vr_enable")]
                 create_camera_on_click3d.run_if(in_state(ControlState::CreateOrthoCamera)),
                 handle_end_mode.run_if(
                     in_state(ControlState::CreateCurve)

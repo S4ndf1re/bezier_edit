@@ -47,6 +47,7 @@ pub fn create_camera_on_click(
     }
 }
 
+#[cfg(feature = "vr_enable")]
 #[allow(clippy::complexity)]
 /// Enable a camera in space
 pub fn create_camera_on_click3d(
