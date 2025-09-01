@@ -141,13 +141,15 @@ fn create_app() -> App {
     .add_plugins(HistoryPlugin)
     .add_plugins(BezierRenderPlugin)
     .add_plugins(AdvancedOrbitControls)
-    .init_resource::<ControlStorage>()
     .add_plugins(ObjectPicking3d)
     .add_plugins(TranslationController)
     .add_plugins(VrControlPlugin)
     .add_plugins(UiPlugin)
     .add_plugins(TracingPlugin)
+    .add_plugins(ProjectionPlugin)
+    .add_plugins(LinkedEntitiesPlugin)
     .add_systems(Startup, (setup.before(generate_default_curve),))
+    .init_resource::<ControlStorage>()
     .insert_resource(ClearColor(Color::NONE));
 
     app
