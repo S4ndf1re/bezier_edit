@@ -6,13 +6,14 @@ use crate::history::plugin::HistoryLogEvent;
 use crate::nurbs::bezier::{de_casteljau, derive_after_de_casteljau};
 use crate::nurbs::parametric::{Circle3D, MinDistanceToPoint, Parametric};
 use crate::picking3d::events::{HoveredBy, MoveIn, MoveOut, Pointer3d};
-use crate::picking3d::picking_3d::Picking3dInteractable;
+use crate::picking3d::picking_3d::{CustomPicking3dHitbox, Picking3dInteractable};
 use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
 use crate::{MainCamera, RootTransform};
 use bevy::color::palettes::tailwind::{BLUE_600, BLUE_800, GRAY_500, RED_600, RED_800};
 use bevy::ecs::relationship::RelatedSpawnerCommands;
+use bevy::math::bounding::BoundingSphere;
 use bevy::math::ops::atan2;
 use bevy::prelude::*;
 use std::collections::HashSet;
@@ -238,6 +239,7 @@ fn draw_ring(
                 transform,
                 Mesh3d(ball.clone()),
                 MeshMaterial3d(mat.clone()),
+                CustomPicking3dHitbox::Sphere(0.035 * scale),
                 Picking3dInteractable,
             ))
             .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
@@ -829,27 +831,17 @@ fn rotate_controller(
 
             if state.curve_snapping == SnappingBehaviour::Snap {
                 for axis in control_storage.iter() {
-                    // info!(
-                    //     "With axis {}, and forward {forward:?}, the diff is {}",
-                    //     axis.normalized,
-                    //     forward.normalize_or_zero().dot(axis.normalized)
-                    // );
                     if axis.with_rotation {
                         let cos_score = forward.normalize_or_zero().dot(axis.normalized);
                         if cos_score.abs() > 0.999 {
                             let multiplier = cos_score.signum();
                             forward = axis.normalized * multiplier;
-                            // parent_transform_mut.look_to(axis.normalized * multiplier, up);
-                            // forward = parent_transform.forward();
-                            // inverse = parent_transform_mut.rotation.inverse();
                         }
 
                         let cos_score = up.normalize_or_zero().dot(axis.normalized);
                         if cos_score.abs() > 0.999 {
                             let multiplier = cos_score.signum();
                             up = axis.normalized * multiplier;
-                            // parent_transform_mut.look_to(forward, axis.normalized * multiplier);
-                            // inverse = parent_transform_mut.rotation.inverse();
                         }
                     }
                 }
@@ -927,27 +919,17 @@ fn rotate_controller3d(
 
         if state.curve_snapping == SnappingBehaviour::Snap {
             for axis in control_storage.iter() {
-                // info!(
-                //     "With axis {}, and forward {forward:?}, the diff is {}",
-                //     axis.normalized,
-                //     forward.normalize_or_zero().dot(axis.normalized)
-                // );
                 if axis.with_rotation {
                     let cos_score = forward.normalize_or_zero().dot(axis.normalized);
                     if cos_score.abs() > 0.999 {
                         let multiplier = cos_score.signum();
                         forward = axis.normalized * multiplier;
-                        // parent_transform_mut.look_to(axis.normalized * multiplier, up);
-                        // forward = parent_transform.forward();
-                        // inverse = parent_transform_mut.rotation.inverse();
                     }
 
                     let cos_score = up.normalize_or_zero().dot(axis.normalized);
                     if cos_score.abs() > 0.999 {
                         let multiplier = cos_score.signum();
                         up = axis.normalized * multiplier;
-                        // parent_transform_mut.look_to(forward, axis.normalized * multiplier);
-                        // inverse = parent_transform_mut.rotation.inverse();
                     }
                 }
             }

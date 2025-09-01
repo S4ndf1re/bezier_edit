@@ -9,7 +9,7 @@ use crate::vr_control::trigger::{ControllerSqueeze, ControllerTrigger};
 use crate::vr_control::{AimLeft, AimRight, GripLeft, GripRight};
 use bevy::color::palettes::css::POWDER_BLUE;
 use bevy::math::Vec3;
-use bevy::math::bounding::{BoundingSphere, IntersectsVolume};
+use bevy::math::bounding::{Aabb3d, BoundingSphere, IntersectsVolume};
 use bevy::prelude::*;
 
 #[derive(Component)]
@@ -32,12 +32,18 @@ struct MoveMarker {
     current_position: Vec3,
 }
 
+#[derive(Component)]
+pub enum CustomPicking3dHitbox {
+    Sphere(f32),
+    AaBb(Aabb3d),
+}
+
 #[allow(clippy::complexity)]
 fn check_intersections(
     mut commands: Commands,
     // mut event_writer: EventWriter<Intersection>,
     pickable: Query<
-        (&GlobalTransform, Entity),
+        (&GlobalTransform, Entity, Option<&CustomPicking3dHitbox>),
         (
             With<Picking3dInteractable>,
             Without<GripLeft>,
@@ -65,9 +71,18 @@ fn check_intersections(
     }
 
     for p in pickable {
-        let test = BoundingSphere::new(p.0.translation(), 0.1 * scale);
+        let test: Box<dyn IntersectsVolume<BoundingSphere>> = if p.2.is_some() {
+            match p.2.unwrap() {
+                CustomPicking3dHitbox::Sphere(s) => {
+                    Box::new(BoundingSphere::new(p.0.translation(), *s))
+                }
+                CustomPicking3dHitbox::AaBb(aabb) => Box::new(aabb.clone()),
+            }
+        } else {
+            Box::new(BoundingSphere::new(p.0.translation(), 0.1 * scale))
+        };
 
-        if bb_sphere_left.intersects(&test) {
+        if test.intersects(&bb_sphere_left) {
             // event_writer.write(Intersection::Left(p.1));
             if !state.contains_entity_and_controller(&p.1, &HoveredBy::Left) {
                 commands.trigger_targets(
@@ -83,7 +98,7 @@ fn check_intersections(
             state.ensure_inserted(p.1, HoveredBy::Left, p.0.translation());
         }
 
-        if bb_sphere_right.intersects(&test) {
+        if test.intersects(&bb_sphere_right) {
             // event_writer.write(Intersection::Right(p.1));
             if !state.contains_entity_and_controller(&p.1, &HoveredBy::Right) {
                 commands.trigger_targets(
@@ -117,7 +132,7 @@ fn check_intersections(
             );
 
             for collision in collisions.iter() {
-                let (transform, _) = pickable
+                let (transform, _, _) = pickable
                     .get(collision.0)
                     .expect("This is already checked in the mesh_ray_casting filter option");
                 if !state.contains_entity_and_controller(&collision.0, &hovered_by) {
@@ -143,7 +158,7 @@ fn check_intersections(
 fn test_all_hovered(
     mut commands: Commands,
     pickable: Query<
-        (&GlobalTransform, Entity, Option<&Picking3dTranslation>),
+        (&GlobalTransform, Entity, Option<&CustomPicking3dHitbox>),
         (
             With<Picking3dInteractable>,
             Without<GripLeft>,
@@ -181,10 +196,15 @@ fn test_all_hovered(
         }
         let p = p.unwrap();
 
-        let test = if p.2.is_some() {
-            BoundingSphere::new(p.0.transform_point(p.2.unwrap().0), 0.1 * scale)
+        let test: Box<dyn IntersectsVolume<BoundingSphere>> = if p.2.is_some() {
+            match p.2.unwrap() {
+                CustomPicking3dHitbox::Sphere(s) => {
+                    Box::new(BoundingSphere::new(p.0.translation(), *s))
+                }
+                CustomPicking3dHitbox::AaBb(aabb) => Box::new(aabb.clone()),
+            }
         } else {
-            BoundingSphere::new(p.0.translation(), 0.1 * scale)
+            Box::new(BoundingSphere::new(p.0.translation(), 0.1 * scale))
         };
 
         let mut is_first_ray_hit = false;
@@ -209,7 +229,7 @@ fn test_all_hovered(
                 is_first_ray_hit = true;
             }
         }
-        if !bb_sphere_left.intersects(&test) && !is_first_ray_hit {
+        if !test.intersects(&bb_sphere_left) && !is_first_ray_hit {
             to_remove.push((p.1, HoveredBy::Left));
         }
 
@@ -235,7 +255,7 @@ fn test_all_hovered(
                 is_first_ray_hit = true;
             }
         }
-        if !bb_sphere_right.intersects(&test) && !is_first_ray_hit {
+        if !test.intersects(&bb_sphere_right) && !is_first_ray_hit {
             to_remove.push((p.1, HoveredBy::Right));
         }
     }
