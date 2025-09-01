@@ -145,7 +145,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             .transform_set
             .p2()
             .detect_closest_projected(control_parent.1.0, translation)
-            && closest_move_direction.length() < 0.05
+            && closest_move_direction.length() < 0.05 * self.info.scale
         {
             self.snap_to_projection(control_parent, translation, closest_move_direction)
         } else {
@@ -192,7 +192,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                         .transform_set
                         .p2()
                         .detect_closest_projected(control_parent.1.0, translation)
-                        && closest_move_direction.length() < 0.05
+                        && closest_move_direction.length() < 0.05 * self.info.scale
                     {
                         self.snap_to_projection(control_parent, translation, closest_move_direction)
                     } else {
@@ -210,7 +210,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     .transform_set
                     .p2()
                     .detect_closest_projected(control_parent.1.0, translation)
-                    && closest_move_direction.length() < 0.05
+                    && closest_move_direction.length() < 0.05 * self.info.scale
                 {
                     let mut p0 = self.transform_set.p0();
                     let mut t = p0.get_mut(control_parent.1.0).unwrap();

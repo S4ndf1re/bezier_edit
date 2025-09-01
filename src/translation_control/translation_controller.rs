@@ -690,6 +690,7 @@ fn rotate_controller(
     mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
     control_storage: Res<ControlStorage>,
     state: Res<TranslationControllerState>,
+    info: Res<RenderInformation>,
 ) {
     let (control_rotation, child_of) = control_query.get(trigger.target()).unwrap();
 
@@ -757,14 +758,16 @@ fn rotate_controller(
                 //     forward.normalize_or_zero().dot(axis.normalized)
                 // );
                 if axis.with_rotation
-                    && forward.normalize_or_zero().dot(axis.normalized).abs() > 0.990
+                    && forward.normalize_or_zero().dot(axis.normalized).abs() > 0.990 * info.scale
                 {
                     parent_transform_mut.look_to(axis.normalized, up);
                     inverse = parent_transform_mut.rotation.inverse();
                     break;
                 }
 
-                if axis.with_rotation && up.normalize_or_zero().dot(axis.normalized).abs() > 0.990 {
+                if axis.with_rotation
+                    && up.normalize_or_zero().dot(axis.normalized).abs() > 0.990 * info.scale
+                {
                     parent_transform_mut.look_to(forward, axis.normalized);
                     inverse = parent_transform_mut.rotation.inverse();
                     break;

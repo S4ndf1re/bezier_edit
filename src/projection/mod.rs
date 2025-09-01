@@ -159,9 +159,10 @@ fn handle_enable_ortho_camera(
 
         let root = root.single().unwrap();
         let root_transform = transforms.get(root).unwrap();
-        let affine = transform.compute_affine() * root_transform.compute_affine().inverse();
 
-        let transform = Transform::from_matrix(affine.into());
+        let affine_transform =
+            root_transform.compute_affine().inverse() * transform.compute_affine();
+        let transform = Transform::from_matrix(affine_transform.into());
 
         if let Some(cam_transform) = compute_new_transforms_for_cam_based_on_surface(transform) {
             info!("Transform: {:?}", transform);
