@@ -8,8 +8,8 @@ use crate::picking3d::pointer_state::Pointer3dState;
 use crate::vr_control::trigger::{ControllerSqueeze, ControllerTrigger};
 use crate::vr_control::{AimLeft, AimRight, GripLeft, GripRight};
 use bevy::color::palettes::css::POWDER_BLUE;
-use bevy::math::Vec3;
 use bevy::math::bounding::{Aabb3d, BoundingSphere, IntersectsVolume};
+use bevy::math::Vec3;
 use bevy::prelude::*;
 
 #[derive(Component)]
@@ -386,7 +386,10 @@ fn handle_input_grab(
             for (_, _, entity) in moved_marked_query.iter() {
                 commands.get_entity(entity).unwrap().despawn();
             }
-        } else if current_state && pointer_state.is_grabbing(&hover_by) {
+        } else if current_state
+            && pointer_state.is_grabbing(&hover_by)
+            && !pointer_state.is_just_toggled(&hover_by)
+        {
             // Either start dragging here, since we crossed the n tick mark, or continue dragging
             if !is_dragging {
                 let mut dragging_should_start = false;
@@ -398,35 +401,33 @@ fn handle_input_grab(
                     };
                     let dist = translation - tracked.0.translation();
 
-                    if dist.length() > 0.1 * info.scale || !pointer_state.is_just_toggled(&hover_by)
-                    {
-                        // The controller may be rotated. In order to properly spawn the child, use the inverse rotation.
-                        let dist = tracked.0.rotation().inverse().mul_vec3(dist);
-                        let dist = dist / tracked.0.scale();
+                    info!("Dist.length() = {}", dist.length());
+                    // The controller may be rotated. In order to properly spawn the child, use the inverse rotation.
+                    let dist = tracked.0.rotation().inverse().mul_vec3(dist);
+                    let dist = dist / tracked.0.scale();
 
-                        commands.spawn((
-                            ChildOf(tracked.1),
-                            Transform::from_translation(dist),
-                            Visibility::default(),
-                            MoveMarker {
-                                entity: *entity,
-                                global_start: transform.translation(),
-                                current_position: tracked.0.transform_point(dist),
-                            },
-                        ));
+                    commands.spawn((
+                        ChildOf(tracked.1),
+                        Transform::from_translation(dist),
+                        Visibility::default(),
+                        MoveMarker {
+                            entity: *entity,
+                            global_start: transform.translation(),
+                            current_position: tracked.0.transform_point(dist),
+                        },
+                    ));
 
-                        commands.trigger_targets(
-                            Pointer3d {
-                                controler: hover_by,
-                                hit_entity: tracked.1,
-                                event: DragStart,
-                                position: transform.translation(),
-                            },
-                            *entity,
-                        );
+                    commands.trigger_targets(
+                        Pointer3d {
+                            controler: hover_by,
+                            hit_entity: tracked.1,
+                            event: DragStart,
+                            position: transform.translation(),
+                        },
+                        *entity,
+                    );
 
-                        dragging_should_start = true;
-                    }
+                    dragging_should_start = true;
                 }
 
                 if dragging_should_start {
@@ -556,20 +557,19 @@ pub fn show_aim(
     mut set: ParamSet<(ResMut<Assets<Mesh>>, MeshRayCast)>,
     scale: Res<RenderInformation>,
 ) {
-    for line in aim_line {
-        if line.1.0 == HoveredBy::Left && squeeze.left <= 0.2
-            || line.1.0 == HoveredBy::Right && squeeze.right <= 0.2
-        {
-            commands.get_entity(line.0).unwrap().despawn();
-        }
-    }
+    // for line in aim_line {
+    //     if line.1.0 == HoveredBy::Left && squeeze.left <= 0.2
+    //         || line.1.0 == HoveredBy::Right && squeeze.right <= 0.2
+    //     {
+    //         commands.get_entity(line.0).unwrap().despawn();
+    //     }
+    // }
 
     for (squeeze, aim_query, hovered_by) in [
         (squeeze.left, aim_query_left.single(), HoveredBy::Left),
         (squeeze.right, aim_query_right.single(), HoveredBy::Right),
     ] {
-        if squeeze >= 0.2
-            && let Ok(aim) = aim_query
+        if let Ok(aim) = aim_query
             && aim_line
                 .iter()
                 .position(|line| line.1.0 == hovered_by)

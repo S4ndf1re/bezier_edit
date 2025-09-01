@@ -1,12 +1,13 @@
 use bevy::{
     ecs::{
         relationship::RelatedSpawnerCommands,
-        system::{SystemParam, lifetimeless::Read},
+        system::{lifetimeless::Read, SystemParam},
     },
     prelude::*,
 };
 use std::slice::Iter;
 
+use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::{
     nurbs::{parametric::Parametric, plane::Plane3d},
     translation_control::{
@@ -200,6 +201,7 @@ impl<'w, 's> SpawnLinkedEntities<'w, 's> {
                         parent: entity,
                         position_type: positioning_type,
                     },
+                    Picking3dInteractable,
                 ))
                 .observe(enable_gizmo(enable_translation_control))
                 .observe(enable_gizmo3d(enable_translation_control));

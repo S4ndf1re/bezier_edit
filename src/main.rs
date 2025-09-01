@@ -122,7 +122,9 @@ fn create_app() -> App {
     use bevy_mod_openxr::resources::OxrSessionConfig;
     use bevy_mod_openxr::types::EnvironmentBlendMode;
     use click_decider::TracingPlugin;
+    use linked_entities::LinkedEntitiesPlugin;
     use picking3d::picking_3d::ObjectPicking3d;
+    use projection::ProjectionPlugin;
 
     info!("Creating VR App");
     let mut app = App::new();

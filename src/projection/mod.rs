@@ -1,7 +1,7 @@
 use bevy::{
     asset::RenderAssetUsages,
     color::palettes::tailwind::{BLUE_500, RED_800},
-    ecs::system::{SystemParam, lifetimeless::Read},
+    ecs::system::{lifetimeless::Read, SystemParam},
     prelude::*,
     render::{
         camera::ScalingMode,
@@ -11,7 +11,6 @@ use bevy::{
 };
 
 use crate::{
-    RootTransform,
     bezier_curve::{
         bezier_curve_renderer::{EndModeEvent, RedrawEvent},
         components::ControlState,
@@ -25,6 +24,7 @@ use crate::{
     translation_control::{
         enable_gizmo, enable_gizmo3d, translation_controller::EnableTranslationControl,
     },
+    RootTransform,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -292,6 +292,7 @@ fn update_ortho_camera_viewports(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut gizmos: Gizmos,
+    info: Res<RenderInformation>,
 ) {
     if reader.is_empty() {
         return;
@@ -356,7 +357,7 @@ fn update_ortho_camera_viewports(
         }
 
         // apply padding of 1 unit length on each side
-        max_distance += Vec2::ONE;
+        max_distance += Vec2::ONE * info.scale;
 
         // Compute the projection size and the ratio, which will then be in the interval [0, 1]
         // This is times to, in order to capture full projection
