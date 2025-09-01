@@ -8,6 +8,10 @@ pub struct Ray3d {
 }
 
 impl Ray3d {
+    pub fn new(origin: Point, direction: Point) -> Self {
+        Self { origin, direction }
+    }
+
     pub fn plane_intersection(&self, plane: &Plane3d) -> Option<f64> {
         let denom = &plane.normal * &self.direction;
 
@@ -19,6 +23,20 @@ impl Ray3d {
             if t >= 0.0 {
                 return Some(t);
             }
+        }
+
+        None
+    }
+
+    pub fn plane_intersection_both_ends(&self, plane: &Plane3d) -> Option<f64> {
+        let denom = &plane.normal * &self.direction;
+
+        // NOTE: Choose any eps that is regarded as sufficient. The closer to 0, the more exact
+        // the intersection will be
+        if denom.abs() > 0.000001 {
+            let t = (&(&plane.origin - &self.origin) * &plane.normal) / denom;
+
+            return Some(t);
         }
 
         None
@@ -51,6 +69,16 @@ impl Plane3d {
         assert!((&u * &normal).abs() <= 0.00001,);
         assert!((&v * &normal).abs() <= 0.00001);
 
+        Self {
+            origin,
+            normal: normal.normalize(),
+            u: u.normalize(),
+            v: v.normalize(),
+        }
+    }
+
+    // same as new, but without asserts that (n and u) and (n and v) are orthogonal
+    pub fn new_unchecked(origin: Point, normal: Point, u: Point, v: Point) -> Self {
         Self {
             origin,
             normal: normal.normalize(),

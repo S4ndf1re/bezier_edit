@@ -421,18 +421,10 @@ pub fn generate_default_curve(
                     Picking3dInteractable,
                     RenderLayers::from(DisplayIn::BothNormalAndOrtho),
                 ))
-                .with_children(|cmd| {
-                    // TODO: remove this once rotation is fixed
-                    cmd.spawn((
-                        Transform::default(),
-                        Mesh3d(meshes.add(Cuboid::new(0.07, 0.07, 0.4))),
-                        MeshMaterial3d(material.clone()),
-                    ));
-                })
                 .observe(update_material_on::<Pointer<Over>>(material_hover.clone()))
                 .observe(update_material_on::<Pointer<Out>>(material.clone()))
                 //.observe(drag_point)
-                .observe(enable_gizmo(EnableTranslationControl::WithRotation))
+                .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
                 .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
                 .id();
             ids.push(id);

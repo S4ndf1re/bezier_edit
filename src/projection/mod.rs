@@ -17,7 +17,9 @@ use crate::{
         components::ControlState,
         render_info::RenderInformation,
     },
-    linked_entities::{RemoveLinkedEntities, ReversePositioningType, SpawnLinkedEntities},
+    linked_entities::{
+        LinkTarget, RemoveLinkedEntities, ReversePositioningType, SpawnLinkedEntities,
+    },
     nurbs::parametric::Parametric,
     picking3d::picking_3d::Picking3dInteractable,
     translation_control::{
@@ -442,6 +444,7 @@ pub struct ProjectedSnappingDetector<'w, 's> {
     cameras: Query<'w, 's, Read<OrthoCamera>, Without<OrthoSurfaceParent>>,
     surfaces: Query<'w, 's, Read<Transform>, (With<OrthoSurfaceParent>, Without<OrthoCamera>)>,
     transform: Query<'w, 's, Read<Transform>, (Without<OrthoCamera>, Without<OrthoSurfaceParent>)>,
+    link_targets: Query<'w, 's, Read<LinkTarget>>,
 }
 
 impl<'w, 's> ProjectedSnappingDetector<'w, 's> {
@@ -468,6 +471,12 @@ impl<'w, 's> ProjectedSnappingDetector<'w, 's> {
 
                     for point in &camera.bounding_volume_determining_entities {
                         if *point != snappable_entity
+                            && (self.link_targets.get(snappable_entity).is_err()
+                                || self
+                                    .link_targets
+                                    .get(snappable_entity)
+                                    .ok()
+                                    .is_some_and(|e| e.parent != *point))
                             && let Ok(transform) = self.transform.get(*point)
                             && let Some(uv) = plane
                                 .point_projected_on_plane_orthogonal(transform.translation.into())

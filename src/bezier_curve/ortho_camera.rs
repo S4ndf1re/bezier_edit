@@ -29,7 +29,7 @@ pub fn create_camera_on_click(
             let point_of_intersection = ray.get_point(dist);
             let diff = camera_transform.translation() - point_of_intersection;
             let distance = diff.length();
-            let pos_of_surface = camera_transform.forward().normalize_or_zero() * distance * 2.0
+            let pos_of_surface = camera_transform.forward().normalize_or_zero() * distance * 1.5
                 + camera_transform.translation();
             let transform = Transform::from_translation(pos_of_surface)
                 .looking_at(-camera_transform.forward().as_vec3(), Vec3::Y);

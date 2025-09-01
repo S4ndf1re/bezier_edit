@@ -13,6 +13,7 @@ use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration}
 use crate::{MainCamera, RootTransform};
 use bevy::color::palettes::tailwind::{BLUE_600, BLUE_800, GRAY_500, RED_600, RED_800};
 use bevy::ecs::relationship::RelatedSpawnerCommands;
+use bevy::math::ops::atan2;
 use bevy::prelude::*;
 use std::collections::HashSet;
 use std::f32::consts::FRAC_PI_2;
@@ -73,6 +74,7 @@ pub struct Control(pub Vec3);
 pub struct ControlRotation {
     pub normal: Vec3,
     pub radius: f64,
+    pub last_vector: Vec3,
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -330,6 +332,7 @@ fn show_transitional_controls(
                                         ControlRotation {
                                             normal: arrow.normalized,
                                             radius: 0.4 * scale as f64,
+                                            last_vector: Vec3::ZERO,
                                         },
                                         Visibility::default(),
                                     ))
@@ -342,6 +345,8 @@ fn show_transitional_controls(
                                             scale,
                                         );
                                     })
+                                    .observe(rotate_start)
+                                    .observe(rotate_start3d)
                                     .observe(rotate_controller)
                                     .observe(rotate_controller3d)
                                     .observe(rotate_end_trigger_redraw)
@@ -678,69 +683,241 @@ pub fn drag_controller3d(
 }
 
 #[allow(clippy::complexity)]
+fn rotate_start(
+    trigger: Trigger<Pointer<DragStart>>,
+    camera: Query<(&Camera, &GlobalTransform), (Without<RootTransform>, With<MainCamera>)>,
+    mut control_query: Query<(&mut ControlRotation, &ChildOf)>,
+    control_parents: Query<&ControlParent>,
+    transforms: Query<&Transform, Without<RootTransform>>,
+    root: Query<&Transform, With<RootTransform>>,
+) {
+    let (mut control_rotation, child_of) = control_query.get_mut(trigger.target()).unwrap();
+    let parent = child_of.parent();
+    let control_parent = control_parents.get(parent).unwrap();
+    let parent_transform = *transforms.get(control_parent.0).unwrap();
+
+    let root = root.single().unwrap();
+
+    if let Ok((camera, camera_transform)) = camera.single()
+        && let Ok(ray) =
+            camera.viewport_to_world(camera_transform, trigger.pointer_location.position)
+    {
+        let inverse = root.compute_affine().inverse();
+        let new_origin = inverse.transform_point3(ray.origin);
+        let new_direction = inverse.transform_vector3(ray.direction.as_vec3());
+
+        // Use custom ray implementation
+        let ray = crate::nurbs::plane::Ray3d::new(new_origin.into(), new_direction.into());
+
+        let plane = crate::nurbs::plane::Plane3d::new_unchecked(
+            parent_transform.translation.into(),
+            control_rotation.normal.into(),
+            Vec3::ZERO.into(),
+            Vec3::ZERO.into(),
+        );
+
+        if let Some(hit) = ray.plane_intersection_both_ends(&plane) {
+            let point: Vec3 = ray.f(&[hit]).into();
+            let diff = (point - parent_transform.translation).normalize_or_zero()
+                * control_rotation.radius as f32;
+
+            control_rotation.last_vector = diff;
+        }
+    }
+}
+
+#[allow(clippy::complexity)]
+fn rotate_start3d(
+    trigger: Trigger<Pointer3d<crate::picking3d::events::DragStart>>,
+    mut control_query: Query<(&mut ControlRotation, &ChildOf)>,
+    control_parents: Query<&ControlParent>,
+    transforms: Query<&Transform, Without<RootTransform>>,
+    root: Query<&Transform, With<RootTransform>>,
+) {
+    let (mut control_rotation, child_of) = control_query.get_mut(trigger.target()).unwrap();
+    let parent = child_of.parent();
+    let control_parent = control_parents.get(parent).unwrap();
+    let parent_transform = *transforms.get(control_parent.0).unwrap();
+
+    let root = root.single().unwrap();
+
+    let origin = trigger.event().position;
+    let inverse = root.compute_affine().inverse();
+    let new_origin = inverse.transform_point3(origin);
+    let new_direction = -control_rotation.normal;
+
+    // Use custom ray implementation
+    let ray = crate::nurbs::plane::Ray3d::new(new_origin.into(), new_direction.into());
+
+    let plane = crate::nurbs::plane::Plane3d::new_unchecked(
+        parent_transform.translation.into(),
+        control_rotation.normal.into(),
+        Vec3::ZERO.into(),
+        Vec3::ZERO.into(),
+    );
+
+    if let Some(hit) = ray.plane_intersection_both_ends(&plane) {
+        let point: Vec3 = ray.f(&[hit]).into();
+        let diff = (point - parent_transform.translation).normalize_or_zero()
+            * control_rotation.radius as f32;
+
+        control_rotation.last_vector = diff;
+    }
+}
+
+#[allow(clippy::complexity)]
 fn rotate_controller(
     trigger: Trigger<Pointer<Drag>>,
-    control_query: Query<(&ControlRotation, &ChildOf)>,
+    mut control_query: Query<(&mut ControlRotation, &ChildOf)>,
     camera: Query<(&Camera, &GlobalTransform), (Without<RootTransform>, With<MainCamera>)>,
-    mut control_parents: Query<&ControlParent>,
-    root: Query<&GlobalTransform, With<RootTransform>>,
-    global_transforms: Query<&GlobalTransform, (Without<RootTransform>, Without<Camera>)>,
-    mut changable_transforms: Query<&mut Transform>,
+    control_parents: Query<&ControlParent>,
+    root: Query<&Transform, With<RootTransform>>,
+    mut changable_transforms: Query<&mut Transform, Without<RootTransform>>,
     mut redraw_writer: EventWriter<RedrawEvent>,
     mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
     control_storage: Res<ControlStorage>,
     state: Res<TranslationControllerState>,
-    info: Res<RenderInformation>,
 ) {
-    let (control_rotation, child_of) = control_query.get(trigger.target()).unwrap();
+    let (mut control_rotation, child_of) = control_query.get_mut(trigger.target()).unwrap();
 
     let parent = child_of.parent();
-    let control_parent = control_parents.get_mut(parent).unwrap();
+    let control_parent = control_parents.get(parent).unwrap();
     let parent_transform = *changable_transforms.get(control_parent.0).unwrap();
     let root = root.single().unwrap();
 
-    if let Ok((camera, camera_transform)) = camera.single() {
-        let (start, diff) = {
-            let dist = (global_transforms
-                .get(control_parent.0)
-                .unwrap()
-                .translation()
-                - camera_transform.translation())
-            .length();
+    if let Ok((camera, camera_transform)) = camera.single()
+        && let Ok(ray) =
+            camera.viewport_to_world(camera_transform, trigger.pointer_location.position)
+    {
+        let inverse = root.compute_affine().inverse();
+        let new_origin = inverse.transform_point3(ray.origin);
+        let new_direction = inverse.transform_vector3(ray.direction.as_vec3());
 
-            let mouse_start = camera
-                .viewport_to_world(
-                    camera_transform,
-                    trigger.pointer_location.position - trigger.delta,
-                )
-                .unwrap();
+        // Use custom ray implementation
+        let ray = crate::nurbs::plane::Ray3d::new(new_origin.into(), new_direction.into());
 
-            let mouse_end = camera
-                .viewport_to_world(camera_transform, trigger.pointer_location.position)
-                .unwrap();
-
-            let start = mouse_start.get_point(dist);
-            let end = mouse_end.get_point(dist);
-            (start, root.affine().inverse().transform_point3(end - start))
-        };
-
-        let circle = Circle3D::new(
+        let plane = crate::nurbs::plane::Plane3d::new_unchecked(
             parent_transform.translation.into(),
-            control_rotation.radius,
             control_rotation.normal.into(),
+            Vec3::ZERO.into(),
+            Vec3::ZERO.into(),
         );
 
-        let closest = circle.min_distance_to_point(start.into());
+        if let Some(hit) = ray.plane_intersection_both_ends(&plane) {
+            let point: Vec3 = ray.f(&[hit]).into();
+            let diff = (point - parent_transform.translation).normalize_or_zero()
+                * control_rotation.radius as f32;
 
-        let axis: Vec3 = circle.derive(&closest.params, 1).into();
+            let last_diff = control_rotation.last_vector;
+            control_rotation.last_vector = diff;
 
-        let direction = (diff.dot(axis)) / (diff.length() * axis.length());
-        let angle = direction * diff.length();
+            let angle = atan2(last_diff.cross(diff).length(), last_diff.dot(diff));
+            info!(angle);
+            let sign = (last_diff.cross(diff).dot(control_rotation.normal)).signum();
 
-        let mut parent_transform_mut = changable_transforms.get_mut(control_parent.0).unwrap();
+            let mut parent_transform_mut = changable_transforms.get_mut(control_parent.0).unwrap();
+            let (mut inverse, mut forward, mut up) = {
+                parent_transform_mut.rotation =
+                    Quat::from_axis_angle(control_rotation.normal, angle * sign)
+                        * parent_transform_mut.rotation;
+                (
+                    parent_transform_mut.rotation.inverse(),
+                    parent_transform_mut.forward().as_vec3(),
+                    parent_transform_mut.up().as_vec3(),
+                )
+            };
+
+            if state.curve_snapping == SnappingBehaviour::Snap {
+                for axis in control_storage.iter() {
+                    // info!(
+                    //     "With axis {}, and forward {forward:?}, the diff is {}",
+                    //     axis.normalized,
+                    //     forward.normalize_or_zero().dot(axis.normalized)
+                    // );
+                    if axis.with_rotation {
+                        let cos_score = forward.normalize_or_zero().dot(axis.normalized);
+                        if cos_score.abs() > 0.999 {
+                            let multiplier = cos_score.signum();
+                            forward = axis.normalized * multiplier;
+                            // parent_transform_mut.look_to(axis.normalized * multiplier, up);
+                            // forward = parent_transform.forward();
+                            // inverse = parent_transform_mut.rotation.inverse();
+                        }
+
+                        let cos_score = up.normalize_or_zero().dot(axis.normalized);
+                        if cos_score.abs() > 0.999 {
+                            let multiplier = cos_score.signum();
+                            up = axis.normalized * multiplier;
+                            // parent_transform_mut.look_to(forward, axis.normalized * multiplier);
+                            // inverse = parent_transform_mut.rotation.inverse();
+                        }
+                    }
+                }
+
+                parent_transform_mut.look_to(forward, up);
+                inverse = parent_transform_mut.rotation.inverse();
+            }
+
+            let mut arrow_transform = changable_transforms.get_mut(parent).unwrap();
+            arrow_transform.rotation = inverse;
+        }
+
+        redraw_writer.write(RedrawEvent::Fast);
+        redraw_curves_writer.write(RedrawCurvesEvent);
+    }
+}
+
+#[allow(clippy::complexity)]
+fn rotate_controller3d(
+    trigger: Trigger<Pointer3d<crate::picking3d::events::Drag>>,
+    mut control_query: Query<(&mut ControlRotation, &ChildOf)>,
+    control_parents: Query<&ControlParent>,
+    root: Query<&Transform, With<RootTransform>>,
+    mut changeable_transforms: Query<&mut Transform, Without<RootTransform>>,
+    mut redraw_writer: EventWriter<RedrawEvent>,
+    mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
+    control_storage: Res<ControlStorage>,
+    state: Res<TranslationControllerState>,
+) {
+    let (mut control_rotation, child_of) = control_query.get_mut(trigger.target()).unwrap();
+    let parent = child_of.parent();
+    let control_parent = control_parents.get(parent).unwrap();
+    let parent_transform = *changeable_transforms.get(control_parent.0).unwrap();
+
+    let root = root.single().unwrap();
+
+    let origin = trigger.event().position;
+    let inverse = root.compute_affine().inverse();
+    let new_origin = inverse.transform_point3(origin);
+    let new_direction = -control_rotation.normal;
+
+    // Use custom ray implementation
+    let ray = crate::nurbs::plane::Ray3d::new(new_origin.into(), new_direction.into());
+
+    let plane = crate::nurbs::plane::Plane3d::new_unchecked(
+        parent_transform.translation.into(),
+        control_rotation.normal.into(),
+        Vec3::ZERO.into(),
+        Vec3::ZERO.into(),
+    );
+
+    if let Some(hit) = ray.plane_intersection_both_ends(&plane) {
+        let point: Vec3 = ray.f(&[hit]).into();
+        let diff = (point - parent_transform.translation).normalize_or_zero()
+            * control_rotation.radius as f32;
+
+        let last_diff = control_rotation.last_vector;
+        control_rotation.last_vector = diff;
+
+        let angle = atan2(last_diff.cross(diff).length(), last_diff.dot(diff));
+        info!(angle);
+        let sign = (last_diff.cross(diff).dot(control_rotation.normal)).signum();
+
+        let mut parent_transform_mut = changeable_transforms.get_mut(control_parent.0).unwrap();
         let (mut inverse, mut forward, mut up) = {
-            parent_transform_mut.rotation = Quat::from_axis_angle(control_rotation.normal, angle)
-                * parent_transform_mut.rotation;
+            parent_transform_mut.rotation =
+                Quat::from_axis_angle(control_rotation.normal, angle * sign)
+                    * parent_transform_mut.rotation;
             (
                 parent_transform_mut.rotation.inverse(),
                 parent_transform_mut.forward().as_vec3(),
@@ -757,8 +934,8 @@ fn rotate_controller(
                 // );
                 if axis.with_rotation {
                     let cos_score = forward.normalize_or_zero().dot(axis.normalized);
-                    if cos_score.abs() > 0.99 {
-                        let multiplier = if cos_score > 0.0 { 1.0 } else { -1.0 };
+                    if cos_score.abs() > 0.999 {
+                        let multiplier = cos_score.signum();
                         forward = axis.normalized * multiplier;
                         // parent_transform_mut.look_to(axis.normalized * multiplier, up);
                         // forward = parent_transform.forward();
@@ -766,8 +943,8 @@ fn rotate_controller(
                     }
 
                     let cos_score = up.normalize_or_zero().dot(axis.normalized);
-                    if cos_score.abs() > 0.99 {
-                        let multiplier = if cos_score > 0.0 { 1.0 } else { -1.0 };
+                    if cos_score.abs() > 0.999 {
+                        let multiplier = cos_score.signum();
                         up = axis.normalized * multiplier;
                         // parent_transform_mut.look_to(forward, axis.normalized * multiplier);
                         // inverse = parent_transform_mut.rotation.inverse();
@@ -775,72 +952,16 @@ fn rotate_controller(
                 }
             }
 
-            parent_transform_mut.align(Vec3::NEG_Z, forward, Vec3::Y, up);
+            parent_transform_mut.look_to(forward, up);
             inverse = parent_transform_mut.rotation.inverse();
         }
 
-        let mut arrow_transform = changable_transforms.get_mut(parent).unwrap();
+        let mut arrow_transform = changeable_transforms.get_mut(parent).unwrap();
         arrow_transform.rotation = inverse;
 
         redraw_writer.write(RedrawEvent::Fast);
         redraw_curves_writer.write(RedrawCurvesEvent);
     }
-}
-
-#[allow(clippy::complexity)]
-fn rotate_controller3d(
-    trigger: Trigger<Pointer3d<crate::picking3d::events::Drag>>,
-    control_query: Query<(&ControlRotation, &ChildOf)>,
-    mut control_parents: Query<&ControlParent>,
-    root: Query<&GlobalTransform, With<RootTransform>>,
-    mut changable_transforms: Query<&mut Transform>,
-    mut redraw_writer: EventWriter<RedrawEvent>,
-    mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
-) {
-    let (control_rotation, child_of) = control_query.get(trigger.target()).unwrap();
-
-    let parent = child_of.parent();
-    let control_parent = control_parents.get_mut(parent).unwrap();
-    let parent_transform = *changable_transforms.get(control_parent.0).unwrap();
-
-    let (start, diff) = {
-        let diff = trigger.event.delta;
-        let start = trigger.event.current_entity_position - diff;
-
-        (
-            start,
-            root.single()
-                .unwrap()
-                .affine()
-                .inverse()
-                .transform_point3(diff),
-        )
-    };
-
-    let circle = Circle3D::new(
-        parent_transform.translation.into(),
-        control_rotation.radius,
-        control_rotation.normal.into(),
-    );
-
-    let closest = circle.min_distance_to_point(start.into());
-    let axis: Vec3 = circle.derive(&closest.params, 1).into();
-
-    let direction = (diff.dot(axis)) / (diff.length() * axis.length());
-    let angle = direction * diff.length();
-
-    let inverse = {
-        let mut parent_transform = changable_transforms.get_mut(control_parent.0).unwrap();
-        parent_transform.rotation =
-            Quat::from_axis_angle(control_rotation.normal, angle) * parent_transform.rotation;
-        parent_transform.rotation.inverse()
-    };
-
-    let mut arrow_transform = changable_transforms.get_mut(parent).unwrap();
-    arrow_transform.rotation = inverse;
-
-    redraw_writer.write(RedrawEvent::Fast);
-    redraw_curves_writer.write(RedrawCurvesEvent);
 }
 
 #[allow(clippy::complexity)]
