@@ -35,7 +35,8 @@ struct MoveMarker {
 #[derive(Component)]
 pub enum CustomPicking3dHitbox {
     Sphere(f32),
-    AaBb(Aabb3d),
+    /// Aabb from half size
+    AaBb(Vec3),
 }
 
 #[allow(clippy::complexity)]
@@ -76,7 +77,9 @@ fn check_intersections(
                 CustomPicking3dHitbox::Sphere(s) => {
                     Box::new(BoundingSphere::new(p.0.translation(), *s))
                 }
-                CustomPicking3dHitbox::AaBb(aabb) => Box::new(aabb.clone()),
+                CustomPicking3dHitbox::AaBb(aabb) => {
+                    Box::new(Aabb3d::new(p.0.translation(), *aabb))
+                }
             }
         } else {
             Box::new(BoundingSphere::new(p.0.translation(), 0.1 * scale))
@@ -201,7 +204,9 @@ fn test_all_hovered(
                 CustomPicking3dHitbox::Sphere(s) => {
                     Box::new(BoundingSphere::new(p.0.translation(), *s))
                 }
-                CustomPicking3dHitbox::AaBb(aabb) => Box::new(aabb.clone()),
+                CustomPicking3dHitbox::AaBb(aabb) => {
+                    Box::new(Aabb3d::new(p.0.translation(), *aabb))
+                }
             }
         } else {
             Box::new(BoundingSphere::new(p.0.translation(), 0.1 * scale))
