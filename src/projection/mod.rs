@@ -165,8 +165,6 @@ fn handle_enable_ortho_camera(
         let transform = Transform::from_matrix(affine_transform.into());
 
         if let Some(cam_transform) = compute_new_transforms_for_cam_based_on_surface(transform) {
-            info!("Transform: {:?}", transform);
-            info!("Camera Transform: {:?}", cam_transform);
             let mut camera = None;
             let mut surface_parent = None;
 

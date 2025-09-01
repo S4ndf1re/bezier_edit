@@ -59,7 +59,6 @@ fn update_parent_position(
 ) {
     for evt in event_reader.read() {
         if let Ok(target) = link_targets.get(evt.entity) {
-            info!("Moving by delta: {}", evt.delta);
             move_writer.write(MoveEntityByDeltaEvent {
                 entity: target.parent,
                 delta: evt.delta,
