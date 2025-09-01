@@ -49,7 +49,6 @@ pub fn enable_gizmo3d(
                 } else {
                     entity.insert(enable_translation_control);
                 }
-                println!("Sending log trace event");
                 trace_log_writer.write(LogTrace::default());
             }
         }

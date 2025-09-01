@@ -401,7 +401,6 @@ fn handle_input_grab(
                     };
                     let dist = translation - tracked.0.translation();
 
-                    info!("Dist.length() = {}", dist.length());
                     // The controller may be rotated. In order to properly spawn the child, use the inverse rotation.
                     let dist = tracked.0.rotation().inverse().mul_vec3(dist);
                     let dist = dist / tracked.0.scale();

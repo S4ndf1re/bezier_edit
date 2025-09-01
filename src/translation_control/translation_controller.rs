@@ -872,7 +872,6 @@ fn rotate_controller3d(
     control_storage: Res<ControlStorage>,
     state: Res<TranslationControllerState>,
 ) {
-    info!("Triggering rotation");
     let (mut control_rotation, child_of) = control_query.get_mut(trigger.target()).unwrap();
     let parent = child_of.parent();
     let control_parent = control_parents.get(parent).unwrap();
@@ -881,7 +880,6 @@ fn rotate_controller3d(
     let root = root.single().unwrap();
 
     let origin = trigger.event().event.current_entity_position;
-    info!("Position: {origin}");
     let inverse = root.compute_affine().inverse();
     let new_origin = inverse.transform_point3(origin);
     let new_direction = -control_rotation.normal;
@@ -898,7 +896,6 @@ fn rotate_controller3d(
 
     if let Some(hit) = ray.plane_intersection_both_ends(&plane) {
         let point: Vec3 = ray.f(&[hit]).into();
-        info!("Hit: {hit}, point: {point}");
         let diff = (point - parent_transform.translation).normalize_or_zero()
             * control_rotation.radius as f32;
 
@@ -906,7 +903,6 @@ fn rotate_controller3d(
         control_rotation.last_vector = diff;
 
         let angle = atan2(last_diff.cross(diff).length(), last_diff.dot(diff));
-        info!(angle);
         let sign = (last_diff.cross(diff).dot(control_rotation.normal)).signum();
 
         let mut parent_transform_mut = changeable_transforms.get_mut(control_parent.0).unwrap();
