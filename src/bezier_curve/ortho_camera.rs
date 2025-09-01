@@ -1,6 +1,7 @@
 use bevy::{input::mouse::MouseButtonInput, prelude::*};
+use bevy_xr_utils::tracking_utils::XrTrackedView;
 
-use crate::{MainCamera, projection::EnableOrthoCamera};
+use crate::{MainCamera, RootTransform, picking3d, projection::EnableOrthoCamera};
 
 use super::{
     bezier_curve_renderer::EndModeEvent, components::RenderPoint, helper_curves::ControlCurvePoint,
@@ -28,7 +29,7 @@ pub fn create_camera_on_click(
             let point_of_intersection = ray.get_point(dist);
             let diff = camera_transform.translation() - point_of_intersection;
             let distance = diff.length();
-            let pos_of_surface = camera_transform.forward().normalize_or_zero() * distance * 1.5
+            let pos_of_surface = camera_transform.forward().normalize_or_zero() * distance * 2.0
                 + camera_transform.translation();
             let transform = Transform::from_translation(pos_of_surface)
                 .looking_at(-camera_transform.forward().as_vec3(), Vec3::Y);
@@ -38,6 +39,45 @@ pub fn create_camera_on_click(
                 render_points.iter().collect(),
             ));
             created_cam = true;
+        }
+    }
+
+    if created_cam {
+        end_state_writer.write(EndModeEvent);
+    }
+}
+
+#[allow(clippy::complexity)]
+/// Enable a camera in space
+pub fn create_camera_on_click3d(
+    mut reader: EventReader<picking3d::events::Pointer3d<picking3d::events::Click>>,
+    mut writer: EventWriter<EnableOrthoCamera>,
+    camera: Query<&GlobalTransform, With<XrTrackedView>>,
+    render_points: Query<Entity, Or<(With<RenderPoint>, With<ControlCurvePoint>)>>,
+    mut end_state_writer: EventWriter<EndModeEvent>,
+) {
+    let mut created_cam = false;
+
+    for _ in reader.read() {
+        if let Ok(camera_transform) = camera.single() {
+            let ray = Ray3d::new(camera_transform.translation(), camera_transform.forward());
+            let plane = InfinitePlane3d::new(camera_transform.forward());
+            if let Some(dist) = ray.intersect_plane(Vec3::ZERO, plane) {
+                let point_of_intersection = ray.get_point(dist);
+                let diff = camera_transform.translation() - point_of_intersection;
+                let distance = diff.length();
+                let pos_of_surface =
+                    camera_transform.forward().normalize_or_zero() * distance * 2.0
+                        + camera_transform.translation();
+                let transform = Transform::from_translation(pos_of_surface)
+                    .looking_at(-camera_transform.forward().as_vec3(), Vec3::Y);
+
+                writer.write(EnableOrthoCamera::new(
+                    transform,
+                    render_points.iter().collect(),
+                ));
+                created_cam = true;
+            }
         }
     }
 
