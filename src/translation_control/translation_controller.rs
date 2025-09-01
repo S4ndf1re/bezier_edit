@@ -733,20 +733,18 @@ fn rotate_controller(
         let closest = circle.min_distance_to_point(start.into());
 
         let axis: Vec3 = circle.derive(&closest.params, 1).into();
-        info!("axis: {axis}");
 
         let direction = (diff.dot(axis)) / (diff.length() * axis.length());
-        info!("Direction {direction}");
         let angle = direction * diff.length();
 
         let mut parent_transform_mut = changable_transforms.get_mut(control_parent.0).unwrap();
-        let (mut inverse, forward, up) = {
+        let (mut inverse, mut forward, mut up) = {
             parent_transform_mut.rotation = Quat::from_axis_angle(control_rotation.normal, angle)
                 * parent_transform_mut.rotation;
             (
                 parent_transform_mut.rotation.inverse(),
-                parent_transform_mut.forward(),
-                parent_transform_mut.up(),
+                parent_transform_mut.forward().as_vec3(),
+                parent_transform_mut.up().as_vec3(),
             )
         };
 
@@ -757,22 +755,28 @@ fn rotate_controller(
                 //     axis.normalized,
                 //     forward.normalize_or_zero().dot(axis.normalized)
                 // );
-                if axis.with_rotation
-                    && forward.normalize_or_zero().dot(axis.normalized).abs() > 0.990 * info.scale
-                {
-                    parent_transform_mut.look_to(axis.normalized, up);
-                    inverse = parent_transform_mut.rotation.inverse();
-                    break;
-                }
+                if axis.with_rotation {
+                    let cos_score = forward.normalize_or_zero().dot(axis.normalized);
+                    if cos_score.abs() > 0.99 {
+                        let multiplier = if cos_score > 0.0 { 1.0 } else { -1.0 };
+                        forward = axis.normalized * multiplier;
+                        // parent_transform_mut.look_to(axis.normalized * multiplier, up);
+                        // forward = parent_transform.forward();
+                        // inverse = parent_transform_mut.rotation.inverse();
+                    }
 
-                if axis.with_rotation
-                    && up.normalize_or_zero().dot(axis.normalized).abs() > 0.990 * info.scale
-                {
-                    parent_transform_mut.look_to(forward, axis.normalized);
-                    inverse = parent_transform_mut.rotation.inverse();
-                    break;
+                    let cos_score = up.normalize_or_zero().dot(axis.normalized);
+                    if cos_score.abs() > 0.99 {
+                        let multiplier = if cos_score > 0.0 { 1.0 } else { -1.0 };
+                        up = axis.normalized * multiplier;
+                        // parent_transform_mut.look_to(forward, axis.normalized * multiplier);
+                        // inverse = parent_transform_mut.rotation.inverse();
+                    }
                 }
             }
+
+            parent_transform_mut.align(Vec3::NEG_Z, forward, Vec3::Y, up);
+            inverse = parent_transform_mut.rotation.inverse();
         }
 
         let mut arrow_transform = changable_transforms.get_mut(parent).unwrap();
