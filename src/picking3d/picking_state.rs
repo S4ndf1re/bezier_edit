@@ -2,7 +2,7 @@ use crate::picking3d::events::HoveredBy;
 use bevy::math::Vec3;
 use bevy::prelude::{Entity, Resource};
 use std::collections::hash_set::Iter;
-use std::collections::{HashMap, HashSet, hash_map};
+use std::collections::{hash_map, HashMap, HashSet};
 
 #[derive(Resource)]
 pub struct PickingState {
@@ -100,7 +100,7 @@ impl PickingState {
         removed_inverse && removed
     }
 
-    pub fn iter(&self, controller: &HoveredBy) -> Iter<Entity> {
+    pub fn iter(&self, controller: &HoveredBy) -> Iter<'_, Entity> {
         match controller {
             HoveredBy::Left => self.hovered_by_left.iter(),
             HoveredBy::Right => self.hovered_by_right.iter(),

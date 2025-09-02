@@ -3,7 +3,7 @@ use std::sync::Arc;
 use bevy::{
     color::palettes::tailwind::RED_600, ecs::relationship::RelatedSpawnerCommands, prelude::*,
 };
-use bevy_lunex::{UiStateTrait, prelude::*};
+use bevy_lunex::{prelude::*, UiStateTrait};
 
 use crate::{
     click_decider::LogTrace,
@@ -65,7 +65,7 @@ fn spawn_children<'s>(
         UiLayout::window().full().pack(),
         UiHover::new().forward_speed(20.0).backward_speed(4.0),
         UiMeshPlane3d,
-        Picking3dInteractable,
+        Picking3dInteractable::default(),
     ))
     .with_children(|ui| {
         ui.spawn((
@@ -135,7 +135,7 @@ fn on_add(
                     UiLayout::solid().size(Rl(100.0)).pack(),
                     UiMeshPlane3d,
                     OnHoverSetCursor::new(bevy::window::SystemCursorIcon::Pointer),
-                    Picking3dInteractable,
+                    Picking3dInteractable::default(),
                 ))
                 .with_children(|ui| {
                     spawn_children(ui, slider.as_mut(), &mut materials);

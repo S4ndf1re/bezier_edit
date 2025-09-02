@@ -1,29 +1,25 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use super::bezier_curve_renderer::EndModeEvent;
-use super::{EntityDeletedEvent, components::ControlState, render_info::RenderInformation};
+use super::{components::ControlState, render_info::RenderInformation, EntityDeletedEvent};
 use crate::nurbs::bezier::de_casteljau;
 use crate::picking3d::picking_3d::Picking3dInteractable;
+use crate::projection::DisplayIn;
 use crate::translation_control::enable_gizmo3d;
 use crate::translation_control::translation_controller::CantSnapToCurve;
 use crate::{
-    RootTransform,
     click_decider::LogTrace,
-    nurbs::{
-        bezier::{horner_scheme, shortest_distance_to_point},
-        point::Point,
-    },
+    nurbs::{bezier::shortest_distance_to_point, point::Point},
     picking3d::events::{self, Click, Pointer3d},
     translation_control::translation_controller::EnableTranslationControl,
+    RootTransform,
 };
 use bevy::color::palettes::tailwind::PURPLE_900;
+use bevy::render::view::RenderLayers;
 use bevy::{
     asset::RenderAssetUsages,
     color::palettes::tailwind::PURPLE_600,
-    ecs::{
-        query::QueryData,
-        system::{SystemParam, lifetimeless::Read},
-    },
+    ecs::system::{lifetimeless::Read, SystemParam},
     prelude::*,
     render::mesh::PrimitiveTopology,
 };
@@ -84,6 +80,7 @@ pub fn add_point_3d(
                 Transform::from_translation(pos),
                 Mesh3d(sphere.clone()),
                 MeshMaterial3d(material.clone()),
+                RenderLayers::from(DisplayIn::BothNormalAndOrtho),
             ));
         });
         state.counter += 1;
@@ -104,7 +101,12 @@ pub fn enter_create_curve_mode(
 
     let root = root.single().unwrap();
     commands.get_entity(root).unwrap().with_children(|cmd| {
-        cmd.spawn((TemporaryCurve, Transform::default(), Visibility::Inherited));
+        cmd.spawn((
+            TemporaryCurve,
+            Transform::default(),
+            Visibility::Inherited,
+            RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+        ));
     });
 }
 
@@ -172,7 +174,13 @@ pub fn commit_curve(
             contains_points = true;
         }
         if contains_points {
-            let parent = commands.spawn((ControlCurve, ChildOf(root.0))).id();
+            let parent = commands
+                .spawn((
+                    ControlCurve,
+                    ChildOf(root.0),
+                    RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                ))
+                .id();
 
             for child_point_entity in children.iter_descendants(curve) {
                 let (entity, point) = tmp_points.get_mut(child_point_entity).unwrap();
@@ -187,7 +195,7 @@ pub fn commit_curve(
                     .remove::<TemporaryCurvePoint>()
                     .insert((
                         ControlCurvePoint(idx),
-                        Picking3dInteractable,
+                        Picking3dInteractable::default(),
                         CantSnapToCurve::Single(parent),
                     ))
                     .observe(handle_click_on_curve_point);

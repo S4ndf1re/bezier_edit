@@ -1,11 +1,10 @@
-use bevy::{input::mouse::MouseButtonInput, prelude::*};
+use bevy::prelude::*;
 use bevy_xr_utils::tracking_utils::XrTrackedView;
-
-use crate::{MainCamera, RootTransform, picking3d, projection::EnableOrthoCamera};
 
 use super::{
     bezier_curve_renderer::EndModeEvent, components::RenderPoint, helper_curves::ControlCurvePoint,
 };
+use crate::{picking3d, projection::EnableOrthoCamera, MainCamera};
 
 #[allow(clippy::complexity)]
 /// Enable a camera in space
@@ -14,7 +13,8 @@ pub fn create_camera_on_click(
     mouse: Res<ButtonInput<MouseButton>>,
     mut writer: EventWriter<EnableOrthoCamera>,
     camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
-    render_points: Query<Entity, Or<(With<RenderPoint>, With<ControlCurvePoint>)>>,
+    render_points: Query<Entity, With<RenderPoint>>,
+    control_points: Query<Entity, With<ControlCurvePoint>>,
     mut end_state_writer: EventWriter<EndModeEvent>,
 ) {
     let mut created_cam = false;
@@ -34,10 +34,10 @@ pub fn create_camera_on_click(
             let transform = Transform::from_translation(pos_of_surface)
                 .looking_at(-camera_transform.forward().as_vec3(), Vec3::Y);
 
-            writer.write(EnableOrthoCamera::new(
-                transform,
-                render_points.iter().collect(),
-            ));
+            let mut bounding_entities = Vec::new();
+            bounding_entities.extend(render_points.iter());
+            bounding_entities.extend(control_points.iter());
+            writer.write(EnableOrthoCamera::new(transform, bounding_entities));
             created_cam = true;
         }
     }
@@ -54,7 +54,8 @@ pub fn create_camera_on_click3d(
     mut reader: EventReader<picking3d::events::Pointer3d<picking3d::events::Click>>,
     mut writer: EventWriter<EnableOrthoCamera>,
     camera: Query<&GlobalTransform, With<XrTrackedView>>,
-    render_points: Query<Entity, Or<(With<RenderPoint>, With<ControlCurvePoint>)>>,
+    render_points: Query<Entity, With<RenderPoint>>,
+    control_points: Query<Entity, With<ControlCurvePoint>>,
     mut end_state_writer: EventWriter<EndModeEvent>,
 ) {
     let mut created_cam = false;
@@ -73,10 +74,10 @@ pub fn create_camera_on_click3d(
                 let transform = Transform::from_translation(pos_of_surface)
                     .looking_at(-camera_transform.forward().as_vec3(), Vec3::Y);
 
-                writer.write(EnableOrthoCamera::new(
-                    transform,
-                    render_points.iter().collect(),
-                ));
+                let mut bounding_entities = Vec::new();
+                bounding_entities.extend(render_points.iter());
+                bounding_entities.extend(control_points.iter());
+                writer.write(EnableOrthoCamera::new(transform, bounding_entities));
                 created_cam = true;
             }
         }

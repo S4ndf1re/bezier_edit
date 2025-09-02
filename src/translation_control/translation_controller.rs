@@ -130,12 +130,20 @@ fn register_deletes(
     mut commands: Commands,
     mut deleted: RemovedComponents<EnableTranslationControl>,
     mut controls: Query<(Entity, &mut Visibility, &ControlParent)>,
+    children: Query<&Children>,
+    mut picking3d_interactable: Query<&mut Picking3dInteractable>,
 ) {
     for event in deleted.read() {
         for (entity, mut visibility, contrl) in controls.iter_mut() {
             if contrl.0 == event {
                 *visibility = Visibility::Hidden;
                 commands.entity(entity).insert(Pickable::IGNORE);
+
+                for child in children.iter_descendants(event) {
+                    if let Ok(mut pickable) = picking3d_interactable.get_mut(child) {
+                        *pickable = Picking3dInteractable::Ignore;
+                    }
+                }
             }
         }
     }
@@ -157,7 +165,7 @@ pub fn draw_arrow(
         Transform::from_xyz(0.0, 0.0, -0.4 * scale),
         MeshMaterial3d(mat.clone()),
         Mesh3d(cuboid.clone()),
-        Picking3dInteractable,
+        Picking3dInteractable::Default,
     ));
     obj.observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()))
@@ -166,16 +174,21 @@ pub fn draw_arrow(
     if !is_shadow {
         obj.observe(
             |trigger: Trigger<Pointer3d<MoveIn>>,
+             picking3d_interactable: Query<&Picking3dInteractable>,
              mut writer_left: EventWriter<VibrateLeftEvent>,
              mut writer_right: EventWriter<VibrateRightEvent>| {
-                match trigger.controler {
-                    HoveredBy::Left => {
-                        writer_left.write(VibrateLeftEvent::new(Vibration::default()));
-                    }
-                    HoveredBy::Right => {
-                        writer_right.write(VibrateRightEvent::new(Vibration::default()));
-                    }
-                };
+                if let Ok(Picking3dInteractable::Default) =
+                    picking3d_interactable.get(trigger.observer())
+                {
+                    match trigger.controler {
+                        HoveredBy::Left => {
+                            writer_left.write(VibrateLeftEvent::new(Vibration::default()));
+                        }
+                        HoveredBy::Right => {
+                            writer_right.write(VibrateRightEvent::new(Vibration::default()));
+                        }
+                    };
+                }
             },
         );
     }
@@ -241,7 +254,7 @@ fn draw_ring(
                 Mesh3d(ball.clone()),
                 MeshMaterial3d(mat.clone()),
                 CustomPicking3dHitbox::Sphere(0.035 * scale),
-                Picking3dInteractable,
+                Picking3dInteractable::Default,
             ))
             .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
             .observe(update_material_on::<Pointer<Out>>(mat.clone()))
@@ -249,16 +262,21 @@ fn draw_ring(
             .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()))
             .observe(
                 |trigger: Trigger<Pointer3d<MoveIn>>,
+                 picking3d_interactable: Query<&Picking3dInteractable>,
                  mut writer_left: EventWriter<VibrateLeftEvent>,
                  mut writer_right: EventWriter<VibrateRightEvent>| {
-                    match trigger.controler {
-                        HoveredBy::Left => {
-                            writer_left.write(VibrateLeftEvent::new(Vibration::default()));
-                        }
-                        HoveredBy::Right => {
-                            writer_right.write(VibrateRightEvent::new(Vibration::default()));
-                        }
-                    };
+                    if let Ok(Picking3dInteractable::Default) =
+                        picking3d_interactable.get(trigger.observer())
+                    {
+                        match trigger.controler {
+                            HoveredBy::Left => {
+                                writer_left.write(VibrateLeftEvent::new(Vibration::default()));
+                            }
+                            HoveredBy::Right => {
+                                writer_right.write(VibrateRightEvent::new(Vibration::default()));
+                            }
+                        };
+                    }
                 },
             );
     }
@@ -274,6 +292,8 @@ fn show_transitional_controls(
     mut meshes: ResMut<Assets<Mesh>>,
     scale: Res<RenderInformation>,
     mut already_existing: Query<(&mut Visibility, &ControlParent)>,
+    children: Query<&Children>,
+    mut picking3d_interactable: Query<&mut Picking3dInteractable>,
 ) {
     let scale = scale.scale;
 
@@ -284,6 +304,11 @@ fn show_transitional_controls(
                 *visibility = Visibility::Inherited;
                 already_created = true;
                 commands.entity(entity).remove::<Pickable>();
+                for child in children.iter_descendants(entity) {
+                    if let Ok(mut pickable3d) = picking3d_interactable.get_mut(child) {
+                        *pickable3d = Picking3dInteractable::Default;
+                    }
+                }
                 break;
             }
         }
@@ -449,7 +474,7 @@ fn drag_start(
                             Transform::from_xyz(0.0, 0.0, 0.0)
                                 .looking_to(arrow.normalized, Vec3::Y),
                             Control(arrow.normalized),
-                            Picking3dInteractable,
+                            Picking3dInteractable::default(),
                             Visibility::default(),
                         ))
                         .with_children(|parent| {

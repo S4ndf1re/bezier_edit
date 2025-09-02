@@ -22,8 +22,12 @@ pub struct AimLineRayMarker;
 #[derive(Component, Clone, Copy)]
 pub struct Picking3dTranslation(pub Vec3);
 
-#[derive(Component, Clone, Copy)]
-pub struct Picking3dInteractable;
+#[derive(Component, Clone, Copy, Default, Eq, Ord, PartialOrd, PartialEq)]
+pub enum Picking3dInteractable {
+    #[default]
+    Default,
+    Ignore,
+}
 
 #[derive(Component)]
 struct MoveMarker {
@@ -44,12 +48,13 @@ fn check_intersections(
     mut commands: Commands,
     // mut event_writer: EventWriter<Intersection>,
     pickable: Query<
-        (&GlobalTransform, Entity, Option<&CustomPicking3dHitbox>),
         (
-            With<Picking3dInteractable>,
-            Without<GripLeft>,
-            Without<GripRight>,
+            &GlobalTransform,
+            Entity,
+            Option<&CustomPicking3dHitbox>,
+            &Picking3dInteractable,
         ),
+        (Without<GripLeft>, Without<GripRight>),
     >,
     left_tracked: Single<(&GlobalTransform, Entity), With<GripLeft>>,
     right_tracked: Single<(&GlobalTransform, Entity), With<GripRight>>,
@@ -72,6 +77,9 @@ fn check_intersections(
     }
 
     for p in pickable {
+        if *p.3 == Picking3dInteractable::Ignore {
+            continue;
+        }
         let test: Box<dyn IntersectsVolume<BoundingSphere>> = if p.2.is_some() {
             match p.2.unwrap() {
                 CustomPicking3dHitbox::Sphere(s) => {
@@ -135,7 +143,7 @@ fn check_intersections(
             );
 
             for collision in collisions.iter() {
-                let (transform, _, _) = pickable
+                let (transform, _, _, _) = pickable
                     .get(collision.0)
                     .expect("This is already checked in the mesh_ray_casting filter option");
                 if !state.contains_entity_and_controller(&collision.0, &hovered_by) {
@@ -161,12 +169,13 @@ fn check_intersections(
 fn test_all_hovered(
     mut commands: Commands,
     pickable: Query<
-        (&GlobalTransform, Entity, Option<&CustomPicking3dHitbox>),
         (
-            With<Picking3dInteractable>,
-            Without<GripLeft>,
-            Without<GripRight>,
+            &GlobalTransform,
+            Entity,
+            Option<&CustomPicking3dHitbox>,
+            &Picking3dInteractable,
         ),
+        (Without<GripLeft>, Without<GripRight>),
     >,
     left_tracked: Single<(&GlobalTransform, Entity), With<GripLeft>>,
     right_tracked: Single<(&GlobalTransform, Entity), With<GripRight>>,
@@ -198,6 +207,12 @@ fn test_all_hovered(
             continue;
         }
         let p = p.unwrap();
+
+        if *p.3 == Picking3dInteractable::Ignore {
+            to_remove.push((*entity, HoveredBy::Left));
+            to_remove.push((*entity, HoveredBy::Right));
+            continue;
+        }
 
         let test: Box<dyn IntersectsVolume<BoundingSphere>> = if p.2.is_some() {
             match p.2.unwrap() {

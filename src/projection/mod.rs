@@ -179,7 +179,7 @@ fn handle_enable_ortho_camera(
                         transform,
                         Mesh3d(meshes.add(Sphere::new(0.1 * info.scale))),
                         MeshMaterial3d(materials.add(StandardMaterial::from_color(BLUE_500))),
-                        Picking3dInteractable,
+                        Picking3dInteractable::default(),
                         Name::new("Ortho Sufrace Parent"),
                     ))
                     .with_children(|cmd| {

@@ -201,7 +201,7 @@ impl<'w, 's> SpawnLinkedEntities<'w, 's> {
                         parent: entity,
                         position_type: positioning_type,
                     },
-                    Picking3dInteractable,
+                    Picking3dInteractable::default(),
                 ))
                 .observe(enable_gizmo(enable_translation_control))
                 .observe(enable_gizmo3d(enable_translation_control));
