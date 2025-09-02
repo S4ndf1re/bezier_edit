@@ -91,6 +91,7 @@ fn setup(
 
 #[cfg(not(feature = "vr_enable"))]
 fn create_app() -> App {
+    use bevy::color::palettes::tailwind::{GRAY_700, GRAY_900};
     use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
     use linked_entities::LinkedEntitiesPlugin;
     use projection::ProjectionPlugin;
@@ -109,6 +110,7 @@ fn create_app() -> App {
         .add_plugins(ProjectionPlugin)
         .add_plugins(LinkedEntitiesPlugin)
         .init_resource::<ControlStorage>()
+        .insert_resource(ClearColor(GRAY_700.into()))
         .add_systems(Startup, setup.before(generate_default_curve));
 
     app

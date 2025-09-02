@@ -162,8 +162,10 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         snap: SnappedPoint,
     ) -> Vec3 {
         match snap {
-            SnappedPoint::ToCurve { u: _, curve: _ } => {
+            SnappedPoint::ToCurve { u, curve } => {
+                info!("Is snapped to curve at u: {u} on curve: {curve}");
                 let point = Point::from(t.translation + translation);
+                info!("Next point is: {}", Vec3::from(point));
 
                 let shortest = self
                     .transform_set
@@ -172,6 +174,10 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                 if let Some((curve, u, p, dist, _)) = shortest
                     && dist < 0.05 * self.info.scale as f64
                 {
+                    info!(
+                        "Found shortest distance: {dist}, on curve: {curve}, on point: {}, with u: {u}",
+                        Vec3::from(p)
+                    );
                     let mut snap = self.snapped.get_mut(control_parent.1.0).unwrap().1;
                     *snap = SnappedPoint::ToCurve { u, curve };
 
@@ -180,6 +186,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     t.translation = p.into();
                     t.translation
                 } else {
+                    info!("Broke snapped");
                     let entity = self.snapped.get(control_parent.1.0).unwrap().0;
                     self.commands
                         .get_entity(entity)
@@ -253,6 +260,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                 if !is_already_snapped {
                     self.try_create_snapping(control_parent, t, translation, cant_snap_to_curve)
                 } else {
+                    info!("Handling already snapped");
                     // The entity is already snapped to a curve. Either continue snapping by moving
                     // the entity back to the curve, or if the distance is to large, remove the
                     // snapping
@@ -261,9 +269,9 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                         .get(control_parent.1.0)
                         .ok()
                         .map(|v| *v.1)
-                        // NOTE: it is ok to unwrap here, since we already checked that
-                        // this is the correct branch
-                        .unwrap();
+                        .expect(
+                            "This is already checked in this branch by is_already_snapped == true",
+                        );
 
                     self.check_and_process_already_snapped(
                         control_parent,
@@ -280,7 +288,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                 t.translation
             };
 
-            // Trigger the moved event, so that linked entities (TODO) may update the position of the
+            // Trigger the moved event, so that linked entities may update the position of the
             // linked entity, correspondingly (using lokal transforms)
             if let Ok(mut entity) = self.commands.get_entity(changed_entity) {
                 let delta = ending_translation - started_translation;

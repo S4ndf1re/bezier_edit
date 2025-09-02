@@ -674,6 +674,8 @@ pub fn drag_controller(
         let direction = (diff.dot(axis)) / (diff.length() * axis.length());
         let translation = axis * direction * diff.length();
 
+        info!("Translation: {translation}");
+
         params
             .p0()
             .update_position_drag_universal((parent, control_parent), translation);

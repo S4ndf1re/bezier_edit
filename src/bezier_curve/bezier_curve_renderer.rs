@@ -1,10 +1,10 @@
 use super::components::*;
 use super::curvature_display_mode::{
-    handle_change_curvature, ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode,
+    ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
 };
 use super::helper_curves::{
-    commit_curve, commit_plane, enter_create_curve_mode, render_curves, CreateCurveState,
-    RedrawCurvesEvent,
+    CreateCurveState, RedrawCurvesEvent, add_point, commit_curve, commit_plane,
+    enter_create_curve_mode, render_curves,
 };
 
 #[cfg(feature = "vr_enable")]
@@ -15,25 +15,25 @@ use super::ortho_camera::create_camera_on_click;
 #[cfg(feature = "vr_enable")]
 use super::ortho_camera::create_camera_on_click3d;
 use super::render_info::{
-    handle_box_dim_event, handle_change_surface_mode, ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode,
-    UVEither, UpdateBoxDimEvent,
+    ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
+    handle_box_dim_event, handle_change_surface_mode,
 };
 use super::surface_click::{
-    bezier_surface_picking, handle_state_change_event, update_surface_click, SurfaceClickChangeset,
+    SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
 };
 use super::util::{
     collect_control_points, compute_point_by_params, create_mesh_from_control_points,
     curvature_to_color,
 };
+use crate::RootTransform;
 use crate::bezier_curve::EntityDeletedEvent;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
 use crate::picking3d::picking_3d::Picking3dInteractable;
-use crate::projection::DisplayIn;
+use crate::projection::{BoundingEntitiesManager, DisplayIn};
 use crate::translation_control::translation_controller::EnableTranslationControl;
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::util::update_material_on;
-use crate::RootTransform;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::tailwind::*;
@@ -370,6 +370,7 @@ pub fn generate_default_curve(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut event_writer: EventWriter<RedrawEvent>,
     scale_res: Res<RenderInformation>,
+    mut bounding_entites: BoundingEntitiesManager,
 ) {
     let mut root = commands.get_entity(root.single().unwrap()).unwrap();
     let scale = scale_res.scale;
@@ -427,6 +428,7 @@ pub fn generate_default_curve(
                 .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
                 .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
                 .id();
+            bounding_entites.add_bounding_entity(id);
             ids.push(id);
         });
     }
@@ -567,6 +569,13 @@ impl Plugin for BezierRenderPlugin {
         app.add_systems(
             Update,
             add_point_3d.run_if(
+                in_state(ControlState::CreateCurve).or(in_state(ControlState::CreatePlane)),
+            ),
+        );
+
+        app.add_systems(
+            Update,
+            add_point.run_if(
                 in_state(ControlState::CreateCurve).or(in_state(ControlState::CreatePlane)),
             ),
         );

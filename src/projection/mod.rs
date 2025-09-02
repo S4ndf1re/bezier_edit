@@ -1,7 +1,9 @@
+use std::collections::{HashSet, hash_set::Iter};
+
 use bevy::{
     asset::RenderAssetUsages,
     color::palettes::tailwind::{BLUE_500, RED_800},
-    ecs::system::{lifetimeless::Read, SystemParam},
+    ecs::system::{SystemParam, lifetimeless::Read},
     prelude::*,
     render::{
         camera::ScalingMode,
@@ -12,6 +14,7 @@ use bevy::{
 
 use crate::picking3d::events::Pointer3d;
 use crate::{
+    RootTransform,
     bezier_curve::{
         bezier_curve_renderer::{EndModeEvent, RedrawEvent},
         components::ControlState,
@@ -25,7 +28,6 @@ use crate::{
     translation_control::{
         enable_gizmo, enable_gizmo3d, translation_controller::EnableTranslationControl,
     },
-    RootTransform,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -48,6 +50,63 @@ impl From<DisplayIn> for RenderLayers {
     }
 }
 
+#[derive(SystemParam)]
+pub struct BoundingEntitiesManager<'w, 's> {
+    bounding_entities: ResMut<'w, OrthoSurfaceRelevantEntities>,
+    linked_spawner: SpawnLinkedEntities<'w, 's>,
+    cameras: Query<'w, 's, Read<OrthoCamera>>,
+    commands: Commands<'w, 's>,
+    root: Query<'w, 's, Entity, With<RootTransform>>,
+}
+
+impl<'w, 's> BoundingEntitiesManager<'w, 's> {
+    pub fn add_bounding_entity(&mut self, entity: Entity) {
+        if !self.bounding_entities.contains(&entity) {
+            if let Ok(root) = self.root.single() {
+                self.commands.entity(root).with_children(|cmd| {
+                    for camera in self.cameras {
+                        self.linked_spawner.spawn_linked_to_entity(
+                            cmd,
+                            entity,
+                            ReversePositioningType::OrthoProjectedOntoPlane(camera.surface_parent),
+                        );
+                    }
+                });
+            }
+            self.bounding_entities.add_new_entity(entity);
+        }
+    }
+
+    pub fn remove_entity(&mut self, entity: &Entity) {
+        self.bounding_entities.remove_entity(entity);
+    }
+}
+
+/// This list of entities determines the bounding volume of the camera perspective. Meaning,
+/// that all points should be within the bounding box
+#[derive(Resource, Default)]
+struct OrthoSurfaceRelevantEntities {
+    bounding_volume_determining_entities: HashSet<Entity>,
+}
+
+impl OrthoSurfaceRelevantEntities {
+    pub fn add_new_entity(&mut self, entity: Entity) {
+        self.bounding_volume_determining_entities.insert(entity);
+    }
+
+    pub fn remove_entity(&mut self, entity: &Entity) {
+        self.bounding_volume_determining_entities.remove(entity);
+    }
+
+    pub fn contains(&self, entity: &Entity) -> bool {
+        self.bounding_volume_determining_entities.contains(entity)
+    }
+
+    pub fn iter(&self) -> Iter<'_, Entity> {
+        self.bounding_volume_determining_entities.iter()
+    }
+}
+
 #[derive(Component)]
 pub struct OrthoSurfaceParent {
     camera: Entity,
@@ -65,9 +124,6 @@ pub struct OrthoSurfacePlane;
 #[derive(Component)]
 #[require(Camera, Transform)]
 pub struct OrthoCamera {
-    /// This list of entities determines the bounding volume of the camera perspective. Meaning,
-    /// that all points should be within the bounding box
-    bounding_volume_determining_entities: Vec<Entity>,
     image: Handle<Image>,
     projection_size: Vec2,
 
@@ -76,10 +132,9 @@ pub struct OrthoCamera {
 }
 
 impl OrthoCamera {
-    pub fn new(image: Handle<Image>, bounding_entities: Vec<Entity>, surface: Entity) -> Self {
+    pub fn new(image: Handle<Image>, surface: Entity) -> Self {
         Self {
             image,
-            bounding_volume_determining_entities: bounding_entities,
             projection_size: Vec2::new(1.0, 1.0),
             surface_parent: surface,
         }
@@ -91,15 +146,11 @@ impl OrthoCamera {
 /// The Camera is then added to the root transform, to be able to get rotated.
 pub struct EnableOrthoCamera {
     transform: Transform,
-    bounding_entities: Vec<Entity>,
 }
 
 impl EnableOrthoCamera {
-    pub fn new(transform: Transform, bounding_entities: Vec<Entity>) -> Self {
-        Self {
-            transform,
-            bounding_entities,
-        }
+    pub fn new(transform: Transform) -> Self {
+        Self { transform }
     }
 }
 
@@ -127,18 +178,15 @@ fn handle_enable_ortho_camera(
     transforms: Query<&Transform>,
     info: Res<RenderInformation>,
     mut linked_spawner: SpawnLinkedEntities,
+    bounding_entities: Res<OrthoSurfaceRelevantEntities>,
 ) {
     let mut transform = None;
-    let mut bounding_entities = None;
 
     for evt in reader.read() {
         transform = Some(evt.transform);
-        bounding_entities = Some(evt.bounding_entities.clone());
     }
 
-    if let Some(transform) = transform
-        && let Some(bounding_entities) = bounding_entities
-    {
+    if let Some(transform) = transform {
         let size = Extent3d {
             width: 2048,
             height: 2048,
@@ -208,7 +256,7 @@ fn handle_enable_ortho_camera(
                     .id(),
                 );
 
-                for entity in &bounding_entities {
+                for entity in bounding_entities.iter() {
                     if let Some(surface) = surface_parent {
                         linked_spawner.spawn_linked_to_entity(
                             cmd,
@@ -224,7 +272,6 @@ fn handle_enable_ortho_camera(
                         Name::new("Ortho Camera"),
                         OrthoCamera::new(
                             image_handle.clone(),
-                            bounding_entities,
                             surface_parent.expect("otherwise invalid code above"),
                         ),
                         Camera3d::default(),
@@ -294,6 +341,7 @@ fn update_ortho_camera_viewports(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut gizmos: Gizmos,
     info: Res<RenderInformation>,
+    bounding_entities: Res<OrthoSurfaceRelevantEntities>,
 ) {
     if reader.is_empty() {
         return;
@@ -305,11 +353,9 @@ fn update_ortho_camera_viewports(
     for (mut ortho, mut projection) in &mut cameras {
         let mut max_distance = (f64::MIN, f64::MIN);
 
-        assert!(!ortho.bounding_volume_determining_entities.is_empty());
-
         // Only continue, if the child is actually a surface
         if let Ok(surface_transform) = transforms.get(ortho.surface_parent) {
-            for entity in &ortho.bounding_volume_determining_entities {
+            for entity in bounding_entities.iter() {
                 if let Ok(transform) = transforms.get(*entity) {
                     let plane = super::nurbs::plane::Plane3d::from(*surface_transform);
 
@@ -475,6 +521,7 @@ pub struct ProjectedSnappingDetector<'w, 's> {
     surfaces: Query<'w, 's, Read<Transform>, (With<OrthoSurfaceParent>, Without<OrthoCamera>)>,
     transform: Query<'w, 's, Read<Transform>, (Without<OrthoCamera>, Without<OrthoSurfaceParent>)>,
     link_targets: Query<'w, 's, Read<LinkTarget>>,
+    bounding_entities: Res<'w, OrthoSurfaceRelevantEntities>,
 }
 
 impl<'w, 's> ProjectedSnappingDetector<'w, 's> {
@@ -499,7 +546,7 @@ impl<'w, 's> ProjectedSnappingDetector<'w, 's> {
                 ) {
                     let snapped_uv_vec = Vec2::new(snapped_uv.0 as f32, snapped_uv.1 as f32);
 
-                    for point in &camera.bounding_volume_determining_entities {
+                    for point in self.bounding_entities.iter() {
                         if *point != snappable_entity
                             && (self.link_targets.get(snappable_entity).is_err()
                                 || self
@@ -552,5 +599,6 @@ impl Plugin for ProjectionPlugin {
             update_ortho_camera_positions.before(handle_enable_ortho_camera),
         );
         app.add_event::<EnableOrthoCamera>();
+        app.init_resource::<OrthoSurfaceRelevantEntities>();
     }
 }
