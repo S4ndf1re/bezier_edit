@@ -1,9 +1,10 @@
-use crate::nurbs::bezier::horner_scheme;
 use crate::nurbs::point::Point;
 use nalgebra::DMatrix;
 use nalgebra::DVector;
 use num::pow::Pow;
 use std::ops::Mul;
+
+use super::bezier::de_casteljau;
 
 #[allow(unused)]
 fn delta_u_i(us: &[f64], i: usize) -> f64 {
@@ -124,7 +125,7 @@ pub fn eval_bspline<T: AsRef<[Point]>, S: AsRef<[f64]>>(points: T, us: S, u: f64
 
     let t = (u - us[idx]) / (us[idx + 1] - us[idx]);
 
-    horner_scheme(points, t)
+    *de_casteljau(points, t).last().unwrap().last().unwrap()
 }
 
 #[allow(unused)]

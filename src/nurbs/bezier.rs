@@ -68,25 +68,6 @@ pub fn atiken(points: &[Point], ts: &[f64], t: f64) -> Vec<Vec<Point>> {
     stages
 }
 
-#[allow(unused)]
-pub fn horner_scheme<T: AsRef<[Point]>>(points: T, t: f64) -> Point {
-    let points = points.as_ref();
-    let n = points.len() - 1;
-    let mut k = 0;
-
-    let mut factor = n_choose_k(n, k) as f64 * &points[0];
-    k += 1;
-
-    for (i, p) in points.iter().enumerate() {
-        let n_c_k = n_choose_k(n, k) as f64;
-        k += 1;
-
-        factor = &((1.0 - t) * &factor) + &(pow(t, i) * n_c_k * p);
-    }
-
-    factor
-}
-
 /// Split a bezier curve at parameter t, resulting in two sub bezier lines with n control points.
 /// Lower is the splitted line defined in the interval [0, t] whereas upper is defined in the
 /// interval [c, 1]. Each resunting curve will be defined in [0,1], each.
