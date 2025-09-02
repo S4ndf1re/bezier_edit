@@ -22,7 +22,6 @@ use std::f32::consts::FRAC_PI_2;
 use super::control_storage::ControlDirection;
 use super::obligatory_drag_params::ObligatoryDragParams;
 
-// TODO: Remove interactability and vibrations when control parent is not visible anymore
 #[derive(Event)]
 pub struct MovedEntityEvent {
     pub entity: Entity,
