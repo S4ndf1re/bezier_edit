@@ -149,6 +149,28 @@ fn register_deletes(
     }
 }
 
+pub fn draw_plane(
+    child_builder: &mut RelatedSpawnerCommands<ChildOf>,
+    mat: Handle<StandardMaterial>,
+    mat_hover: Handle<StandardMaterial>,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    scale: f32,
+) {
+    let plane = meshes.add(Cuboid::new(0.24 * scale, 0.24 * scale, 0.01 * scale));
+
+    let mut obj = child_builder.spawn((
+        Transform::from_xyz(0.0, 0.0, 0.0),
+        MeshMaterial3d(mat.clone()),
+        Mesh3d(plane.clone()),
+        Picking3dInteractable::Default,
+    ));
+    obj.observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
+        .observe(update_material_on::<Pointer<Out>>(mat.clone()))
+        .observe(update_material_on::<Pointer3d<MoveIn>>(mat_hover.clone()))
+        .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()));
+    // TODO: Add vibration once the other vibrations are fixed
+}
+
 pub fn draw_arrow(
     child_builder: &mut RelatedSpawnerCommands<ChildOf>,
     mat: Handle<StandardMaterial>,
@@ -177,6 +199,7 @@ pub fn draw_arrow(
              picking3d_interactable: Query<&Picking3dInteractable>,
              mut writer_left: EventWriter<VibrateLeftEvent>,
              mut writer_right: EventWriter<VibrateRightEvent>| {
+                // FIXME: This must get fixed. Otherwise no vibration on hover occurs
                 if let Ok(Picking3dInteractable::Default) =
                     picking3d_interactable.get(trigger.observer())
                 {
@@ -265,6 +288,7 @@ fn draw_ring(
                  picking3d_interactable: Query<&Picking3dInteractable>,
                  mut writer_left: EventWriter<VibrateLeftEvent>,
                  mut writer_right: EventWriter<VibrateRightEvent>| {
+                    // FIXME: This must get fixed. Otherwise no vibration on hover occurs
                     if let Ok(Picking3dInteractable::Default) =
                         picking3d_interactable.get(trigger.observer())
                     {
@@ -327,7 +351,7 @@ fn show_transitional_controls(
                     if *enabled_control == EnableTranslationControl::OnlyTranslation
                         || *enabled_control == EnableTranslationControl::WithRotation
                     {
-                        for arrow in arrows.as_ref().iter() {
+                        for arrow in arrows.as_ref().iter_arrows() {
                             parent
                                 .spawn((
                                     Transform::from_xyz(0.0, 0.0, 0.0)
@@ -380,6 +404,31 @@ fn show_transitional_controls(
                                     .observe(rotate_end_trigger_redraw)
                                     .observe(rotate_end_trigger_redraw3d);
                             }
+                        }
+
+                        for plane in arrows.iter_planes() {
+                            parent
+                                .spawn((
+                                    Transform::from_translation(plane.axis / 3.0)
+                                        .looking_to(plane.normal, Vec3::Y),
+                                    Control(plane.axis),
+                                    Visibility::default(),
+                                ))
+                                .with_children(|parent| {
+                                    draw_plane(
+                                        parent,
+                                        materials.add(plane.color),
+                                        materials.add(plane.hover_color),
+                                        &mut meshes,
+                                        scale,
+                                    );
+                                })
+                                .observe(drag_plane)
+                                .observe(drag_plane3d)
+                                .observe(drag_start)
+                                .observe(drag_start3d)
+                                .observe(drag_end_trigger_redraw)
+                                .observe(drag_end3d_trigger_redraw);
                         }
                     } else if let EnableTranslationControl::OnlyOnPlane(plane_entity) =
                         *enabled_control
@@ -468,7 +517,7 @@ fn drag_start(
     root.with_children(|cmd| {
         cmd.spawn((ShadowMarker, start_transform, Visibility::default()))
             .with_children(|parent| {
-                for arrow in arrows.as_ref().iter() {
+                for arrow in arrows.as_ref().iter_arrows() {
                     parent
                         .spawn((
                             Transform::from_xyz(0.0, 0.0, 0.0)
@@ -526,7 +575,7 @@ fn drag_start3d(
     root.with_children(|cmd| {
         cmd.spawn((ShadowMarker, *start_transform, Visibility::default()))
             .with_children(|parent| {
-                for arrow in arrows.as_ref().iter() {
+                for arrow in arrows.as_ref().iter_arrows() {
                     parent
                         .spawn((
                             Transform::from_xyz(0.0, 0.0, 0.0)
@@ -628,6 +677,84 @@ pub fn handle_translate_by_delta_event(
             }
         }
     }
+}
+
+#[allow(clippy::complexity)]
+pub fn drag_plane(
+    trigger: Trigger<Pointer<Drag>>,
+    control_query: Query<(&Control, &ChildOf)>,
+    camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    mut control_parents: Query<&ControlParent>,
+    root: Query<&GlobalTransform, With<RootTransform>>,
+    mut params: ParamSet<(ObligatoryDragParams, Query<&GlobalTransform>)>,
+) {
+    let (control, child_of) = control_query.get(trigger.target()).unwrap();
+
+    let parent = child_of.parent();
+    let control_parent = control_parents.get_mut(parent).unwrap();
+
+    if let Ok((camera, camera_transform)) = camera.single() {
+        let diff = {
+            let dist = (params.p1().get(control_parent.0).unwrap().translation()
+                - camera_transform.translation())
+            .length();
+
+            let mouse_start = camera
+                .viewport_to_world(
+                    camera_transform,
+                    trigger.pointer_location.position - trigger.delta,
+                )
+                .unwrap();
+
+            let mouse_end = camera
+                .viewport_to_world(camera_transform, trigger.pointer_location.position)
+                .unwrap();
+
+            let start = mouse_start.get_point(dist);
+            let end = mouse_end.get_point(dist);
+            root.single()
+                .unwrap()
+                .affine()
+                .inverse()
+                .transform_point3(end - start)
+        };
+
+        let axis = control.0;
+        let translation = diff * axis;
+
+        params
+            .p0()
+            .update_position_drag_universal((parent, control_parent), translation);
+    }
+}
+
+#[allow(clippy::complexity)]
+pub fn drag_plane3d(
+    trigger: Trigger<Pointer3d<crate::picking3d::events::Drag>>,
+    control_query: Query<(&Control, &ChildOf)>,
+    mut control_parents: Query<&ControlParent>,
+    root: Query<&GlobalTransform, With<RootTransform>>,
+    mut params: ObligatoryDragParams,
+) {
+    // NOTE: Make sure that the draw event is triggered only once. Otherwise this difference adding happens multiple times for the same event........
+    let (control, child_of) = control_query.get(trigger.target()).unwrap();
+
+    let parent = child_of.parent();
+
+    let control_parent = control_parents.get_mut(parent).unwrap();
+
+    let diff = trigger.event.delta;
+    let diff = root
+        .single()
+        .unwrap()
+        .affine()
+        .inverse()
+        .transform_point3(diff);
+
+    let axis = control.0;
+    let translation = axis * diff;
+
+    params.update_position_drag_universal((parent, control_parent), translation);
 }
 
 #[allow(clippy::complexity)]
@@ -858,7 +985,7 @@ fn rotate_controller(
             };
 
             if state.curve_snapping == SnappingBehaviour::Snap {
-                for axis in control_storage.iter() {
+                for axis in control_storage.iter_arrows() {
                     if axis.with_rotation {
                         let cos_score = forward.normalize_or_zero().dot(axis.normalized);
                         if cos_score.abs() > 0.999 {
@@ -945,7 +1072,7 @@ fn rotate_controller3d(
         };
 
         if state.curve_snapping == SnappingBehaviour::Snap {
-            for axis in control_storage.iter() {
+            for axis in control_storage.iter_arrows() {
                 if axis.with_rotation {
                     let cos_score = forward.normalize_or_zero().dot(axis.normalized);
                     if cos_score.abs() > 0.999 {
