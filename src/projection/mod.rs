@@ -10,6 +10,7 @@ use bevy::{
     },
 };
 
+use crate::picking3d::events::Pointer3d;
 use crate::{
     bezier_curve::{
         bezier_curve_renderer::{EndModeEvent, RedrawEvent},
@@ -413,6 +414,34 @@ fn update_ortho_camera_viewports(
 
 fn handle_disable_ortho_camera(
     trigger: Trigger<Pointer<Click>>,
+    mut commands: Commands,
+    points: Query<(Entity, &OrthoSurfaceParent)>,
+    state: Res<State<ControlState>>,
+    mut end_mode_writer: EventWriter<EndModeEvent>,
+    mut despawner: RemoveLinkedEntities,
+) {
+    // Only run, when we are in the delete mode
+    if *state != ControlState::Delete {
+        return;
+    }
+
+    if let Ok(to_delete_parent) = points.get(trigger.target()) {
+        if let Ok(mut entity) = commands.get_entity(to_delete_parent.1.camera) {
+            entity.despawn();
+        }
+
+        if let Ok(mut entity) = commands.get_entity(to_delete_parent.0) {
+            entity.despawn();
+        }
+
+        despawner.remove_link_for_all_on_same_plane(to_delete_parent.0);
+
+        end_mode_writer.write(EndModeEvent);
+    }
+}
+
+fn handle_disable_ortho_camera3d(
+    trigger: Trigger<Pointer3d<crate::picking3d::events::Click>>,
     mut commands: Commands,
     points: Query<(Entity, &OrthoSurfaceParent)>,
     state: Res<State<ControlState>>,
