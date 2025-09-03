@@ -36,7 +36,9 @@ use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::util::update_material_on;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
+use bevy::color::palettes::css::BLACK;
 use bevy::color::palettes::tailwind::*;
+use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::prelude::*;
 use bevy::render::mesh::PrimitiveTopology;
 use bevy::render::view::RenderLayers;
@@ -52,6 +54,23 @@ pub enum RedrawEvent {
 
 #[derive(Event)]
 pub struct RedrawBoxesEvent;
+
+#[derive(Component)]
+struct Bridge {
+    pub a: Entity,
+    pub b: Entity,
+}
+
+#[derive(Component)]
+#[relationship(relationship_target = CompleteBridge)]
+struct BridgeConnector(pub Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship=BridgeConnector, linked_spawn)]
+struct CompleteBridge(Vec<Entity>);
+
+#[derive(Component)]
+struct BridgeMarker;
 
 #[derive(Event)]
 pub struct CreateOrthoCameraEvent;
@@ -127,33 +146,62 @@ fn handle_end_mode(
     next_state.set(ControlState::Main)
 }
 
+fn draw_bridge_cylinder(
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    length: f32,
+    scale: f32,
+) -> impl Bundle {
+    let cylinder = meshes.add(Cylinder::new(0.02 * scale, length));
+    let material = materials.add(StandardMaterial::from_color(BLACK));
+
+    (
+        Mesh3d(cylinder),
+        MeshMaterial3d(material),
+        Transform::from_xyz(0.0, 0.0, -length / 2.0)
+            .with_rotation(Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians())),
+        RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+        Visibility::Inherited,
+        BridgeMarker,
+    )
+}
+
+#[allow(clippy::complexity)]
 fn update_lines(
     mut commands: Commands,
-    mut lines: Query<(&RenderLine, Entity, &Mesh3d)>,
-    transforms: Query<&Transform>,
+    mut lines: Query<(&Bridge, Entity, &Children, &mut Transform), Without<BridgeMarker>>,
+    mut changeable: Query<(&mut Transform, &mut Mesh3d), (Without<Bridge>, With<BridgeMarker>)>,
+    transforms: Query<&Transform, (Without<BridgeMarker>, Without<Bridge>)>,
     mut meshes: ResMut<Assets<Mesh>>,
+    info: Res<RenderInformation>,
 ) {
-    for (line, line_entity, mesh3d) in lines.iter_mut() {
+    for (line, line_entity, children, mut transform) in lines.iter_mut() {
         let (entity1, entity2) = {
-            let entity1 = transforms.get(line.0);
-            let entity2 = transforms.get(line.1);
+            let entity1 = transforms.get(line.a);
+            let entity2 = transforms.get(line.b);
             (entity1, entity2)
         };
 
         if entity1.is_err() || entity2.is_err() {
             commands.get_entity(line_entity).unwrap().despawn();
+            continue;
         }
 
-        let mesh = meshes.get_mut(mesh3d).expect("Must be here");
+        let origin = entity1.unwrap().translation;
+        let target = entity2.unwrap().translation;
+        let diff = target - origin;
+        let length = diff.length();
 
-        if let Some(attrib) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) {
-            *attrib = vec![entity1.unwrap().translation, entity2.unwrap().translation].into();
-        } else {
-            mesh.insert_attribute(
-                Mesh::ATTRIBUTE_POSITION,
-                vec![entity1.unwrap().translation, entity2.unwrap().translation],
-            );
+        for child in children {
+            if let Ok((mut transform, mut mesh3d)) = changeable.get_mut(*child) {
+                let cylinder = meshes.add(Cylinder::new(0.02 * info.scale, length));
+                *transform = Transform::from_xyz(0.0, 0.0, -length / 2.0)
+                    .with_rotation(Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians()));
+                mesh3d.0 = cylinder;
+            }
         }
+
+        *transform = Transform::from_translation(origin).looking_at(target, Vec3::Y);
     }
 }
 
@@ -384,22 +432,10 @@ pub fn generate_default_curve(
     let min_y = -h.to_f32().unwrap() / 2.0 + if h % 2 == 0 { 0.5 } else { 0.0 };
 
     let mut points = vec![];
-    let mut c1_control_points: Vec<(i32, i32, usize, usize)> = vec![];
     let mut curr_x = min_x;
     let mut curr_y = min_y;
     for y in 0..h as i32 {
         for x in 0..w as i32 {
-            if y == 0 {
-                c1_control_points.push((-1, x, y as usize, x as usize));
-            } else if y == (h as i32) - 1 {
-                c1_control_points.push((y + 1, x, y as usize, x as usize));
-            }
-
-            if x == 0 {
-                c1_control_points.push((y, -1, y as usize, x as usize));
-            } else if x == (w as i32) - 1 {
-                c1_control_points.push((y, x + 1, y as usize, x as usize));
-            }
             points.push((y as usize, x as usize, curr_x, 0.0, curr_y));
             curr_x += 1.0;
         }
@@ -433,60 +469,86 @@ pub fn generate_default_curve(
         });
     }
 
+    let mut x_bridges = Vec::new();
+    let mut y_bridges = Vec::new();
+
+    for x in 0..w {
+        x_bridges.push(
+            root.with_child((
+                CompleteBridge(Vec::new()),
+                Name::new(format!("x_bridge {x}")),
+            ))
+            .id(),
+        );
+    }
+
+    for y in 0..h {
+        y_bridges.push(
+            root.with_child((
+                CompleteBridge(Vec::new()),
+                Name::new(format!("y_bridge {y}")),
+            ))
+            .id(),
+        );
+    }
+
+    let to_xy = |i| (i % w, i / w);
+    let from_xy = |x, y| x + y * w;
+
     // Draw lines between neighbouring controls points to generate a visible grid
     for i in 0..points.len() {
         let p0 = points[i];
         let p0_id = ids[i];
 
-        if i + 1 < (i / w + 1) * w
-            && let Some(py) = points.get(i + 1)
+        let (x, y) = to_xy(i);
+        let (_, y_next) = to_xy(i + 1);
+
+        // Check if we are not at the edge of the array (next index is one row up)
+        if y == y_next
+            && let Some(px) = points.get(i + 1)
         {
             let id = *ids.get(i + 1).expect("must be present");
-            let mut mesh = Mesh::new(
-                PrimitiveTopology::LineList,
-                RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
-            );
-            mesh.insert_attribute(
-                Mesh::ATTRIBUTE_POSITION,
-                vec![
-                    Vec3::new(p0.2 * scale, p0.3 * scale, p0.4 * scale),
-                    Vec3::new(py.2 * scale, py.3 * scale, py.4 * scale),
-                ],
-            );
+
+            let origin = Vec3::new(p0.2 * scale, p0.3 * scale, p0.4 * scale);
+            let target = Vec3::new(px.2 * scale, px.3 * scale, px.4 * scale);
+            let diff = target - origin;
 
             root.with_child((
-                Transform::from_xyz(0.0, 0.0, 0.0),
-                RenderLine(p0_id, id),
+                Transform::from_translation(origin).looking_at(target, Vec3::Y),
+                Bridge { a: p0_id, b: id },
+                BridgeConnector(y_bridges[y]),
                 Name::new(format!("Render line {p0_id} {id}")),
-                MeshMaterial3d(materials.add(Color::BLACK)),
-                Mesh3d(meshes.add(mesh)),
                 RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                Visibility::Inherited,
+                related!(
+                    Children
+                        [draw_bridge_cylinder(&mut meshes, &mut materials, diff.length(), scale)]
+                ),
             ));
         }
 
-        if i + w < points.len()
-            && let Some(px) = points.get(i + 2)
+        let next_row_idx = from_xy(x, y + 1);
+        // Check if next row is still in range
+        if y + 1 < h
+            && let Some(py) = points.get(next_row_idx)
         {
             let id = *ids.get(i + w).expect("must be present");
-            let mut mesh = Mesh::new(
-                PrimitiveTopology::LineList,
-                RenderAssetUsages::RENDER_WORLD | RenderAssetUsages::MAIN_WORLD,
-            );
-            mesh.insert_attribute(
-                Mesh::ATTRIBUTE_POSITION,
-                vec![
-                    Vec3::new(p0.2 * scale, p0.3 * scale, p0.4 * scale),
-                    Vec3::new(px.2 * scale, px.3 * scale, px.4 * scale),
-                ],
-            );
+
+            let origin = Vec3::new(p0.2 * scale, p0.3 * scale, p0.4 * scale);
+            let target = Vec3::new(py.2 * scale, py.3 * scale, py.4 * scale);
+            let diff = target - origin;
 
             root.with_child((
-                Transform::from_xyz(0.0, 0.0, 0.0),
-                RenderLine(p0_id, id),
+                Transform::from_translation(origin).looking_at(target, Vec3::Y),
+                Bridge { a: p0_id, b: id },
+                BridgeConnector(x_bridges[x]),
                 Name::new(format!("Render line {p0_id} {id}")),
-                MeshMaterial3d(materials.add(Color::BLACK)),
-                Mesh3d(meshes.add(mesh)),
                 RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                Visibility::Inherited,
+                related!(
+                    Children
+                        [draw_bridge_cylinder(&mut meshes, &mut materials, diff.length(), scale)]
+                ),
             ));
         }
     }
@@ -568,16 +630,16 @@ impl Plugin for BezierRenderPlugin {
         #[cfg(feature = "vr_enable")]
         app.add_systems(
             Update,
-            add_point_3d.run_if(
-                in_state(ControlState::CreateCurve).or(in_state(ControlState::CreatePlane)),
-            ),
+            add_point_3d
+                .run_if(in_state(ControlState::CreateCurve).or(in_state(ControlState::CreatePlane)))
+                .after(render_curves),
         );
 
         app.add_systems(
             Update,
-            add_point.run_if(
-                in_state(ControlState::CreateCurve).or(in_state(ControlState::CreatePlane)),
-            ),
+            add_point
+                .run_if(in_state(ControlState::CreateCurve).or(in_state(ControlState::CreatePlane)))
+                .after(render_curves),
         );
 
         // app.init_resource::<ConstraintState>();
