@@ -16,15 +16,11 @@ use crate::{
     translation_control::translation_controller::EnableTranslationControl,
 };
 use bevy::color::palettes::css::BLACK;
-use bevy::color::palettes::tailwind::PURPLE_900;
-use bevy::ecs::relationship::Relationship;
 use bevy::render::view::RenderLayers;
 use bevy::{
-    asset::RenderAssetUsages,
     color::palettes::tailwind::PURPLE_600,
     ecs::system::{SystemParam, lifetimeless::Read},
     prelude::*,
-    render::mesh::PrimitiveTopology,
 };
 use bevy_lunex::UiLayoutRoot;
 
