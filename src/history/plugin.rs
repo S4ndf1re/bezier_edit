@@ -149,6 +149,7 @@ fn listen_to_history_log_events(
 }
 
 fn listen_to_history_pop_events(
+    mut commands: Commands,
     mut reader: EventReader<HistoryPopEvent>,
     mut history: ResMut<HistoryResource>,
     mut query: Query<&mut Transform>,
@@ -164,6 +165,12 @@ fn listen_to_history_pop_events(
             *transform = last_location.start;
             redraw = true;
 
+            let _ = commands.get_entity(evt.0).map(|mut e| {
+                e.trigger(MovedEntityEvent {
+                    entity: evt.0,
+                    delta,
+                });
+            });
             moved_entity_writer.write(MovedEntityEvent {
                 entity: evt.0,
                 delta,
@@ -176,6 +183,7 @@ fn listen_to_history_pop_events(
 }
 
 fn listen_to_history_undo_events(
+    mut commands: Commands,
     mut reader: EventReader<HistoryUndoEvent>,
     mut history: ResMut<HistoryResource>,
     mut query: Query<&mut Transform>,
@@ -192,6 +200,10 @@ fn listen_to_history_undo_events(
                         let delta = transform.translation - last_location.start.translation;
                         *transform = last_location.start;
                         redraw = true;
+
+                        let _ = commands.get_entity(entity).map(|mut e| {
+                            e.trigger(MovedEntityEvent { entity, delta });
+                        });
                         moved_entity_writer.write(MovedEntityEvent { entity, delta });
                     }
                     break;
