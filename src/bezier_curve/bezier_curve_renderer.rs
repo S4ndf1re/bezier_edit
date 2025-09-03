@@ -1,37 +1,45 @@
 use super::components::*;
 use super::curvature_display_mode::{
-    handle_change_curvature, ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode,
+    ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
 };
 use super::helper_curves::{
-    commit_curve, commit_plane, enter_create_curve_mode, render_curves, CreateCurveState,
-    RedrawCurvesEvent,
+    CreateCurveState, RedrawCurvesEvent, add_point, commit_curve, commit_plane,
+    enter_create_curve_mode, render_curves,
 };
 
 #[cfg(feature = "vr_enable")]
 use super::helper_curves::add_point_3d;
 
+use super::ortho_camera::create_camera_on_click;
+
+#[cfg(feature = "vr_enable")]
+use super::ortho_camera::create_camera_on_click3d;
 use super::render_info::{
-    handle_box_dim_event, handle_change_surface_mode, ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode,
-    UVEither, UpdateBoxDimEvent,
+    ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
+    handle_box_dim_event, handle_change_surface_mode,
 };
 use super::surface_click::{
-    bezier_surface_picking, handle_state_change_event, update_surface_click, SurfaceClickChangeset,
+    SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
 };
 use super::util::{
     collect_control_points, compute_point_by_params, create_mesh_from_control_points,
-    curvature_to_color, enable_gizmo, enable_gizmo3d,
+    curvature_to_color,
 };
+use crate::RootTransform;
 use crate::bezier_curve::EntityDeletedEvent;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
 use crate::picking3d::picking_3d::Picking3dInteractable;
+use crate::projection::{BoundingEntitiesManager, DisplayIn};
+use crate::translation_control::translation_controller::EnableTranslationControl;
+use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::util::update_material_on;
-use crate::RootTransform;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::tailwind::*;
 use bevy::prelude::*;
 use bevy::render::mesh::PrimitiveTopology;
+use bevy::render::view::RenderLayers;
 use num::ToPrimitive;
 
 pub type Resolution = (u32, u32);
@@ -46,6 +54,9 @@ pub enum RedrawEvent {
 pub struct RedrawBoxesEvent;
 
 #[derive(Event)]
+pub struct CreateOrthoCameraEvent;
+
+#[derive(Event)]
 pub struct CreateCurveEvent;
 
 #[derive(Event)]
@@ -56,6 +67,18 @@ pub struct DeleteModeEvent;
 
 #[derive(Event)]
 pub struct EndModeEvent;
+
+fn handle_create_ortho_camera_event(
+    mut reader: EventReader<CreateOrthoCameraEvent>,
+    mut next_state: ResMut<NextState<ControlState>>,
+) {
+    if reader.is_empty() {
+        return;
+    }
+    reader.clear();
+
+    next_state.set(ControlState::CreateOrthoCamera);
+}
 
 fn handle_create_curve_event(
     mut reader: EventReader<CreateCurveEvent>,
@@ -207,8 +230,10 @@ fn generate_pointcloud(
                 ui.spawn((
                     Transform::default(),
                     ResultSurface,
+                    Name::new("Result Surface"),
                     Mesh3d(meshes.add(mesh)),
                     MeshMaterial3d(materials.add(mat)),
+                    RenderLayers::from(DisplayIn::Normal),
                 ))
                 .observe(bezier_surface_picking);
             });
@@ -248,7 +273,9 @@ fn generate_pointcloud(
                             ui.spawn((
                                 Mesh3d(meshes.add(mesh)),
                                 MeshMaterial3d(materials.add(Color::BLACK)),
+                                Name::new("Iso Line"),
                                 Pickable::IGNORE,
+                                RenderLayers::from(DisplayIn::BothNormalAndOrtho),
                             ));
                         }
                     });
@@ -321,6 +348,7 @@ pub fn redraw_boxes(
                     Vec3::X,
                     Vec3::from(v_diff),
                 ),
+                Name::new("Box"),
                 CurveBox,
                 Mesh3d(meshes.add(mesh)),
                 MeshMaterial3d(materials.add(Color::from(Srgba::new(
@@ -329,6 +357,7 @@ pub fn redraw_boxes(
                     color.2 as f32,
                     1.0,
                 )))),
+                RenderLayers::from(DisplayIn::Normal),
             ));
         });
     }
@@ -341,6 +370,7 @@ pub fn generate_default_curve(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut event_writer: EventWriter<RedrawEvent>,
     scale_res: Res<RenderInformation>,
+    mut bounding_entites: BoundingEntitiesManager,
 ) {
     let mut root = commands.get_entity(root.single().unwrap()).unwrap();
     let scale = scale_res.scale;
@@ -385,17 +415,20 @@ pub fn generate_default_curve(
                 .spawn((
                     BezierRender,
                     RenderPoint(p.0, p.1),
+                    Name::new(format!("Render Point {} {}", p.0, p.1)),
                     Transform::from_xyz(p.2 * scale, p.3 * scale + height, p.4 * scale),
                     Mesh3d(sphere.clone()),
                     MeshMaterial3d(material.clone()),
-                    Picking3dInteractable,
+                    Picking3dInteractable::default(),
+                    RenderLayers::from(DisplayIn::BothNormalAndOrtho),
                 ))
                 .observe(update_material_on::<Pointer<Over>>(material_hover.clone()))
                 .observe(update_material_on::<Pointer<Out>>(material.clone()))
                 //.observe(drag_point)
-                .observe(enable_gizmo)
-                .observe(enable_gizmo3d)
+                .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
+                .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
                 .id();
+            bounding_entites.add_bounding_entity(id);
             ids.push(id);
         });
     }
@@ -424,8 +457,10 @@ pub fn generate_default_curve(
             root.with_child((
                 Transform::from_xyz(0.0, 0.0, 0.0),
                 RenderLine(p0_id, id),
+                Name::new(format!("Render line {p0_id} {id}")),
                 MeshMaterial3d(materials.add(Color::BLACK)),
                 Mesh3d(meshes.add(mesh)),
+                RenderLayers::from(DisplayIn::BothNormalAndOrtho),
             ));
         }
 
@@ -448,8 +483,10 @@ pub fn generate_default_curve(
             root.with_child((
                 Transform::from_xyz(0.0, 0.0, 0.0),
                 RenderLine(p0_id, id),
+                Name::new(format!("Render line {p0_id} {id}")),
                 MeshMaterial3d(materials.add(Color::BLACK)),
                 Mesh3d(meshes.add(mesh)),
+                RenderLayers::from(DisplayIn::BothNormalAndOrtho),
             ));
         }
     }
@@ -499,18 +536,31 @@ impl Plugin for BezierRenderPlugin {
                 handle_state_change_event,
                 handle_change_curvature,
                 handle_box_dim_event,
+            ),
+        );
+
+        // Systems for handling state
+        app.add_systems(
+            PostUpdate,
+            (
                 handle_change_surface_mode.run_if(in_state(ControlState::Main)),
                 handle_create_curve_event.run_if(in_state(ControlState::Main)),
+                handle_create_ortho_camera_event.run_if(in_state(ControlState::Main)),
                 handle_create_plane_event.run_if(in_state(ControlState::Main)),
                 handle_delete_mode_event.run_if(in_state(ControlState::Main)),
+                create_camera_on_click.run_if(in_state(ControlState::CreateOrthoCamera)),
+                #[cfg(feature = "vr_enable")]
+                create_camera_on_click3d.run_if(in_state(ControlState::CreateOrthoCamera)),
                 handle_end_mode.run_if(
                     in_state(ControlState::CreateCurve)
                         .or(in_state(ControlState::CreatePlane))
-                        .or(in_state(ControlState::Delete)),
+                        .or(in_state(ControlState::Delete))
+                        .or(in_state(ControlState::CreateOrthoCamera)),
                 ),
             ),
         );
 
+        // Systems for snapping curves creation
         app.add_systems(OnEnter(ControlState::CreateCurve), enter_create_curve_mode);
         app.add_systems(OnExit(ControlState::CreateCurve), commit_curve);
         app.add_systems(OnExit(ControlState::CreatePlane), commit_plane);
@@ -519,6 +569,13 @@ impl Plugin for BezierRenderPlugin {
         app.add_systems(
             Update,
             add_point_3d.run_if(
+                in_state(ControlState::CreateCurve).or(in_state(ControlState::CreatePlane)),
+            ),
+        );
+
+        app.add_systems(
+            Update,
+            add_point.run_if(
                 in_state(ControlState::CreateCurve).or(in_state(ControlState::CreatePlane)),
             ),
         );
@@ -537,6 +594,7 @@ impl Plugin for BezierRenderPlugin {
         app.add_event::<RedrawCurvesEvent>();
         app.add_event::<CreateCurveEvent>();
         app.add_event::<CreatePlaneEvent>();
+        app.add_event::<CreateOrthoCameraEvent>();
         app.add_event::<DeleteModeEvent>();
         app.add_event::<EndModeEvent>();
         app.add_event::<EntityDeletedEvent>();

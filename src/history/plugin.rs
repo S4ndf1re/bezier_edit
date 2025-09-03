@@ -2,7 +2,10 @@ use std::collections::{HashMap, VecDeque};
 
 use bevy::{ecs::world::OnDespawn, prelude::*};
 
-use crate::bezier_curve::bezier_curve_renderer::RedrawEvent;
+use crate::{
+    bezier_curve::bezier_curve_renderer::RedrawEvent,
+    translation_control::translation_controller::MovedEntityEvent,
+};
 
 #[derive(Event)]
 pub enum HistoryLogEvent {
@@ -150,14 +153,21 @@ fn listen_to_history_pop_events(
     mut history: ResMut<HistoryResource>,
     mut query: Query<&mut Transform>,
     mut redraw_writer: EventWriter<RedrawEvent>,
+    mut moved_entity_writer: EventWriter<MovedEntityEvent>,
 ) {
     let mut redraw = false;
     for evt in reader.read() {
         if let Some(last_location) = history.pop(&evt.0)
             && let Ok(mut transform) = query.get_mut(evt.0)
         {
+            let delta = transform.translation - last_location.start.translation;
             *transform = last_location.start;
             redraw = true;
+
+            moved_entity_writer.write(MovedEntityEvent {
+                entity: evt.0,
+                delta,
+            });
         }
     }
     if redraw {
@@ -170,6 +180,7 @@ fn listen_to_history_undo_events(
     mut history: ResMut<HistoryResource>,
     mut query: Query<&mut Transform>,
     mut redraw_writer: EventWriter<RedrawEvent>,
+    mut moved_entity_writer: EventWriter<MovedEntityEvent>,
 ) {
     let mut redraw = false;
     for _evt in reader.read() {
@@ -178,8 +189,10 @@ fn listen_to_history_undo_events(
             if let Some(entity) = entity {
                 if let Ok(mut transform) = query.get_mut(entity) {
                     if let Some(last_location) = history.pop(&entity) {
+                        let delta = transform.translation - last_location.start.translation;
                         *transform = last_location.start;
                         redraw = true;
+                        moved_entity_writer.write(MovedEntityEvent { entity, delta });
                     }
                     break;
                 }

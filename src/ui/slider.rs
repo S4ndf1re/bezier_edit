@@ -6,11 +6,12 @@ use bevy::{
     prelude::*,
     sprite::Anchor,
 };
-use bevy_lunex::{Rl, UiColor, UiDepth, UiLayout, UiMeshPlane3d, prelude::*};
+use bevy_lunex::{prelude::*, Rl, UiColor, UiDepth, UiLayout, UiMeshPlane3d};
 
 use crate::{
     click_decider::LogTrace,
     picking3d::{self, events::Pointer3d, picking_3d::Picking3dInteractable},
+    MainCamera,
 };
 
 #[derive(Event)]
@@ -66,7 +67,7 @@ fn slider_value_change(
 #[allow(clippy::complexity)]
 fn slider_drag(
     trigger: Trigger<Pointer<Drag>>,
-    camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    camera: Query<(&Camera, &GlobalTransform), (With<Camera3d>, With<MainCamera>)>,
     mut slider: Query<(&mut UiSlider, &Children)>,
     slider_background: Query<Entity, With<SliderBackground>>,
     mut commands: Commands,
@@ -247,7 +248,7 @@ fn spawn_children<'s>(
         UiDepth::Add(20.0),
         UiMeshPlane3d,
         Visibility::default(),
-        Picking3dInteractable,
+        Picking3dInteractable::default(),
     ))
     .with_children(|ui| {
         let text_entity = ui
@@ -291,7 +292,7 @@ fn on_add(
                 .insert((
                     UiLayout::solid().size(Rl(100.0)).pack(),
                     UiMeshPlane3d,
-                    Picking3dInteractable,
+                    Picking3dInteractable::default(),
                 ))
                 .with_children(|ui| {
                     spawn_children(ui, slider.as_mut(), &mut materials);

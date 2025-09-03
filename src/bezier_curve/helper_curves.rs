@@ -1,33 +1,30 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use super::{
-    components::ControlState, render_info::RenderInformation, util::enable_gizmo3d,
-    EntityDeletedEvent,
-};
+use super::bezier_curve_renderer::EndModeEvent;
+use super::{EntityDeletedEvent, components::ControlState, render_info::RenderInformation};
+use crate::MainCamera;
 use crate::nurbs::bezier::de_casteljau;
 use crate::picking3d::picking_3d::Picking3dInteractable;
+use crate::projection::{BoundingEntitiesManager, DisplayIn};
 use crate::translation_control::translation_controller::CantSnapToCurve;
+use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::{
-    click_decider::LogTrace,
-    nurbs::{
-        bezier::{horner_scheme, shortest_distance_to_point},
-        point::Point,
-    },
-    picking3d::events::{self, Click, Pointer3d},
-    translation_control::translation_controller::EnableTranslationControl,
     RootTransform,
+    click_decider::LogTrace,
+    nurbs::{bezier::shortest_distance_to_point, point::Point},
+    picking3d::events::{self, Pointer3d},
+    translation_control::translation_controller::EnableTranslationControl,
 };
 use bevy::color::palettes::tailwind::PURPLE_900;
+use bevy::render::view::RenderLayers;
 use bevy::{
     asset::RenderAssetUsages,
     color::palettes::tailwind::PURPLE_600,
-    ecs::{
-        query::QueryData,
-        system::{lifetimeless::Read, SystemParam},
-    },
+    ecs::system::{SystemParam, lifetimeless::Read},
     prelude::*,
     render::mesh::PrimitiveTopology,
 };
+use bevy_lunex::UiLayoutRoot;
 
 #[derive(Component)]
 pub struct ControlCurve;
@@ -55,7 +52,7 @@ pub struct RedrawCurvesEvent;
 #[allow(clippy::complexity)]
 pub fn add_point_3d(
     mut commands: Commands,
-    mut reader: EventReader<Pointer3d<Click>>,
+    mut reader: EventReader<Pointer3d<events::Click>>,
     mut state: ResMut<CreateCurveState>,
     temp_curve: Query<Entity, With<TemporaryCurve>>,
     root: Query<&Transform, With<RootTransform>>,
@@ -85,10 +82,77 @@ pub fn add_point_3d(
                 Transform::from_translation(pos),
                 Mesh3d(sphere.clone()),
                 MeshMaterial3d(material.clone()),
+                RenderLayers::from(DisplayIn::BothNormalAndOrtho),
             ));
         });
         state.counter += 1;
         redraw = true;
+    }
+
+    if redraw {
+        redraw_curves_writer.write(RedrawCurvesEvent);
+    }
+}
+
+#[allow(clippy::complexity)]
+pub fn add_point(
+    mut reader: EventReader<Pointer<Click>>,
+    mut commands: Commands,
+    mut state: ResMut<CreateCurveState>,
+    camera: Query<(&GlobalTransform, &Camera), With<MainCamera>>,
+    temp_curve: Query<Entity, With<TemporaryCurve>>,
+    root: Query<&Transform, With<RootTransform>>,
+    ui_root: Query<&UiLayoutRoot>,
+    childof: Query<&ChildOf>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
+    render_info: Res<RenderInformation>,
+) {
+    let parent = temp_curve.single().unwrap();
+    let root = root.single().unwrap();
+    let mut redraw = false;
+
+    let sphere = meshes.add(Sphere::new(0.08 * render_info.scale));
+    let material = materials.add(StandardMaterial::from_color(PURPLE_600));
+
+    for evt in reader.read() {
+        let mut is_ui_element = false;
+        for parent in childof.iter_ancestors(evt.target) {
+            if ui_root.get(parent).is_ok() {
+                is_ui_element = true;
+            }
+        }
+
+        if is_ui_element {
+            continue;
+        }
+
+        if let Ok((camera_transform, camera)) = camera.single()
+            && let Ok(position_ray) =
+                camera.viewport_to_world(camera_transform, evt.pointer_location.position)
+            && let Some(hit) = position_ray.intersect_plane(
+                Vec3::ZERO,
+                InfinitePlane3d::new(-camera_transform.forward()),
+            )
+        {
+            let position = position_ray.get_point(hit);
+            let pos = root.compute_affine().inverse().transform_point3(position);
+
+            info!("Adding point at {:?}", pos);
+
+            commands.get_entity(parent).unwrap().with_children(|cmd| {
+                cmd.spawn((
+                    TemporaryCurvePoint(state.counter),
+                    Transform::from_translation(pos),
+                    Mesh3d(sphere.clone()),
+                    MeshMaterial3d(material.clone()),
+                    RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                ));
+            });
+            state.counter += 1;
+            redraw = true;
+        }
     }
 
     if redraw {
@@ -105,12 +169,17 @@ pub fn enter_create_curve_mode(
 
     let root = root.single().unwrap();
     commands.get_entity(root).unwrap().with_children(|cmd| {
-        cmd.spawn((TemporaryCurve, Transform::default(), Visibility::Inherited));
+        cmd.spawn((
+            TemporaryCurve,
+            Transform::default(),
+            Visibility::Inherited,
+            RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+        ));
     });
 }
 
 #[allow(clippy::complexity)]
-fn handle_click_on_curve_point(
+fn handle_click_on_curve_point3d(
     trigger: Trigger<Pointer3d<events::Click>>,
     mut commands: Commands,
     enabled: Query<&EnableTranslationControl>,
@@ -119,6 +188,8 @@ fn handle_click_on_curve_point(
     points: Query<(Entity, &ChildOf), With<ControlCurvePoint>>,
     children: Query<&Children>,
     mut delete_event: EventWriter<EntityDeletedEvent>,
+    mut end_mode_writer: EventWriter<EndModeEvent>,
+    mut bounding_entities: BoundingEntitiesManager,
 ) {
     // when clicked on a point that belongs to a curve, delete the curve and all its control
     // points. Trigger deleted events
@@ -131,6 +202,8 @@ fn handle_click_on_curve_point(
                     .unwrap()
                     .trigger(EntityDeletedEvent(child));
                 delete_event.write(EntityDeletedEvent(child));
+
+                bounding_entities.remove_entity(&child);
             }
 
             delete_event.write(EntityDeletedEvent(parent));
@@ -139,9 +212,62 @@ fn handle_click_on_curve_point(
                 .unwrap()
                 .trigger(EntityDeletedEvent(parent))
                 .despawn();
+
+            bounding_entities.remove_entity(&parent);
+
+            end_mode_writer.write(EndModeEvent);
         }
     } else if *state == ControlState::Main {
-        enable_gizmo3d(trigger, commands, enabled, trace_log_writer);
+        enable_gizmo3d(EnableTranslationControl::OnlyTranslation)(
+            trigger,
+            commands,
+            enabled,
+            trace_log_writer,
+            state,
+        );
+    }
+}
+
+#[allow(clippy::complexity)]
+fn handle_click_on_curve_point(
+    trigger: Trigger<Pointer<Click>>,
+    mut commands: Commands,
+    enabled: Query<&EnableTranslationControl>,
+    state: Res<State<ControlState>>,
+    points: Query<(Entity, &ChildOf), With<ControlCurvePoint>>,
+    children: Query<&Children>,
+    mut delete_event: EventWriter<EntityDeletedEvent>,
+    mut end_mode_writer: EventWriter<EndModeEvent>,
+    mut bounding_entities: BoundingEntitiesManager,
+) {
+    // when clicked on a point that belongs to a curve, delete the curve and all its control
+    // points. Trigger deleted events
+    if *state == ControlState::Delete {
+        if let Ok(curve) = points.get(trigger.target()) {
+            let parent = curve.1.parent();
+            for child in children.iter_descendants(parent) {
+                commands
+                    .get_entity(child)
+                    .unwrap()
+                    .trigger(EntityDeletedEvent(child));
+                delete_event.write(EntityDeletedEvent(child));
+
+                bounding_entities.remove_entity(&child);
+            }
+
+            delete_event.write(EntityDeletedEvent(parent));
+            commands
+                .get_entity(parent)
+                .unwrap()
+                .trigger(EntityDeletedEvent(parent))
+                .despawn();
+
+            bounding_entities.remove_entity(&parent);
+
+            end_mode_writer.write(EndModeEvent);
+        }
+    } else if *state == ControlState::Main {
+        enable_gizmo(EnableTranslationControl::OnlyTranslation)(trigger, commands, enabled, state);
     }
 }
 
@@ -152,27 +278,39 @@ pub fn commit_curve(
     root: Query<(Entity, &Transform), (With<RootTransform>, Without<TemporaryCurve>)>,
     tmp_curves: Query<Entity, With<TemporaryCurve>>,
     children: Query<&Children>,
-    mut tmp_points: Query<(Entity, &mut Transform, &TemporaryCurvePoint), Without<RootTransform>>,
+    mut tmp_points: Query<(Entity, &TemporaryCurvePoint), Without<RootTransform>>,
     mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
+    mut bounding_entities: BoundingEntitiesManager,
 ) {
     let root = root.single().unwrap();
-
-    let root_transform = root.1.clone().compute_affine().inverse();
 
     // Iterate over possible (actually only one) temporary curves
     for curve in tmp_curves.iter() {
         let mut contains_points = false;
-        for _ in children.iter_descendants(curve) {
-            contains_points = true;
+        if let Ok(children) = children.get(curve) {
+            for _ in children {
+                contains_points = true;
+            }
         }
-        if contains_points {
-            let parent = commands.spawn((ControlCurve, ChildOf(root.0))).id();
 
-            for child_point_entity in children.iter_descendants(curve) {
-                let (entity, mut transform, point) =
-                    tmp_points.get_mut(child_point_entity).unwrap();
+        if contains_points {
+            let parent = commands
+                .spawn((
+                    ControlCurve,
+                    ChildOf(root.0),
+                    RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                ))
+                .id();
+
+            for child_point_entity in children
+                .get(curve)
+                .expect("This is checked by the flag contains_points")
+            {
+                let (entity, point) = tmp_points.get_mut(*child_point_entity).unwrap();
 
                 let idx = point.0;
+
+                bounding_entities.add_bounding_entity(*child_point_entity);
 
                 info!("Consolidated curve point {entity:?}");
                 commands
@@ -182,9 +320,10 @@ pub fn commit_curve(
                     .remove::<TemporaryCurvePoint>()
                     .insert((
                         ControlCurvePoint(idx),
-                        Picking3dInteractable,
-                        CantSnapToCurve(parent),
+                        Picking3dInteractable::default(),
+                        CantSnapToCurve::Single(parent),
                     ))
+                    .observe(handle_click_on_curve_point3d)
                     .observe(handle_click_on_curve_point);
             }
         } else {
@@ -210,13 +349,15 @@ impl<'w, 's> CurveCollection<'w, 's> {
         let mut result = HashMap::new();
         for curve in self.curves.iter() {
             let mut points = Vec::new();
-            for child in self.children.iter_descendants(curve) {
-                if let Ok(point) = self.curves_points.get(child) {
-                    points.push((point.0.0, Point::from(point.1.translation)));
+            if let Ok(children) = self.children.get(curve) {
+                for child in children {
+                    if let Ok(point) = self.curves_points.get(*child) {
+                        points.push((point.0.0, Point::from(point.1.translation)));
+                    }
                 }
+                points.sort_by_key(|p| p.0);
+                result.insert(curve, points.iter().map(|p| p.1).collect());
             }
-            points.sort_by_key(|p| p.0);
-            result.insert(curve, points.iter().map(|p| p.1).collect());
         }
 
         result
@@ -225,7 +366,7 @@ impl<'w, 's> CurveCollection<'w, 's> {
     pub fn collect_shortest(
         &self,
         point: Point,
-        ignore_curves: HashSet<Entity>,
+        ignore_curves: &CantSnapToCurve,
     ) -> Option<(Entity, f64, Point, f64, Vec<Point>)> {
         let mut min = f64::MAX;
         let mut min_u = None;
@@ -235,8 +376,21 @@ impl<'w, 's> CurveCollection<'w, 's> {
 
         let collected = self.collect();
         for (curve, points) in collected {
-            if ignore_curves.contains(&curve) {
-                continue;
+            match ignore_curves {
+                CantSnapToCurve::All => {
+                    continue;
+                }
+                CantSnapToCurve::Single(ignore_curve) => {
+                    if *ignore_curve == curve {
+                        continue;
+                    }
+                }
+                CantSnapToCurve::Multiple(ignore_curves) => {
+                    if ignore_curves.contains(&curve) {
+                        continue;
+                    }
+                }
+                _ => {}
             }
             let (u, p, dist) = shortest_distance_to_point(&points, point);
             if dist < min {
@@ -272,14 +426,16 @@ impl<'w, 's> TemporaryCurveCollection<'w, 's> {
     pub fn collect(&self) -> HashMap<Entity, Vec<Point>> {
         let mut result = HashMap::new();
         for curve in self.curves.iter() {
-            let mut points = Vec::new();
-            for child in self.children.iter_descendants(curve) {
-                if let Ok(point) = self.curves_points.get(child) {
-                    points.push((point.0.0, Point::from(point.1.translation)));
+            if let Ok(children) = self.children.get(curve) {
+                let mut points = Vec::new();
+                for child in children {
+                    if let Ok(point) = self.curves_points.get(*child) {
+                        points.push((point.0.0, Point::from(point.1.translation)));
+                    }
                 }
+                points.sort_by_key(|p| p.0);
+                result.insert(curve, points.iter().map(|p| p.1).collect());
             }
-            points.sort_by_key(|p| p.0);
-            result.insert(curve, points.iter().map(|p| p.1).collect());
         }
 
         result

@@ -7,15 +7,41 @@ pub struct ControlDirection {
     pub color: Color,
     pub hover_color: Color,
     pub shadow_color: Color,
+    pub with_rotation: bool,
 }
 
 impl ControlDirection {
-    pub fn new(vec: Vec3, color: Color, hover_color: Color, shadow_color: Color) -> Self {
+    pub fn new(
+        vec: Vec3,
+        color: Color,
+        hover_color: Color,
+        shadow_color: Color,
+        with_rotation: bool,
+    ) -> Self {
         Self {
             normalized: vec * 1.0 / vec.length(),
             color,
             hover_color,
             shadow_color,
+            with_rotation,
+        }
+    }
+}
+
+pub struct ControlPlane {
+    pub axis: Vec3,
+    pub normal: Vec3,
+    pub color: Color,
+    pub hover_color: Color,
+}
+
+impl ControlPlane {
+    pub fn new(axis: Vec3, normal: Vec3, color: Color, hover_color: Color) -> Self {
+        Self {
+            axis,
+            normal,
+            color,
+            hover_color,
         }
     }
 }
@@ -23,12 +49,16 @@ impl ControlDirection {
 #[derive(Resource)]
 pub struct ControlStorage {
     pub arrows: Vec<ControlDirection>,
+    pub planes: Vec<ControlPlane>,
 }
 
 impl ControlStorage {
     #[allow(unused)]
     pub fn new() -> Self {
-        Self { arrows: Vec::new() }
+        Self {
+            arrows: Vec::new(),
+            planes: Vec::new(),
+        }
     }
 
     #[allow(unused)]
@@ -36,8 +66,12 @@ impl ControlStorage {
         self.arrows.push(direction);
     }
 
-    pub fn iter(&self) -> Iter<'_, ControlDirection> {
+    pub fn iter_arrows(&self) -> Iter<'_, ControlDirection> {
         self.arrows.iter()
+    }
+
+    pub fn iter_planes(&self) -> Iter<'_, ControlPlane> {
+        self.planes.iter()
     }
 }
 
@@ -50,24 +84,41 @@ impl Default for ControlStorage {
                     Color::from(RED_600),
                     Color::from(RED_800),
                     Color::from(GRAY_500),
+                    true,
                 ),
                 ControlDirection::new(
                     Vec3::new(0.0, 1.0, 0.0),
                     Color::from(GREEN_600),
                     Color::from(GREEN_800),
                     Color::from(GRAY_500),
+                    true,
                 ),
                 ControlDirection::new(
                     Vec3::new(0.0, 0.0, 1.0),
                     Color::from(BLUE_600),
                     Color::from(BLUE_800),
                     Color::from(GRAY_500),
+                    true,
                 ),
-                ControlDirection::new(
-                    Vec3::new(0.0, 1.0, 1.0),
+            ],
+            planes: vec![
+                ControlPlane::new(
+                    Vec3::new(1.0, 1.0, 0.0),
+                    Vec3::new(0.0, 0.0, 1.0),
+                    Color::from(YELLOW_600),
+                    Color::from(YELLOW_800),
+                ),
+                ControlPlane::new(
+                    Vec3::new(1.0, 0.0, 1.0),
+                    Vec3::new(0.0, 1.0, 0.0),
                     Color::from(PURPLE_600),
                     Color::from(PURPLE_800),
-                    Color::from(GRAY_500),
+                ),
+                ControlPlane::new(
+                    Vec3::new(0.0, 1.0, 1.0),
+                    Vec3::new(1.0, 0.0, 0.0),
+                    Color::from(CYAN_600),
+                    Color::from(CYAN_800),
                 ),
             ],
         }

@@ -4,8 +4,10 @@ mod advanced_orbit_controls;
 mod bezier_curve;
 pub mod click_decider;
 mod history;
+pub mod linked_entities;
 mod nurbs;
 pub mod picking3d;
+pub mod projection;
 pub mod solver;
 mod thirdparty_copy;
 mod translation_control;
@@ -22,6 +24,8 @@ use bezier_curve::bezier_curve_renderer::*;
 use history::plugin::HistoryPlugin;
 
 use crate::bezier_curve::render_info::RenderInformation;
+use bevy::render::view::RenderLayers;
+use projection::DisplayIn;
 use translation_control::translation_controller::TranslationController;
 use ui::UiPlugin;
 
@@ -29,11 +33,17 @@ use ui::UiPlugin;
 #[require(Transform, Visibility)]
 pub struct RootTransform;
 
+#[derive(Component)]
+#[require(Camera)]
+pub struct MainCamera;
+
 #[cfg(not(feature = "vr_enable"))]
 fn setup(mut commands: Commands) {
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(-10.0, 0.0, 0.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+        RenderLayers::from(DisplayIn::Normal),
+        MainCamera,
     ));
 
     commands.spawn((
@@ -42,9 +52,10 @@ fn setup(mut commands: Commands) {
             ..default()
         },
         Transform::from_xyz(0.0, 10.0, 0.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+        RenderLayers::from(DisplayIn::BothNormalAndOrtho),
     ));
 
-    commands.spawn(RootTransform);
+    commands.spawn((RootTransform, Name::new("Root Transform")));
 }
 
 #[cfg(feature = "vr_enable")]
@@ -59,6 +70,7 @@ fn setup(
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 0.0, -10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+        RenderLayers::from(DisplayIn::Normal),
     ));
 
     commands.spawn((
@@ -79,6 +91,11 @@ fn setup(
 
 #[cfg(not(feature = "vr_enable"))]
 fn create_app() -> App {
+    use bevy::color::palettes::tailwind::{GRAY_700, GRAY_900};
+    use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
+    use linked_entities::LinkedEntitiesPlugin;
+    use projection::ProjectionPlugin;
+
     info!("Creating Non-VR App");
     let mut app = App::new();
     app.add_plugins(DefaultPlugins)
@@ -88,7 +105,12 @@ fn create_app() -> App {
         .add_plugins(AdvancedOrbitControls)
         .add_plugins(TranslationController)
         .add_plugins(UiPlugin)
+        .add_plugins(EguiPlugin::default())
+        .add_plugins(WorldInspectorPlugin::new())
+        .add_plugins(ProjectionPlugin)
+        .add_plugins(LinkedEntitiesPlugin)
         .init_resource::<ControlStorage>()
+        .insert_resource(ClearColor(GRAY_700.into()))
         .add_systems(Startup, setup.before(generate_default_curve));
 
     app
@@ -102,7 +124,9 @@ fn create_app() -> App {
     use bevy_mod_openxr::resources::OxrSessionConfig;
     use bevy_mod_openxr::types::EnvironmentBlendMode;
     use click_decider::TracingPlugin;
+    use linked_entities::LinkedEntitiesPlugin;
     use picking3d::picking_3d::ObjectPicking3d;
+    use projection::ProjectionPlugin;
 
     info!("Creating VR App");
     let mut app = App::new();
@@ -121,13 +145,15 @@ fn create_app() -> App {
     .add_plugins(HistoryPlugin)
     .add_plugins(BezierRenderPlugin)
     .add_plugins(AdvancedOrbitControls)
-    .init_resource::<ControlStorage>()
     .add_plugins(ObjectPicking3d)
     .add_plugins(TranslationController)
     .add_plugins(VrControlPlugin)
     .add_plugins(UiPlugin)
     .add_plugins(TracingPlugin)
+    .add_plugins(ProjectionPlugin)
+    .add_plugins(LinkedEntitiesPlugin)
     .add_systems(Startup, (setup.before(generate_default_curve),))
+    .init_resource::<ControlStorage>()
     .insert_resource(ClearColor(Color::NONE));
 
     app

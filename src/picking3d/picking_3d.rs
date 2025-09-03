@@ -8,8 +8,8 @@ use crate::picking3d::pointer_state::Pointer3dState;
 use crate::vr_control::trigger::{ControllerSqueeze, ControllerTrigger};
 use crate::vr_control::{AimLeft, AimRight, GripLeft, GripRight};
 use bevy::color::palettes::css::POWDER_BLUE;
+use bevy::math::bounding::{Aabb3d, BoundingSphere, IntersectsVolume};
 use bevy::math::Vec3;
-use bevy::math::bounding::{BoundingSphere, IntersectsVolume};
 use bevy::prelude::*;
 
 #[derive(Component)]
@@ -22,8 +22,12 @@ pub struct AimLineRayMarker;
 #[derive(Component, Clone, Copy)]
 pub struct Picking3dTranslation(pub Vec3);
 
-#[derive(Component, Clone, Copy)]
-pub struct Picking3dInteractable;
+#[derive(Component, Clone, Copy, Default, Eq, Ord, PartialOrd, PartialEq)]
+pub enum Picking3dInteractable {
+    #[default]
+    Default,
+    Ignore,
+}
 
 #[derive(Component)]
 struct MoveMarker {
@@ -32,17 +36,25 @@ struct MoveMarker {
     current_position: Vec3,
 }
 
+#[derive(Component)]
+pub enum CustomPicking3dHitbox {
+    Sphere(f32),
+    /// Aabb from half size
+    AaBb(Vec3),
+}
+
 #[allow(clippy::complexity)]
 fn check_intersections(
     mut commands: Commands,
     // mut event_writer: EventWriter<Intersection>,
     pickable: Query<
-        (&GlobalTransform, Entity),
         (
-            With<Picking3dInteractable>,
-            Without<GripLeft>,
-            Without<GripRight>,
+            &GlobalTransform,
+            Entity,
+            Option<&CustomPicking3dHitbox>,
+            &Picking3dInteractable,
         ),
+        (Without<GripLeft>, Without<GripRight>),
     >,
     left_tracked: Single<(&GlobalTransform, Entity), With<GripLeft>>,
     right_tracked: Single<(&GlobalTransform, Entity), With<GripRight>>,
@@ -65,9 +77,23 @@ fn check_intersections(
     }
 
     for p in pickable {
-        let test = BoundingSphere::new(p.0.translation(), 0.1 * scale);
+        if *p.3 == Picking3dInteractable::Ignore {
+            continue;
+        }
+        let test: Box<dyn IntersectsVolume<BoundingSphere>> = if p.2.is_some() {
+            match p.2.unwrap() {
+                CustomPicking3dHitbox::Sphere(s) => {
+                    Box::new(BoundingSphere::new(p.0.translation(), *s))
+                }
+                CustomPicking3dHitbox::AaBb(aabb) => {
+                    Box::new(Aabb3d::new(p.0.translation(), *aabb))
+                }
+            }
+        } else {
+            Box::new(BoundingSphere::new(p.0.translation(), 0.1 * scale))
+        };
 
-        if bb_sphere_left.intersects(&test) {
+        if test.intersects(&bb_sphere_left) {
             // event_writer.write(Intersection::Left(p.1));
             if !state.contains_entity_and_controller(&p.1, &HoveredBy::Left) {
                 commands.trigger_targets(
@@ -83,7 +109,7 @@ fn check_intersections(
             state.ensure_inserted(p.1, HoveredBy::Left, p.0.translation());
         }
 
-        if bb_sphere_right.intersects(&test) {
+        if test.intersects(&bb_sphere_right) {
             // event_writer.write(Intersection::Right(p.1));
             if !state.contains_entity_and_controller(&p.1, &HoveredBy::Right) {
                 commands.trigger_targets(
@@ -117,7 +143,7 @@ fn check_intersections(
             );
 
             for collision in collisions.iter() {
-                let (transform, _) = pickable
+                let (transform, _, _, _) = pickable
                     .get(collision.0)
                     .expect("This is already checked in the mesh_ray_casting filter option");
                 if !state.contains_entity_and_controller(&collision.0, &hovered_by) {
@@ -143,12 +169,13 @@ fn check_intersections(
 fn test_all_hovered(
     mut commands: Commands,
     pickable: Query<
-        (&GlobalTransform, Entity, Option<&Picking3dTranslation>),
         (
-            With<Picking3dInteractable>,
-            Without<GripLeft>,
-            Without<GripRight>,
+            &GlobalTransform,
+            Entity,
+            Option<&CustomPicking3dHitbox>,
+            &Picking3dInteractable,
         ),
+        (Without<GripLeft>, Without<GripRight>),
     >,
     left_tracked: Single<(&GlobalTransform, Entity), With<GripLeft>>,
     right_tracked: Single<(&GlobalTransform, Entity), With<GripRight>>,
@@ -181,10 +208,23 @@ fn test_all_hovered(
         }
         let p = p.unwrap();
 
-        let test = if p.2.is_some() {
-            BoundingSphere::new(p.0.transform_point(p.2.unwrap().0), 0.1 * scale)
+        if *p.3 == Picking3dInteractable::Ignore {
+            to_remove.push((*entity, HoveredBy::Left));
+            to_remove.push((*entity, HoveredBy::Right));
+            continue;
+        }
+
+        let test: Box<dyn IntersectsVolume<BoundingSphere>> = if p.2.is_some() {
+            match p.2.unwrap() {
+                CustomPicking3dHitbox::Sphere(s) => {
+                    Box::new(BoundingSphere::new(p.0.translation(), *s))
+                }
+                CustomPicking3dHitbox::AaBb(aabb) => {
+                    Box::new(Aabb3d::new(p.0.translation(), *aabb))
+                }
+            }
         } else {
-            BoundingSphere::new(p.0.translation(), 0.1 * scale)
+            Box::new(BoundingSphere::new(p.0.translation(), 0.1 * scale))
         };
 
         let mut is_first_ray_hit = false;
@@ -209,7 +249,7 @@ fn test_all_hovered(
                 is_first_ray_hit = true;
             }
         }
-        if !bb_sphere_left.intersects(&test) && !is_first_ray_hit {
+        if !test.intersects(&bb_sphere_left) && !is_first_ray_hit {
             to_remove.push((p.1, HoveredBy::Left));
         }
 
@@ -235,7 +275,7 @@ fn test_all_hovered(
                 is_first_ray_hit = true;
             }
         }
-        if !bb_sphere_right.intersects(&test) && !is_first_ray_hit {
+        if !test.intersects(&bb_sphere_right) && !is_first_ray_hit {
             to_remove.push((p.1, HoveredBy::Right));
         }
     }
@@ -376,35 +416,32 @@ fn handle_input_grab(
                     };
                     let dist = translation - tracked.0.translation();
 
-                    if dist.length() > 0.1 * info.scale || !pointer_state.is_just_toggled(&hover_by)
-                    {
-                        // The controller may be rotated. In order to properly spawn the child, use the inverse rotation.
-                        let dist = tracked.0.rotation().inverse().mul_vec3(dist);
-                        let dist = dist / tracked.0.scale();
+                    // The controller may be rotated. In order to properly spawn the child, use the inverse rotation.
+                    let dist = tracked.0.rotation().inverse().mul_vec3(dist);
+                    let dist = dist / tracked.0.scale();
 
-                        commands.spawn((
-                            ChildOf(tracked.1),
-                            Transform::from_translation(dist),
-                            Visibility::default(),
-                            MoveMarker {
-                                entity: *entity,
-                                global_start: transform.translation(),
-                                current_position: tracked.0.transform_point(dist),
-                            },
-                        ));
+                    commands.spawn((
+                        ChildOf(tracked.1),
+                        Transform::from_translation(dist),
+                        Visibility::default(),
+                        MoveMarker {
+                            entity: *entity,
+                            global_start: transform.translation(),
+                            current_position: tracked.0.transform_point(dist),
+                        },
+                    ));
 
-                        commands.trigger_targets(
-                            Pointer3d {
-                                controler: hover_by,
-                                hit_entity: tracked.1,
-                                event: DragStart,
-                                position: transform.translation(),
-                            },
-                            *entity,
-                        );
+                    commands.trigger_targets(
+                        Pointer3d {
+                            controler: hover_by,
+                            hit_entity: tracked.1,
+                            event: DragStart,
+                            position: transform.translation(),
+                        },
+                        *entity,
+                    );
 
-                        dragging_should_start = true;
-                    }
+                    dragging_should_start = true;
                 }
 
                 if dragging_should_start {
@@ -412,7 +449,7 @@ fn handle_input_grab(
                 }
             }
 
-            if !pointer_state.is_just_toggled(&hover_by) {
+            if picking_state.check_is_dragging(&hover_by) {
                 for (transform, mut marker, _) in moved_marked_query.iter_mut() {
                     if picking_state.contains_entity(&marker.entity, &hover_by) {
                         let entity_global_position = transform_query.get(marker.entity).unwrap();
@@ -534,20 +571,19 @@ pub fn show_aim(
     mut set: ParamSet<(ResMut<Assets<Mesh>>, MeshRayCast)>,
     scale: Res<RenderInformation>,
 ) {
-    for line in aim_line {
-        if line.1.0 == HoveredBy::Left && squeeze.left <= 0.2
-            || line.1.0 == HoveredBy::Right && squeeze.right <= 0.2
-        {
-            commands.get_entity(line.0).unwrap().despawn();
-        }
-    }
+    // for line in aim_line {
+    //     if line.1.0 == HoveredBy::Left && squeeze.left <= 0.2
+    //         || line.1.0 == HoveredBy::Right && squeeze.right <= 0.2
+    //     {
+    //         commands.get_entity(line.0).unwrap().despawn();
+    //     }
+    // }
 
     for (squeeze, aim_query, hovered_by) in [
         (squeeze.left, aim_query_left.single(), HoveredBy::Left),
         (squeeze.right, aim_query_right.single(), HoveredBy::Right),
     ] {
-        if squeeze >= 0.2
-            && let Ok(aim) = aim_query
+        if let Ok(aim) = aim_query
             && aim_line
                 .iter()
                 .position(|line| line.1.0 == hovered_by)
