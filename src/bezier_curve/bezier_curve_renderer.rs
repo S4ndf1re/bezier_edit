@@ -576,10 +576,12 @@ pub fn generate_default_curve(
                 ))
                 .id();
 
-            let is_y_mid = y < y_mid && y + 1 >= y_mid;
-            if is_y_mid {
-                let center = origin + diff * 0.5;
+            let is_x_mid = x < x_mid && x + 1 >= x_mid;
+            if is_x_mid {
                 let complete_bridge = y_bridges[y];
+
+                let center = origin + diff * 0.5;
+
                 commands
                     .spawn((
                         Transform::from_translation(center),
@@ -634,12 +636,10 @@ pub fn generate_default_curve(
                 ))
                 .id();
 
-            let is_x_mid = x < x_mid && x + 1 >= x_mid;
-            if is_x_mid {
-                let complete_bridge = x_bridges[x];
-
+            let is_y_mid = y < y_mid && y + 1 >= y_mid;
+            if is_y_mid {
                 let center = origin + diff * 0.5;
-
+                let complete_bridge = x_bridges[x];
                 commands
                     .spawn((
                         Transform::from_translation(center),
