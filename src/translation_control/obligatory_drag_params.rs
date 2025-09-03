@@ -21,8 +21,9 @@ use crate::{
 };
 
 use super::translation_controller::{
-    CantSnapToCurve, Control, ControlParent, MovedEntityEvent, SnappedArrow, SnappedPoint,
-    SnappingBehaviour, TranslationControllerState, drag_controller, drag_controller3d, draw_arrow,
+    CantSnapToCurve, CantSnapToEntities, Control, ControlParent, MovedEntityEvent, SnappedArrow,
+    SnappedPoint, SnappingBehaviour, TranslationControllerState, drag_controller,
+    drag_controller3d, draw_arrow,
 };
 
 #[allow(clippy::complexity)]
@@ -46,6 +47,7 @@ pub struct ObligatoryDragParams<'w, 's> {
     materials: ResMut<'w, Assets<StandardMaterial>>,
     meshes: ResMut<'w, Assets<Mesh>>,
     cant_snap_to_curve: Query<'w, 's, Read<CantSnapToCurve>>,
+    cant_snap_to_entities: Query<'w, 's, Read<CantSnapToEntities>>,
     moved_entity_writer: EventWriter<'w, MovedEntityEvent>,
 }
 
@@ -140,12 +142,13 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         t: Transform,
         translation: Vec3,
         cant_snap_to_curve: Option<CantSnapToCurve>,
+        cant_snap_to_entities: Option<CantSnapToEntities>,
     ) -> Vec3 {
-        if let Some(closest_move_direction) = self
-            .transform_set
-            .p2()
-            .detect_closest_projected(control_parent.1.0, translation)
-            && closest_move_direction.length() < 0.05 * self.info.scale
+        if let Some(closest_move_direction) = self.transform_set.p2().detect_closest_projected(
+            control_parent.1.0,
+            translation,
+            cant_snap_to_entities,
+        ) && closest_move_direction.length() < 0.05 * self.info.scale
         {
             self.snap_to_projection(control_parent, translation, closest_move_direction)
         } else {
@@ -159,6 +162,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         t: Transform,
         translation: Vec3,
         cant_snap_to_curve: Option<CantSnapToCurve>,
+        cant_snap_to_entities: Option<CantSnapToEntities>,
         snap: SnappedPoint,
     ) -> Vec3 {
         match snap {
@@ -188,10 +192,12 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
 
                     // Once removed (Snapped point, consider adding it back when snapping to a
                     // projected position)
-                    if let Some(closest_move_direction) = self
-                        .transform_set
-                        .p2()
-                        .detect_closest_projected(control_parent.1.0, translation)
+                    if let Some(closest_move_direction) =
+                        self.transform_set.p2().detect_closest_projected(
+                            control_parent.1.0,
+                            translation,
+                            cant_snap_to_entities,
+                        )
                         && closest_move_direction.length() < 0.05 * self.info.scale
                     {
                         self.snap_to_projection(control_parent, translation, closest_move_direction)
@@ -206,10 +212,12 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             SnappedPoint::ToProjection => {
                 // Once removed (Snapped point, consider adding it back when snapping to a
                 // projected position)
-                if let Some(closest_move_direction) = self
-                    .transform_set
-                    .p2()
-                    .detect_closest_projected(control_parent.1.0, translation)
+                if let Some(closest_move_direction) =
+                    self.transform_set.p2().detect_closest_projected(
+                        control_parent.1.0,
+                        translation,
+                        cant_snap_to_entities,
+                    )
                     && closest_move_direction.length() < 0.05 * self.info.scale
                 {
                     let mut p0 = self.transform_set.p0();
@@ -244,6 +252,12 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             .ok()
             .cloned();
 
+        let cant_snap_to_entities = self
+            .cant_snap_to_entities
+            .get(control_parent.1.0)
+            .ok()
+            .cloned();
+
         let changed_entity = control_parent.1.0;
         let control_point = self.transform_set.p0().get(control_parent.1.0).copied();
         if let Ok(t) = control_point {
@@ -251,7 +265,13 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
 
             let ending_translation = if self.state.curve_snapping == SnappingBehaviour::Snap {
                 if !is_already_snapped {
-                    self.try_create_snapping(control_parent, t, translation, cant_snap_to_curve)
+                    self.try_create_snapping(
+                        control_parent,
+                        t,
+                        translation,
+                        cant_snap_to_curve,
+                        cant_snap_to_entities,
+                    )
                 } else {
                     // The entity is already snapped to a curve. Either continue snapping by moving
                     // the entity back to the curve, or if the distance is to large, remove the
@@ -270,6 +290,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                         t,
                         translation,
                         cant_snap_to_curve,
+                        cant_snap_to_entities,
                         snap,
                     )
                 }

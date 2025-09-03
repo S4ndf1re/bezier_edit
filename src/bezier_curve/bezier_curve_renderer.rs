@@ -34,7 +34,7 @@ use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::projection::{BoundingEntitiesManager, DisplayIn};
 use crate::translation_control::translation_controller::{
-    EnableTranslationControl, MovedEntityEvent,
+    CantSnapToEntities, EnableTranslationControl, MovedEntityEvent,
 };
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::util::update_material_on;
@@ -419,12 +419,8 @@ pub fn redraw_boxes(
         );
         root.with_children(|ui| {
             ui.spawn((
-                Transform::from_translation(Vec3::from(point)).aligned_by(
-                    Vec3::Z,
-                    Vec3::from(u_diff),
-                    Vec3::X,
-                    Vec3::from(v_diff),
-                ),
+                Transform::from_translation(Vec3::from(point))
+                    .looking_to(Vec3::from(u_diff), Vec3::from(normal)),
                 Name::new("Box"),
                 CurveBox,
                 Mesh3d(meshes.add(mesh)),
@@ -582,7 +578,7 @@ pub fn generate_default_curve(
 
                 let center = origin + diff * 0.5;
 
-                commands
+                let id = commands
                     .spawn((
                         Transform::from_translation(center),
                         CompleteBridgeCenter {
@@ -591,17 +587,16 @@ pub fn generate_default_curve(
                         },
                         ChildOf(surface),
                         Visibility::Inherited,
-                        children![(
-                            Transform::default(),
-                            Visibility::Inherited,
-                            Mesh3d(meshes.add(Sphere::new(0.1 * scale))),
-                            MeshMaterial3d(materials.add(Color::from(GREEN_800))),
-                            Picking3dInteractable::default(),
-                        )],
+                        Mesh3d(meshes.add(Sphere::new(0.1 * scale))),
+                        MeshMaterial3d(materials.add(Color::from(GREEN_800))),
+                        Picking3dInteractable::default(),
+                        CantSnapToEntities::All,
                     ))
                     .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
                     .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
-                    .observe(moved_complete_bridge);
+                    .observe(moved_complete_bridge)
+                    .id();
+                bounding_entites.add_bounding_entity(id);
             }
         }
 
@@ -640,7 +635,7 @@ pub fn generate_default_curve(
             if is_y_mid {
                 let center = origin + diff * 0.5;
                 let complete_bridge = x_bridges[x];
-                commands
+                let id = commands
                     .spawn((
                         Transform::from_translation(center),
                         CompleteBridgeCenter {
@@ -649,17 +644,16 @@ pub fn generate_default_curve(
                         },
                         ChildOf(surface),
                         Visibility::Inherited,
-                        children![(
-                            Transform::default(),
-                            Visibility::Inherited,
-                            Mesh3d(meshes.add(Sphere::new(0.1 * scale))),
-                            MeshMaterial3d(materials.add(Color::from(GREEN_800))),
-                            Picking3dInteractable::default(),
-                        )],
+                        Mesh3d(meshes.add(Sphere::new(0.1 * scale))),
+                        MeshMaterial3d(materials.add(Color::from(GREEN_800))),
+                        Picking3dInteractable::default(),
+                        CantSnapToEntities::All,
                     ))
                     .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
                     .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
-                    .observe(moved_complete_bridge);
+                    .observe(moved_complete_bridge)
+                    .id();
+                bounding_entites.add_bounding_entity(id);
             }
         }
 
