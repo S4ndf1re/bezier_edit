@@ -420,6 +420,7 @@ pub fn redraw_boxes(
         root.with_children(|ui| {
             ui.spawn((
                 Transform::from_translation(Vec3::from(point))
+                    // TODO: mode to align by xyz and nuv (nuv is this one below)
                     .looking_to(Vec3::from(u_diff), Vec3::from(normal)),
                 Name::new("Box"),
                 CurveBox,
