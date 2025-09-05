@@ -8,8 +8,8 @@ use crate::picking3d::pointer_state::Pointer3dState;
 use crate::vr_control::trigger::{ControllerSqueeze, ControllerTrigger};
 use crate::vr_control::{AimLeft, AimRight, GripLeft, GripRight};
 use bevy::color::palettes::css::POWDER_BLUE;
-use bevy::math::Vec3;
 use bevy::math::bounding::{Aabb3d, BoundingSphere, IntersectsVolume};
+use bevy::math::Vec3;
 use bevy::prelude::*;
 
 use super::picking_state::VectorState;
@@ -361,7 +361,7 @@ fn handle_input_grab(
                     picking_state.insert_vector_store_for_entity(
                         &hover_by,
                         entity,
-                        VectorState::new(pos_to_entity, forward),
+                        VectorState::new(pos_to_entity, forward, pos),
                     );
                 }
             }
@@ -394,68 +394,68 @@ fn handle_input_grab(
             for (_, _, entity) in moved_marked_query.iter() {
                 commands.get_entity(entity).unwrap().despawn();
             }
-        }
+        } else if current_state && pointer_state.is_grabbing(&hover_by) {
+            // Check if dragging starts and send continous drag events
+            if !picking_state.check_is_dragging(&hover_by) {
+                let mut should_start_dragging = false;
+                let forward = tracked.0.forward().as_vec3();
 
-        // Check if dragging starts and send continous drag events
-        if current_state && pointer_state.is_grabbing(&hover_by) {
-            let mut should_start_dragging = false;
-            let forward = tracked.0.forward().as_vec3();
+                for entity in picking_state.iter(&hover_by) {
+                    if let Ok(transform) = transform_query.get(*entity)
+                        && let Some(store) =
+                            picking_state.get_vector_store_for_entity(&hover_by, entity)
+                    {
+                        let to_target = transform.translation() - tracked.0.translation();
 
-            for entity in picking_state.iter(&hover_by) {
-                if let Ok(transform) = transform_query.get(*entity)
-                    && let Some(store) =
-                        picking_state.get_vector_store_for_entity(&hover_by, entity)
-                {
-                    let to_target = transform.translation() - tracked.0.translation();
+                        let alpha_diff = store.get_delta_alpha(to_target);
+                        let beta_diff = store.get_delta_beta(to_target, forward);
+                        let origin_diff = store.get_delta_origin(tracked.0.translation());
 
-                    let alpha_diff = store.get_delta_alpha(to_target);
-                    let beta_diff = store.get_delta_beta(to_target, forward);
-
-                    if alpha_diff > 0.05 || beta_diff > 0.05 {
-                        should_start_dragging = true;
+                        if alpha_diff > 0.05 || beta_diff > 0.05 || origin_diff > 0.05 * info.scale
+                        {
+                            should_start_dragging = true;
+                        }
                     }
                 }
-            }
 
-            if should_start_dragging {
-                for entity in picking_state.iter(&hover_by) {
-                    let transform = transform_query.get(*entity).unwrap();
-                    let translation = match picking_state.get_start_transform(entity) {
-                        Some(vec) => vec,
-                        None => transform.translation(),
-                    };
-                    let dist = translation - tracked.0.translation();
+                if should_start_dragging {
+                    for entity in picking_state.iter(&hover_by) {
+                        let transform = transform_query.get(*entity).unwrap();
+                        let translation = match picking_state.get_start_transform(entity) {
+                            Some(vec) => vec,
+                            None => transform.translation(),
+                        };
+                        let dist = translation - tracked.0.translation();
 
-                    // The controller may be rotated. In order to properly spawn the child, use the inverse rotation.
-                    let dist = tracked.0.rotation().inverse().mul_vec3(dist);
-                    let dist = dist / tracked.0.scale();
+                        // The controller may be rotated. In order to properly spawn the child, use the inverse rotation.
+                        let dist = tracked.0.rotation().inverse().mul_vec3(dist);
+                        let dist = dist / tracked.0.scale();
 
-                    commands.spawn((
-                        ChildOf(tracked.1),
-                        Transform::from_translation(dist),
-                        Visibility::default(),
-                        MoveMarker {
-                            entity: *entity,
-                            global_start: transform.translation(),
-                            current_position: tracked.0.transform_point(dist),
-                        },
-                    ));
+                        commands.spawn((
+                            ChildOf(tracked.1),
+                            Transform::from_translation(dist),
+                            Visibility::default(),
+                            MoveMarker {
+                                entity: *entity,
+                                global_start: transform.translation(),
+                                current_position: tracked.0.transform_point(dist),
+                            },
+                        ));
 
-                    commands.trigger_targets(
-                        Pointer3d {
-                            controler: hover_by,
-                            hit_entity: tracked.1,
-                            event: DragStart,
-                            position: transform.translation(),
-                        },
-                        *entity,
-                    );
+                        commands.trigger_targets(
+                            Pointer3d {
+                                controler: hover_by,
+                                hit_entity: tracked.1,
+                                event: DragStart,
+                                position: transform.translation(),
+                            },
+                            *entity,
+                        );
+                    }
+
+                    picking_state.set_dragging(true, &hover_by);
                 }
-
-                picking_state.set_dragging(true, &hover_by);
-            }
-
-            if picking_state.check_is_dragging(&hover_by) {
+            } else if picking_state.check_is_dragging(&hover_by) {
                 for (transform, mut marker, _) in moved_marked_query.iter_mut() {
                     if picking_state.contains_entity(&marker.entity, &hover_by) {
                         let entity_global_position = transform_query.get(marker.entity).unwrap();
@@ -480,13 +480,11 @@ fn handle_input_grab(
                     }
                 }
             }
-        }
-
-        // Handle click if we are still not dragging
-        if !current_state
+        } else if !current_state
             && pointer_state.is_grabbing(&hover_by)
             && !picking_state.check_is_dragging(&hover_by)
         {
+            // Handle click if we are still not dragging
             let mut sended_event = false;
             // Click event here, since the new state is false, the old state was true and the state change lasted only <n ticks
             for entity in picking_state.iter(&hover_by) {
@@ -521,6 +519,7 @@ fn handle_input_grab(
         }
 
         pointer_state.set_state(current_state, &hover_by);
+        picking_state.set_pressed(&hover_by, current_state);
     }
 }
 

@@ -18,6 +18,7 @@ pub mod vr_control;
 use crate::advanced_orbit_controls::AdvancedOrbitControls;
 use crate::thirdparty_copy::transform_util_copy::{SnapToPosition, SnapToRotation};
 use crate::translation_control::control_storage::ControlStorage;
+use bevy::color::palettes::tailwind::GRAY_700;
 use bevy::prelude::*;
 use bevy_xr_utils::xr_utils_actions::{XRUtilsActionSystemSet, XRUtilsActionsPlugin};
 use bezier_curve::bezier_curve_renderer::*;
@@ -154,7 +155,7 @@ fn create_app() -> App {
     .add_plugins(LinkedEntitiesPlugin)
     .add_systems(Startup, (setup.before(generate_default_curve),))
     .init_resource::<ControlStorage>()
-    .insert_resource(ClearColor(Color::NONE));
+    .insert_resource(ClearColor(GRAY_700.into()));
 
     app
 }

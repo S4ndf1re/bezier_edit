@@ -417,7 +417,7 @@ fn show_transitional_controls(
                         for plane in arrows.iter_planes() {
                             parent
                                 .spawn((
-                                    Transform::from_translation(plane.axis / 3.0)
+                                    Transform::from_translation((plane.axis / 3.0) * scale)
                                         .looking_to(plane.normal, Vec3::Y),
                                     Control(plane.axis),
                                     Visibility::default(),

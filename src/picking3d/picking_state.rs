@@ -2,7 +2,7 @@ use crate::picking3d::events::HoveredBy;
 use bevy::math::Vec3;
 use bevy::prelude::{Entity, Resource};
 use std::collections::hash_set::Iter;
-use std::collections::{HashMap, HashSet, hash_map};
+use std::collections::{hash_map, HashMap, HashSet};
 
 #[derive(Clone, Copy)]
 // Define a specific state of the forward and a to target vector.
@@ -12,16 +12,18 @@ use std::collections::{HashMap, HashSet, hash_map};
 pub struct VectorState {
     to_target: Vec3,
     forward: Vec3,
+    origin: Vec3,
     beta: f32,
 }
 
 impl VectorState {
-    pub fn new(to_target: Vec3, forward: Vec3) -> Self {
+    pub fn new(to_target: Vec3, forward: Vec3, origin: Vec3) -> Self {
         let to_target = to_target.normalize_or_zero();
         let forward = forward.normalize_or_zero();
         Self {
             to_target,
             forward,
+            origin,
             beta: forward.dot(to_target),
         }
     }
@@ -39,6 +41,10 @@ impl VectorState {
             .dot(to_target.normalize_or_zero());
         (beta - self.beta).abs()
     }
+
+    pub fn get_delta_origin(&self, origin: Vec3) -> f32 {
+        (origin - self.origin).length()
+    }
 }
 
 #[derive(Resource)]
@@ -51,6 +57,8 @@ pub struct PickingState {
     vector_store_right: HashMap<Entity, VectorState>,
     pub is_dragging_left: bool,
     pub is_dragging_right: bool,
+    pub is_pressed_left: bool,
+    pub is_pressed_right: bool,
 }
 
 impl PickingState {
@@ -64,6 +72,8 @@ impl PickingState {
             vector_store_right: HashMap::new(),
             is_dragging_left: false,
             is_dragging_right: false,
+            is_pressed_left: false,
+            is_pressed_right: false,
         }
     }
 
@@ -86,6 +96,9 @@ impl PickingState {
         if self.check_is_dragging(&controller) {
             return;
         }
+        if self.check_pressed(&controller) {
+            return;
+        }
 
         self.hovered_entities
             .entry(entity)
@@ -106,6 +119,10 @@ impl PickingState {
 
     pub fn remove_from_entity(&mut self, entity: &Entity, controller: &HoveredBy) -> bool {
         if self.check_is_dragging(controller) {
+            return false;
+        }
+
+        if self.check_pressed(controller) {
             return false;
         }
 
@@ -163,6 +180,20 @@ impl PickingState {
         match controller {
             HoveredBy::Left => self.is_dragging_left = is_dragging,
             HoveredBy::Right => self.is_dragging_right = is_dragging,
+        }
+    }
+
+    pub fn set_pressed(&mut self, controller: &HoveredBy, pressed: bool) {
+        match controller {
+            HoveredBy::Left => self.is_pressed_left = pressed,
+            HoveredBy::Right => self.is_pressed_right = pressed,
+        }
+    }
+
+    pub fn check_pressed(&mut self, controller: &HoveredBy) -> bool {
+        match controller {
+            HoveredBy::Left => self.is_pressed_left,
+            HoveredBy::Right => self.is_pressed_right,
         }
     }
 
