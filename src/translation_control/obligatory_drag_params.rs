@@ -166,7 +166,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         snap: SnappedPoint,
     ) -> Vec3 {
         match snap {
-            SnappedPoint::ToCurve { u, curve } => {
+            SnappedPoint::ToCurve { u: _, curve: _ } => {
                 let point = Point::from(t.translation + translation);
 
                 let shortest = self
@@ -295,6 +295,11 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     )
                 }
             } else {
+                // Always remove the snapped point, when snapping behaviour is off
+                self.commands
+                    .entity(control_parent.1.0)
+                    .remove::<SnappedPoint>();
+
                 let mut p0 = self.transform_set.p0();
                 let mut t = p0.get_mut(control_parent.1.0).unwrap();
                 t.translation += translation;
