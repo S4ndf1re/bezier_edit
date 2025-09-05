@@ -8,9 +8,11 @@ use crate::picking3d::pointer_state::Pointer3dState;
 use crate::vr_control::trigger::{ControllerSqueeze, ControllerTrigger};
 use crate::vr_control::{AimLeft, AimRight, GripLeft, GripRight};
 use bevy::color::palettes::css::POWDER_BLUE;
-use bevy::math::bounding::{Aabb3d, BoundingSphere, IntersectsVolume};
 use bevy::math::Vec3;
+use bevy::math::bounding::{Aabb3d, BoundingSphere, IntersectsVolume};
 use bevy::prelude::*;
+
+use super::picking_state::VectorState;
 
 #[derive(Component)]
 pub struct AimLineMarker(HoveredBy);
@@ -321,9 +323,9 @@ fn handle_input_grab(
         (trigger.left, HoveredBy::Left),
         (trigger.right, HoveredBy::Right),
     ] {
-        let (tracked, is_dragging) = match hover_by {
-            HoveredBy::Left => (*left_tracked, picking_state.is_dragging_left),
-            HoveredBy::Right => (*right_tracked, picking_state.is_dragging_right),
+        let tracked = match hover_by {
+            HoveredBy::Left => *left_tracked,
+            HoveredBy::Right => *right_tracked,
         };
 
         match hover_by {
@@ -342,43 +344,34 @@ fn handle_input_grab(
         }
 
         let current_state = state > 0.2;
+
+        // The first time the current state is true (after beeing false), set up state to check if
+        // dragging has started.
+        // NOTE: This assumes, that the targets contained in the entity list are stationary
+        if current_state && !pointer_state.is_grabbing(&hover_by) {
+            // This is the start of the click. Compute all needed vectors to determine if
+            // dragging should start later
+            let forward = tracked.0.forward().as_vec3();
+            let pos = tracked.0.translation();
+            let entities_to_loop_over = picking_state.iter(&hover_by).copied().collect::<Vec<_>>();
+
+            for entity in entities_to_loop_over {
+                if let Ok(entity_transform) = transform_query.get(entity) {
+                    let pos_to_entity = entity_transform.translation() - pos;
+                    picking_state.insert_vector_store_for_entity(
+                        &hover_by,
+                        entity,
+                        VectorState::new(pos_to_entity, forward),
+                    );
+                }
+            }
+        }
+
+        // Check if drag ends
         if !current_state
             && pointer_state.is_grabbing(&hover_by)
-            && pointer_state.is_just_toggled(&hover_by)
-            && !is_dragging
+            && picking_state.check_is_dragging(&hover_by)
         {
-            let mut sended_event = false;
-            // Click event here, since the new state is false, the old state was true and the state change lasted only <n ticks
-            for entity in picking_state.iter(&hover_by) {
-                let entity_global_position = transform_query.get(*entity);
-                if entity_global_position.is_err() {
-                    continue;
-                }
-                let entity_global_position = entity_global_position.unwrap();
-                commands.trigger_targets(
-                    Pointer3d {
-                        hit_entity: tracked.1,
-                        controler: hover_by,
-                        position: entity_global_position.translation(),
-                        event: Click,
-                    },
-                    *entity,
-                );
-                sended_event = true;
-            }
-
-            // Only send when not clicking on anything else. This may inhibit some functionality,
-            // but is needed to handle click events and still use the ui
-            if !sended_event {
-                // NOTE: This is another position, since we are not clicking on anything.
-                click_writer.write(Pointer3d {
-                    hit_entity: tracked.1,
-                    controler: hover_by,
-                    position: tracked.0.translation(),
-                    event: Click,
-                });
-            }
-        } else if !current_state && pointer_state.is_grabbing(&hover_by) && is_dragging {
             // End Drag here, new state is false, old one was true for >n ticks
             for entity in picking_state.iter(&hover_by) {
                 let entity_global_position = transform_query.get(*entity);
@@ -401,13 +394,30 @@ fn handle_input_grab(
             for (_, _, entity) in moved_marked_query.iter() {
                 commands.get_entity(entity).unwrap().despawn();
             }
-        } else if current_state
-            && pointer_state.is_grabbing(&hover_by)
-            && !pointer_state.is_just_toggled(&hover_by)
-        {
-            // Either start dragging here, since we crossed the n tick mark, or continue dragging
-            if !is_dragging {
-                let mut dragging_should_start = false;
+        }
+
+        // Check if dragging starts and send continous drag events
+        if current_state && pointer_state.is_grabbing(&hover_by) {
+            let mut should_start_dragging = false;
+            let forward = tracked.0.forward().as_vec3();
+
+            for entity in picking_state.iter(&hover_by) {
+                if let Ok(transform) = transform_query.get(*entity)
+                    && let Some(store) =
+                        picking_state.get_vector_store_for_entity(&hover_by, entity)
+                {
+                    let to_target = transform.translation() - tracked.0.translation();
+
+                    let alpha_diff = store.get_delta_alpha(to_target);
+                    let beta_diff = store.get_delta_beta(to_target, forward);
+
+                    if alpha_diff > 0.05 || beta_diff > 0.05 {
+                        should_start_dragging = true;
+                    }
+                }
+            }
+
+            if should_start_dragging {
                 for entity in picking_state.iter(&hover_by) {
                     let transform = transform_query.get(*entity).unwrap();
                     let translation = match picking_state.get_start_transform(entity) {
@@ -440,13 +450,9 @@ fn handle_input_grab(
                         },
                         *entity,
                     );
-
-                    dragging_should_start = true;
                 }
 
-                if dragging_should_start {
-                    picking_state.set_dragging(true, &hover_by);
-                }
+                picking_state.set_dragging(true, &hover_by);
             }
 
             if picking_state.check_is_dragging(&hover_by) {
@@ -475,6 +481,45 @@ fn handle_input_grab(
                 }
             }
         }
+
+        // Handle click if we are still not dragging
+        if !current_state
+            && pointer_state.is_grabbing(&hover_by)
+            && !picking_state.check_is_dragging(&hover_by)
+        {
+            let mut sended_event = false;
+            // Click event here, since the new state is false, the old state was true and the state change lasted only <n ticks
+            for entity in picking_state.iter(&hover_by) {
+                let entity_global_position = transform_query.get(*entity);
+                if entity_global_position.is_err() {
+                    continue;
+                }
+                let entity_global_position = entity_global_position.unwrap();
+                commands.trigger_targets(
+                    Pointer3d {
+                        hit_entity: tracked.1,
+                        controler: hover_by,
+                        position: entity_global_position.translation(),
+                        event: Click,
+                    },
+                    *entity,
+                );
+                sended_event = true;
+            }
+
+            // Only send when not clicking on anything else. This may inhibit some functionality,
+            // but is needed to handle click events and still use the ui
+            if !sended_event {
+                // NOTE: This is another position, since we are not clicking on anything.
+                click_writer.write(Pointer3d {
+                    hit_entity: tracked.1,
+                    controler: hover_by,
+                    position: tracked.0.translation(),
+                    event: Click,
+                });
+            }
+        }
+
         pointer_state.set_state(current_state, &hover_by);
     }
 }

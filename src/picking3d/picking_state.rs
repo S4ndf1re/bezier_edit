@@ -2,7 +2,44 @@ use crate::picking3d::events::HoveredBy;
 use bevy::math::Vec3;
 use bevy::prelude::{Entity, Resource};
 use std::collections::hash_set::Iter;
-use std::collections::{hash_map, HashMap, HashSet};
+use std::collections::{HashMap, HashSet, hash_map};
+
+#[derive(Clone, Copy)]
+// Define a specific state of the forward and a to target vector.
+// Two angles define a possible change in movement, so that an drag event must start.
+// Alpha: The angle between the two to_target (old and new) vectors.
+// Beta: The angle between the to_target vector and the forward vector of each state (old, new)
+pub struct VectorState {
+    to_target: Vec3,
+    forward: Vec3,
+    beta: f32,
+}
+
+impl VectorState {
+    pub fn new(to_target: Vec3, forward: Vec3) -> Self {
+        let to_target = to_target.normalize_or_zero();
+        let forward = forward.normalize_or_zero();
+        Self {
+            to_target,
+            forward,
+            beta: forward.dot(to_target),
+        }
+    }
+
+    // Return the angle between the two to_target vectors
+    // Since 1.0 would be no movement, subtract the alpha angle from 1.0
+    pub fn get_delta_alpha(&self, to_target: Vec3) -> f32 {
+        1.0 - self.to_target.dot(to_target.normalize_or_zero()).abs()
+    }
+
+    // Return the difference between the old beta angle and the new beta angle
+    pub fn get_delta_beta(&self, to_target: Vec3, forward: Vec3) -> f32 {
+        let beta = forward
+            .normalize_or_zero()
+            .dot(to_target.normalize_or_zero());
+        (beta - self.beta).abs()
+    }
+}
 
 #[derive(Resource)]
 pub struct PickingState {
@@ -10,6 +47,8 @@ pub struct PickingState {
     hovered_by_left: HashSet<Entity>,
     hovered_by_right: HashSet<Entity>,
     start_position: HashMap<Entity, Vec3>,
+    vector_store_left: HashMap<Entity, VectorState>,
+    vector_store_right: HashMap<Entity, VectorState>,
     pub is_dragging_left: bool,
     pub is_dragging_right: bool,
 }
@@ -21,6 +60,8 @@ impl PickingState {
             hovered_by_left: HashSet::new(),
             hovered_by_right: HashSet::new(),
             start_position: HashMap::new(),
+            vector_store_left: HashMap::new(),
+            vector_store_right: HashMap::new(),
             is_dragging_left: false,
             is_dragging_right: false,
         }
@@ -126,6 +167,29 @@ impl PickingState {
     }
 
     pub fn get_start_transform(&self, entity: &Entity) -> Option<Vec3> {
-        self.start_position.get(entity).map(|v| *v)
+        self.start_position.get(entity).copied()
+    }
+
+    pub fn insert_vector_store_for_entity(
+        &mut self,
+        controller: &HoveredBy,
+        entity: Entity,
+        store: VectorState,
+    ) {
+        match controller {
+            HoveredBy::Left => self.vector_store_left.insert(entity, store),
+            HoveredBy::Right => self.vector_store_right.insert(entity, store),
+        };
+    }
+
+    pub fn get_vector_store_for_entity(
+        &self,
+        controller: &HoveredBy,
+        entity: &Entity,
+    ) -> Option<VectorState> {
+        match controller {
+            HoveredBy::Left => self.vector_store_left.get(entity).copied(),
+            HoveredBy::Right => self.vector_store_right.get(entity).copied(),
+        }
     }
 }
