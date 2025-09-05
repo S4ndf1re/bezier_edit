@@ -103,6 +103,15 @@ pub enum CantSnapToCurve {
     Multiple(HashSet<Entity>),
 }
 
+#[derive(Component, Clone, Default)]
+pub enum CantSnapToEntities {
+    #[default]
+    None,
+    All,
+    Single(Entity),
+    Multiple(HashSet<Entity>),
+}
+
 fn handle_toggle_snapping(
     mut reader: EventReader<ToggleSnappingBehaviour>,
     mut state: ResMut<TranslationControllerState>,
@@ -799,8 +808,6 @@ pub fn drag_controller(
         let axis = control.0;
         let direction = (diff.dot(axis)) / (diff.length() * axis.length());
         let translation = axis * direction * diff.length();
-
-        info!("Translation: {translation}");
 
         params
             .p0()

@@ -21,11 +21,4 @@ pub struct RenderPoint(pub usize, pub usize);
 pub struct ResultSurface;
 
 #[derive(Component)]
-pub struct BezierRender;
-
-#[derive(Component)]
-#[require(Mesh3d)]
-pub struct RenderLine(pub Entity, pub Entity);
-
-#[derive(Component)]
 pub struct CurveBox;

@@ -7,11 +7,8 @@ use bevy::{color::palettes::css::BLACK, prelude::*};
 use num::pow;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::click_decider::LogTrace;
 use crate::nurbs::bezier_plane::{ControlPoints2D, derive_2d, eval_2d_bezier_curves};
 use crate::nurbs::point::Point;
-use crate::picking3d::events::{self, Pointer3d};
-use crate::translation_control::translation_controller::EnableTranslationControl;
 
 use super::bezier_curve_renderer::Resolution;
 use super::components::RenderPoint;

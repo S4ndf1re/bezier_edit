@@ -15,18 +15,17 @@ use crate::{
     picking3d::events::{self, Pointer3d},
     translation_control::translation_controller::EnableTranslationControl,
 };
-use bevy::color::palettes::tailwind::PURPLE_900;
+use bevy::color::palettes::css::BLACK;
 use bevy::render::view::RenderLayers;
 use bevy::{
-    asset::RenderAssetUsages,
     color::palettes::tailwind::PURPLE_600,
     ecs::system::{SystemParam, lifetimeless::Read},
     prelude::*,
-    render::mesh::PrimitiveTopology,
 };
 use bevy_lunex::UiLayoutRoot;
 
 #[derive(Component)]
+#[require(Transform)]
 pub struct ControlCurve;
 
 #[derive(Component)]
@@ -34,6 +33,7 @@ pub struct ControlCurve;
 pub struct ControlCurvePoint(usize);
 
 #[derive(Component)]
+#[require(Transform)]
 pub struct TemporaryCurve;
 
 #[derive(Component)]
@@ -43,6 +43,18 @@ pub struct TemporaryCurvePoint(usize);
 #[derive(Resource, Default)]
 pub struct CreateCurveState {
     counter: usize,
+}
+
+#[derive(Component)]
+#[relationship_target(relationship = CurveSegment, linked_spawn)]
+pub struct CurveSegments(Vec<Entity>);
+
+#[derive(Component)]
+#[relationship(relationship_target = CurveSegments)]
+pub struct CurveSegment {
+    u: usize,
+    #[relationship]
+    curve: Entity,
 }
 
 #[derive(Event)]
@@ -121,6 +133,7 @@ pub fn add_point(
         for parent in childof.iter_ancestors(evt.target) {
             if ui_root.get(parent).is_ok() {
                 is_ui_element = true;
+                break;
             }
         }
 
@@ -144,6 +157,7 @@ pub fn add_point(
             commands.get_entity(parent).unwrap().with_children(|cmd| {
                 cmd.spawn((
                     TemporaryCurvePoint(state.counter),
+                    Name::new(format!("Curve point {}", state.counter)),
                     Transform::from_translation(pos),
                     Mesh3d(sphere.clone()),
                     MeshMaterial3d(material.clone()),
@@ -171,6 +185,7 @@ pub fn enter_create_curve_mode(
     commands.get_entity(root).unwrap().with_children(|cmd| {
         cmd.spawn((
             TemporaryCurve,
+            Name::new("Temporary Curve"),
             Transform::default(),
             Visibility::Inherited,
             RenderLayers::from(DisplayIn::BothNormalAndOrtho),
@@ -297,8 +312,10 @@ pub fn commit_curve(
             let parent = commands
                 .spawn((
                     ControlCurve,
-                    ChildOf(root.0),
                     RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                    Name::new("Control Curve"),
+                    Transform::default(),
+                    ChildOf(root.0),
                 ))
                 .id();
 
@@ -316,9 +333,10 @@ pub fn commit_curve(
                 commands
                     .get_entity(entity)
                     .unwrap()
-                    .insert(ChildOf(parent))
                     .remove::<TemporaryCurvePoint>()
+                    .remove::<CurveSegments>()
                     .insert((
+                        ChildOf(parent),
                         ControlCurvePoint(idx),
                         Picking3dInteractable::default(),
                         CantSnapToCurve::Single(parent),
@@ -461,9 +479,18 @@ pub fn render_curves(
     mut redraw_curves_writer: EventReader<RedrawCurvesEvent>,
     mut commands: Commands,
     mut meshes3d: Query<&mut Mesh3d>,
+    mut transforms: Query<
+        &mut Transform,
+        (Without<TemporaryCurvePoint>, Without<ControlCurvePoint>),
+    >,
     all_curves: AllCurveCollection,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    root: Query<Entity, With<RootTransform>>,
+    curve_segments: Query<&CurveSegments>,
+    curve_segment: Query<&CurveSegment>,
+    children: Query<&Children>,
+    info: Res<RenderInformation>,
 ) {
     if redraw_curves_writer.is_empty() {
         return;
@@ -471,38 +498,91 @@ pub fn render_curves(
     redraw_curves_writer.clear();
 
     let curves_collected = all_curves.collect();
+    let black = materials.add(StandardMaterial::from_color(BLACK));
 
     // after collecting, set meshes accordingly
     for (entity, points) in curves_collected {
         if points.len() >= 2 {
-            let mut verticies = Vec::new();
-            for u in 0..=100 {
-                let point = *de_casteljau(&points, (u as f64) / 100.0)
-                    .last()
-                    .unwrap()
-                    .last()
-                    .unwrap();
+            if let Ok(segments) = curve_segments.get(entity) {
+                for segment in &segments.0 {
+                    if let Ok(segment_params) = curve_segment.get(*segment) {
+                        let point = Vec3::from(
+                            *de_casteljau(&points, (segment_params.u as f64) / 100.0)
+                                .last()
+                                .unwrap()
+                                .last()
+                                .unwrap(),
+                        );
 
-                verticies.push(Vec3::from(point));
-            }
+                        let next_point = Vec3::from(
+                            *de_casteljau(&points, ((segment_params.u + 1) as f64) / 100.0)
+                                .last()
+                                .unwrap()
+                                .last()
+                                .unwrap(),
+                        );
 
-            let mut mesh = Mesh::new(
-                PrimitiveTopology::LineStrip,
-                RenderAssetUsages::RENDER_WORLD,
-            );
-            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, verticies);
+                        if let Ok(mut transform) = transforms.get_mut(*segment) {
+                            *transform =
+                                Transform::from_translation(point).looking_at(next_point, Vec3::Y);
+                        }
 
-            let mesh3d = meshes3d.get_mut(entity);
-            // Either change the old mesh3d, or create a new one, if no old mesh3d existed
-            // beforehand
-            if let Ok(mut mesh3d) = mesh3d {
-                mesh3d.0 = meshes.add(mesh);
+                        let diff = next_point - point;
+                        let length = diff.length();
+
+                        for child in children.get(*segment).unwrap() {
+                            if let Ok(mut transform) = transforms.get_mut(*child) {
+                                *transform =
+                                    Transform::from_xyz(0.0, 0.0, -length / 2.0).with_rotation(
+                                        Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians()),
+                                    );
+                            }
+
+                            if let Ok(mut mesh3d) = meshes3d.get_mut(*child) {
+                                mesh3d.0 = meshes.add(Cylinder::new(0.01 * info.scale, length));
+                            }
+                        }
+                    }
+                }
             } else {
-                let material = StandardMaterial::from_color(PURPLE_900);
-                commands.get_entity(entity).unwrap().insert((
-                    Mesh3d(meshes.add(mesh)),
-                    MeshMaterial3d(materials.add(material)),
-                ));
+                for u in 0..100 {
+                    let point = Vec3::from(
+                        *de_casteljau(&points, (u as f64) / 100.0)
+                            .last()
+                            .unwrap()
+                            .last()
+                            .unwrap(),
+                    );
+
+                    let next_point = Vec3::from(
+                        *de_casteljau(&points, ((u + 1) as f64) / 100.0)
+                            .last()
+                            .unwrap()
+                            .last()
+                            .unwrap(),
+                    );
+
+                    let diff = next_point - point;
+                    let length = diff.length();
+                    let cylinder = meshes.add(Cylinder::new(0.01 * info.scale, length));
+                    commands.entity(root.single().unwrap()).with_child((
+                        Transform::from_translation(point).looking_at(next_point, Vec3::Y),
+                        // This is the relationship
+                        CurveSegment { u, curve: entity },
+                        Name::new(format!("Curve Segment {entity}, u: {u}")),
+                        Visibility::Inherited,
+                        related!(
+                            Children[(
+                                Mesh3d(cylinder),
+                                MeshMaterial3d(black.clone()),
+                                Transform::from_xyz(0.0, 0.0, -length / 2.0).with_rotation(
+                                    Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians())
+                                ),
+                                Visibility::Inherited,
+                            )]
+                        ),
+                    ));
+                }
             }
         }
     }

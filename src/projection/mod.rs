@@ -12,7 +12,6 @@ use bevy::{
     },
 };
 
-use crate::picking3d::events::Pointer3d;
 use crate::{
     RootTransform,
     bezier_curve::{
@@ -28,6 +27,9 @@ use crate::{
     translation_control::{
         enable_gizmo, enable_gizmo3d, translation_controller::EnableTranslationControl,
     },
+};
+use crate::{
+    picking3d::events::Pointer3d, translation_control::translation_controller::CantSnapToEntities,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -531,6 +533,7 @@ impl<'w, 's> ProjectedSnappingDetector<'w, 's> {
         &self,
         snappable_entity: Entity,
         next_move_delta: Vec3,
+        cant_snap_to_entities: Option<CantSnapToEntities>,
     ) -> Option<Vec3> {
         let mut min_uv_distance = Vec::new();
 
@@ -547,6 +550,22 @@ impl<'w, 's> ProjectedSnappingDetector<'w, 's> {
                     let snapped_uv_vec = Vec2::new(snapped_uv.0 as f32, snapped_uv.1 as f32);
 
                     for point in self.bounding_entities.iter() {
+                        if let Some(cant_snap) = cant_snap_to_entities.clone() {
+                            match cant_snap {
+                                CantSnapToEntities::None => (),
+                                CantSnapToEntities::All => continue,
+                                CantSnapToEntities::Single(entity) => {
+                                    if *point == entity {
+                                        continue;
+                                    }
+                                }
+                                CantSnapToEntities::Multiple(entities) => {
+                                    if entities.contains(point) {
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
                         if *point != snappable_entity
                             && (self.link_targets.get(snappable_entity).is_err()
                                 || self
