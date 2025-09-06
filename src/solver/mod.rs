@@ -27,13 +27,13 @@ impl C1Constraint {
     }
 
     pub fn compute(&self, points: &[Vec<Point>]) -> Option<Point> {
-        let ref_point = points
+        let ref_point = *points
             .get(self.referenced_point.0)?
             .get(self.referenced_point.1)?;
 
-        let diff = ref_point - &self.point;
+        let diff = ref_point - self.point;
 
-        Some(ref_point + &diff)
+        Some(ref_point + diff)
     }
 
     /// Invert the compute operation, meaning that, considering the ref_point and the target point,
@@ -41,15 +41,15 @@ impl C1Constraint {
     pub fn inverse(&self, points: &[Vec<Point>]) -> Option<Point> {
         let idx = self.target_idx();
 
-        let point = points.get(idx.0)?.get(idx.1)?;
+        let point = *points.get(idx.0)?.get(idx.1)?;
 
-        let ref_point = points
+        let ref_point = *points
             .get(self.referenced_point.0)?
             .get(self.referenced_point.1)?;
 
         let diff = ref_point - point;
 
-        Some(ref_point + &diff)
+        Some(ref_point + diff)
     }
 
     pub fn target_idx(&self) -> (usize, usize) {

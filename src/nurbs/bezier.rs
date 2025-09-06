@@ -20,9 +20,9 @@ pub fn de_casteljau<T: AsRef<[Point]>>(points: T, t: f64) -> Vec<Vec<Point>> {
         for i in 0..stages.last().unwrap().len() - 1 {
             let w_i = (1.0 - t) * stages.last().unwrap()[i].w + t * stages.last().unwrap()[i + 1].w;
 
-            let p_i = &stages.last().unwrap()[i];
-            let p_i1 = &stages.last().unwrap()[i + 1];
-            new_stage.push(&((1.0 - t) * (p_i.w / w_i) * p_i) + &(t * (p_i1.w / w_i) * p_i1));
+            let p_i = stages.last().unwrap()[i];
+            let p_i1 = stages.last().unwrap()[i + 1];
+            new_stage.push((1.0 - t) * (p_i.w / w_i) * p_i + t * (p_i1.w / w_i) * p_i1);
         }
         stages.push(new_stage);
     }
@@ -35,10 +35,10 @@ pub fn derive_after_de_casteljau(points: &[Vec<Point>], r: usize) -> Point {
 
     let mut sum = Point::default();
     for j in 0..=r {
-        sum = &sum + &(&points[n - r][j] * ((n_choose_k(r, j) as f64) * pow(-1.0, r - j)));
+        sum = sum + points[n - r][j] * (n_choose_k(r, j) as f64) * pow(-1.0, r - j);
     }
 
-    ((factorial(n) / factorial(n - r)) as f64) * &sum
+    ((factorial(n) / factorial(n - r)) as f64) * sum
 }
 
 #[allow(unused)]
@@ -58,8 +58,8 @@ pub fn atiken(points: &[Point], ts: &[f64], t: f64) -> Vec<Vec<Point>> {
     for r in 1..=n {
         let mut new_stage = Vec::new();
         for i in 0..=n - r {
-            let pri = &((ts[i + r] - t) / (ts[i + r] - ts[i]) * &stages[r - 1][i])
-                + &((t - ts[i]) / (ts[i + r] - ts[i]) * &stages[r - 1][i + 1]);
+            let pri = (ts[i + r] - t) / (ts[i + r] - ts[i]) * stages[r - 1][i]
+                + (t - ts[i]) / (ts[i + r] - ts[i]) * stages[r - 1][i + 1];
             new_stage.push(pri);
         }
         stages.push(new_stage);
@@ -100,7 +100,7 @@ pub fn shortest_distance_to_point<T: AsRef<[Point]>>(points: T, point: Point) ->
     for scan in 0..=first_scans_counter {
         let t = (scan as f64) / (first_scans_counter as f64);
         let p = *de_casteljau(&points, t).last().unwrap().last().unwrap();
-        let diff = &point - &p;
+        let diff = point - p;
         let distance = diff.magnitude();
         if distance < min {
             min = distance;
@@ -113,7 +113,7 @@ pub fn shortest_distance_to_point<T: AsRef<[Point]>>(points: T, point: Point) ->
 
     let t0 = ((min_index - 1.0) / first_scans_counter as f64).max(0.0);
     let t1 = ((min_index + 1.0) / first_scans_counter as f64).min(1.0);
-    let f = |t| (&point - de_casteljau(&points, t).last().unwrap().last().unwrap()).magnitude();
+    let f = |t| (point - *de_casteljau(&points, t).last().unwrap().last().unwrap()).magnitude();
 
     let mut n = t0;
     let mut m = t1;
@@ -134,4 +134,78 @@ pub fn shortest_distance_to_point<T: AsRef<[Point]>>(points: T, point: Point) ->
         *de_casteljau(&points, k).last().unwrap().last().unwrap(),
         f(k),
     )
+}
+
+/// Farin 5.1 Gradanhebung
+pub fn increase_degree<T: AsRef<[Point]>>(points: T) -> Vec<Point> {
+    let points = points.as_ref();
+    let n = points.len() - 1;
+
+    let m = n + 1;
+
+    let mut new_points = vec![Point::default(); m + 1];
+
+    for j in 0..=m {
+        let point = if j > 0 {
+            (j as f64 / m as f64) * points[j - 1]
+        } else {
+            Point::default()
+        } + if j < m {
+            (1.0 - (j as f64 / m as f64)) * points[j]
+        } else {
+            Point::default()
+        };
+
+        new_points[j] = point;
+    }
+
+    new_points
+}
+
+/// Farin 5.4 Gradreduzierung. Bidirectional
+pub fn decrease_degree<T: AsRef<[Point]>>(points: T) -> Vec<Point> {
+    let points = points.as_ref();
+    if points.len() < 2 {
+        return points.to_owned();
+    }
+
+    let n = points.len() - 1;
+    let m = n - 1;
+
+    let mut points_left = vec![Point::default(); m + 1];
+    let mut points_right = vec![Point::default(); m + 1];
+
+    // First resolve from left to right
+    for i in 0..n {
+        let b_i = points[i];
+        let b_hat_i = if i > 0 {
+            points_left[i - 1]
+        } else {
+            Point::default()
+        };
+
+        points_left[i] = ((n as f64) * b_i - (i as f64) * b_hat_i) / (n as f64 - i as f64);
+    }
+
+    // Then from right to left
+    for i in 0..n {
+        // Should go from n (n-0 = n) -> 1 (n-(n-1) = 1)
+        let i = n - i;
+        let b_i = points[i];
+        let b_hat_i = if i < n {
+            points_right[i]
+        } else {
+            Point::default()
+        };
+
+        points_right[i - 1] = ((n as f64) * b_i - (n as f64 - i as f64) * b_hat_i) / (i as f64);
+    }
+
+    let mid = m / 2;
+
+    let mut result = Vec::with_capacity(m + 1);
+    result.extend(points_left[0..mid].iter());
+    result.extend(points_right[mid..=m].iter());
+
+    result
 }

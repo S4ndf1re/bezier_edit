@@ -56,7 +56,7 @@ where
         for scan in 0..=first_scans_counter {
             let t = (scan as f64) / (first_scans_counter as f64);
             let p = self.f(&[t]);
-            let diff = &target - &p;
+            let diff = target - p;
             let distance = diff.magnitude();
             if distance < min {
                 min = distance;
@@ -69,7 +69,7 @@ where
 
         let t0 = ((min_index - 1.0) / first_scans_counter as f64).max(0.0);
         let t1 = ((min_index + 1.0) / first_scans_counter as f64).min(1.0);
-        let f = |t| (&target - &self.f(&[t])).magnitude();
+        let f = |t| (target - self.f(&[t])).magnitude();
 
         let mut n = t0;
         let mut m = t1;
@@ -108,22 +108,22 @@ impl Circle3D {
 
         normal = normal.normalize();
 
-        ortho1 = &ortho1 - &((&ortho1 * &normal) * &normal / normal.magnitude().powi(2));
+        ortho1 = ortho1 - ((ortho1 * normal) * normal / normal.magnitude().powi(2));
         ortho1 = ortho1.normalize();
 
         let mut ortho2 = normal.cross(&ortho1);
         ortho2 = ortho2.normalize();
 
         assert!(
-            (&ortho1 * &ortho2).abs() <= f64::EPSILON,
+            (ortho1 * ortho2).abs() <= f64::EPSILON,
             "Both orthogonals must actually be orthogonal, meaning dot(o1, o2) == 0.0"
         );
         assert!(
-            (&ortho1 * &normal).abs() <= f64::EPSILON,
+            (ortho1 * normal).abs() <= f64::EPSILON,
             "Both orthogonal 1 must actually be orthogonal to the normal, meaning dot(o1, n) == 0.0"
         );
         assert!(
-            (&ortho2 * &normal).abs() <= f64::EPSILON,
+            (ortho2 * normal).abs() <= f64::EPSILON,
             "Both orthogonal 2 must actually be orthogonal to the normal, meaning dot(o2, n) == 0.0"
         );
 
@@ -139,9 +139,9 @@ impl Circle3D {
 
 impl Parametric<1, Point> for Circle3D {
     fn f(&self, ts: &[f64; 1]) -> Point {
-        &self.origin
-            + &(&(&self.ortho1_unit * (self.radius * ts[0].cos()))
-                + &(&self.ortho2_unit * (self.radius * ts[0].sin())))
+        self.origin
+            + self.ortho1_unit * self.radius * ts[0].cos()
+            + self.ortho2_unit * self.radius * ts[0].sin()
     }
 
     fn range(&self) -> [[f64; 2]; 1] {
@@ -149,7 +149,6 @@ impl Parametric<1, Point> for Circle3D {
     }
 
     fn derive(&self, ts: &[f64; 1], _: usize) -> Point {
-        &(-self.radius * ts[0].sin() * &self.ortho1_unit)
-            + &(self.radius * ts[0].cos() * &self.ortho2_unit)
+        -self.radius * ts[0].sin() * self.ortho1_unit + self.radius * ts[0].cos() * self.ortho2_unit
     }
 }

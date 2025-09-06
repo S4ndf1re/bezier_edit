@@ -1,13 +1,17 @@
 use std::collections::HashMap;
 
-use super::components::*;
 use super::curvature_display_mode::{
     ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
+};
+use super::degree_manipulation::{
+    DecreaseDegreeEvent, IncreaseDegreeEvent, handle_degree_increase_event,
+    handle_degree_reduction_event,
 };
 use super::helper_curves::{
     CreateCurveState, RedrawCurvesEvent, add_point, commit_curve, commit_plane,
     enter_create_curve_mode, render_curves,
 };
+use super::{components::*, handle_generic_deleted_event};
 
 #[cfg(feature = "vr_enable")]
 use super::helper_curves::add_point_3d;
@@ -30,7 +34,7 @@ use super::util::{
 use crate::RootTransform;
 use crate::bezier_curve::EntityDeletedEvent;
 use crate::history::plugin::HistoryUndoEvent;
-use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves};
+use crate::nurbs::bezier_plane::{ControlPoints2D, derive_2d, eval_2d_bezier_curves};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::projection::{BoundingEntitiesManager, DisplayIn};
 use crate::translation_control::translation_controller::{
@@ -42,6 +46,7 @@ use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::css::BLACK;
 use bevy::color::palettes::tailwind::*;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::render::mesh::PrimitiveTopology;
 use bevy::render::view::RenderLayers;
@@ -248,7 +253,7 @@ fn update_lines(
 
 #[allow(clippy::complexity)]
 fn generate_pointcloud(
-    root: Query<Entity, With<RootTransform>>,
+    surface: Query<Entity, With<Surface>>,
     mut events: EventReader<RedrawEvent>,
     mut commands: Commands,
     entities: Query<Entity, With<ResultSurface>>,
@@ -302,18 +307,18 @@ fn generate_pointcloud(
         };
 
         {
-            let mut root = commands.get_entity(root.single().unwrap()).unwrap();
-            root.with_children(|ui| {
-                ui.spawn((
+            let surface = surface.single().unwrap();
+            commands
+                .spawn((
                     Transform::default(),
                     ResultSurface,
                     Name::new("Result Surface"),
                     Mesh3d(meshes.add(mesh)),
                     MeshMaterial3d(materials.add(mat)),
                     RenderLayers::from(DisplayIn::Normal),
+                    ChildOf(surface),
                 ))
                 .observe(bezier_surface_picking);
-            });
         }
     } else {
         let w = resolution.0;
@@ -342,21 +347,25 @@ fn generate_pointcloud(
         }
 
         {
-            let mut root = commands.get_entity(root.single().unwrap()).unwrap();
-            root.with_children(|ui| {
-                ui.spawn((Transform::default(), ResultSurface, Visibility::default()))
-                    .with_children(|ui| {
-                        for mesh in meshes_lines {
-                            ui.spawn((
-                                Mesh3d(meshes.add(mesh)),
-                                MeshMaterial3d(materials.add(Color::BLACK)),
-                                Name::new("Iso Line"),
-                                Pickable::IGNORE,
-                                RenderLayers::from(DisplayIn::BothNormalAndOrtho),
-                            ));
-                        }
-                    });
-            });
+            let surface = surface.single().unwrap();
+            commands
+                .spawn((
+                    Transform::default(),
+                    ResultSurface,
+                    Visibility::default(),
+                    ChildOf(surface),
+                ))
+                .with_children(|ui| {
+                    for mesh in meshes_lines {
+                        ui.spawn((
+                            Mesh3d(meshes.add(mesh)),
+                            MeshMaterial3d(materials.add(Color::BLACK)),
+                            Name::new("Iso Line"),
+                            Pickable::IGNORE,
+                            RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                        ));
+                    }
+                });
         }
     }
 
@@ -367,7 +376,7 @@ fn generate_pointcloud(
 pub fn redraw_boxes(
     mut events: EventReader<RedrawBoxesEvent>,
     mut commands: Commands,
-    root: Query<Entity, With<RootTransform>>,
+    surface: Query<Entity, With<Surface>>,
     boxes: Query<Entity, With<CurveBox>>,
     control_points: Query<(&Transform, &RenderPoint)>,
     scale_info: Res<RenderInformation>,
@@ -391,11 +400,10 @@ pub fn redraw_boxes(
     }
 
     let multi_curves = collect_control_points(control_points);
-    let mut root = commands.get_entity(root.single().unwrap()).unwrap();
     for (u, v) in scale_info.to_uv_sample() {
         let point = eval_2d_bezier_curves(&multi_curves, u, v);
         let (u_diff, v_diff) = derive_2d(&multi_curves, u, v, 1);
-        let normal = &u_diff.cross(&v_diff) * -1.0;
+        let normal = u_diff.cross(&v_diff) * -1.0;
         let (u_diff_2, v_diff_2) = derive_2d(&multi_curves, u, v, 2);
 
         let color = if scale_info.curvature_mode == CurvatureDisplayMode::None {
@@ -403,11 +411,11 @@ pub fn redraw_boxes(
         } else {
             curvature_to_color(
                 &scale_info.curvature_mode,
-                &normal,
-                &u_diff,
-                &v_diff,
-                &u_diff_2,
-                &v_diff_2,
+                normal,
+                u_diff,
+                v_diff,
+                u_diff_2,
+                v_diff_2,
                 scale_info.scale as f64,
             )
         };
@@ -417,47 +425,261 @@ pub fn redraw_boxes(
             scale_info.box_dim.1 * scale_info.scale,
             scale_info.box_dim.2 * scale_info.scale,
         );
-        root.with_children(|ui| {
-            ui.spawn((
-                Transform::from_translation(Vec3::from(point))
-                    // TODO: mode to align by xyz and nuv (nuv is this one below)
-                    .looking_to(Vec3::from(u_diff), Vec3::from(normal)),
-                Name::new("Box"),
-                CurveBox,
-                Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(materials.add(Color::from(Srgba::new(
-                    color.0 as f32,
-                    color.1 as f32,
-                    color.2 as f32,
-                    1.0,
-                )))),
-                RenderLayers::from(DisplayIn::Normal),
-            ));
-        });
+
+        commands.spawn((
+            ChildOf(surface.single().unwrap()),
+            Transform::from_translation(Vec3::from(point))
+                // TODO: mode to align by xyz and nuv (nuv is this one below)
+                .looking_to(Vec3::from(u_diff), Vec3::from(normal)),
+            Name::new("Box"),
+            CurveBox,
+            Mesh3d(meshes.add(mesh)),
+            MeshMaterial3d(materials.add(Color::from(Srgba::new(
+                color.0 as f32,
+                color.1 as f32,
+                color.2 as f32,
+                1.0,
+            )))),
+            RenderLayers::from(DisplayIn::Normal),
+        ));
     }
 }
 
-pub fn generate_default_curve(
-    mut commands: Commands,
-    root: Query<Entity, With<RootTransform>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut event_writer: EventWriter<RedrawEvent>,
-    scale_res: Res<RenderInformation>,
-    mut bounding_entites: BoundingEntitiesManager,
-) {
-    let root = root.single().unwrap();
+#[derive(SystemParam)]
+pub struct SurfaceCreator<'w, 's> {
+    commands: Commands<'w, 's>,
+    info: Res<'w, RenderInformation>,
+    materials: ResMut<'w, Assets<StandardMaterial>>,
+    meshes: ResMut<'w, Assets<Mesh>>,
+    root: Query<'w, 's, Entity, With<RootTransform>>,
+    surface: Query<'w, 's, Entity, With<Surface>>,
+    bounding_entites: BoundingEntitiesManager<'w, 's>,
+    event_writer: EventWriter<'w, RedrawEvent>,
+}
 
-    let surface = commands
-        .spawn((Surface, ChildOf(root), Visibility::Inherited))
-        .id();
+impl<'w, 's> SurfaceCreator<'w, 's> {
+    pub fn create_surface_from_points(
+        &mut self,
+        points: Vec<(usize, usize, Vec3)>,
+        w: usize,
+        h: usize,
+    ) {
+        let root = self.root.single().unwrap();
 
-    let scale = scale_res.scale;
-    let height = scale_res.height;
-    let material = materials.add(Color::from(GRAY_400));
-    let material_hover = materials.add(Color::from(GRAY_600));
-    let sphere = meshes.add(Sphere::new(0.1 * scale).mesh().ico(5).unwrap());
+        if let Ok(surface) = self.surface.single() {
+            self.commands.entity(surface).despawn();
+        }
 
+        let surface = self
+            .commands
+            .spawn((Surface, ChildOf(root), Visibility::Inherited))
+            .id();
+
+        let scale = self.info.scale;
+        let height = Vec3::new(0.0, self.info.height, 0.0);
+        let material = self.materials.add(Color::from(GRAY_400));
+        let material_hover = self.materials.add(Color::from(GRAY_600));
+        let sphere = self
+            .meshes
+            .add(Sphere::new(0.1 * scale).mesh().ico(5).unwrap());
+
+        let mut ids = vec![];
+
+        for p in &points {
+            let id = self
+                .commands
+                .spawn((
+                    RenderPoint(p.0, p.1),
+                    Name::new(format!("Render Point {} {}", p.0, p.1)),
+                    Transform::from_translation(p.2 * scale + height),
+                    Mesh3d(sphere.clone()),
+                    MeshMaterial3d(material.clone()),
+                    Picking3dInteractable::default(),
+                    RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                    Visibility::Inherited,
+                    ChildOf(surface),
+                ))
+                .observe(update_material_on::<Pointer<Over>>(material_hover.clone()))
+                .observe(update_material_on::<Pointer<Out>>(material.clone()))
+                //.observe(drag_point)
+                .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
+                .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
+                .id();
+            self.bounding_entites.add_bounding_entity(id);
+            ids.push(id);
+        }
+
+        let mut x_bridges = Vec::new();
+        let mut y_bridges = Vec::new();
+
+        for x in 0..w {
+            x_bridges.push(
+                self.commands
+                    .spawn((
+                        CompleteBridge(Vec::new()),
+                        Name::new(format!("x_bridge {x}")),
+                        Transform::default(),
+                        Visibility::Inherited,
+                        ChildOf(surface),
+                    ))
+                    .id(),
+            );
+        }
+
+        for y in 0..h {
+            y_bridges.push(
+                self.commands
+                    .spawn((
+                        CompleteBridge(Vec::new()),
+                        Name::new(format!("y_bridge {y}")),
+                        Transform::default(),
+                        Visibility::Inherited,
+                        ChildOf(surface),
+                    ))
+                    .id(),
+            );
+        }
+
+        let to_xy = |i| (i % w, i / w);
+        let from_xy = |x, y| x + y * w;
+
+        let x_mid = w / 2;
+        let y_mid = h / 2;
+        // Draw lines between neighbouring controls points to generate a visible grid
+        for i in 0..points.len() {
+            let p0 = points[i];
+            let p0_id = ids[i];
+
+            let (x, y) = to_xy(i);
+            let (_, y_next) = to_xy(i + 1);
+
+            // Check if we are not at the edge of the array (next index is one row up)
+            if y == y_next
+                && let Some(px) = points.get(i + 1)
+            {
+                let id = *ids.get(i + 1).expect("must be present");
+
+                let origin = p0.2 * scale + height;
+                let target = px.2 * scale + height;
+                let diff = target - origin;
+
+                let bridge_id = self
+                    .commands
+                    .spawn((
+                        Transform::from_translation(origin).looking_at(target, Vec3::Y),
+                        Bridge { a: p0_id, b: id },
+                        BridgeConnector(y_bridges[y]),
+                        Name::new(format!("Render line {p0_id} {id}")),
+                        RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                        Visibility::Inherited,
+                        ChildOf(surface),
+                        related!(
+                            Children[draw_bridge_cylinder(
+                                &mut self.meshes,
+                                &mut self.materials,
+                                diff.length(),
+                                scale
+                            )]
+                        ),
+                    ))
+                    .id();
+
+                let is_x_mid = x < x_mid && x + 1 >= x_mid;
+                if is_x_mid {
+                    let complete_bridge = y_bridges[y];
+
+                    let center = origin + diff * 0.5;
+
+                    let id = self
+                        .commands
+                        .spawn((
+                            Transform::from_translation(center),
+                            CompleteBridgeCenter {
+                                complete_bridge,
+                                single_segment: Some(bridge_id),
+                            },
+                            ChildOf(surface),
+                            Visibility::Inherited,
+                            Mesh3d(self.meshes.add(Sphere::new(0.1 * scale))),
+                            MeshMaterial3d(self.materials.add(Color::from(GREEN_800))),
+                            Picking3dInteractable::default(),
+                            CantSnapToEntities::All,
+                        ))
+                        .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
+                        .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
+                        .observe(moved_complete_bridge)
+                        .id();
+                    self.bounding_entites.add_bounding_entity(id);
+                }
+            }
+
+            let next_row_idx = from_xy(x, y + 1);
+            // Check if next row is still in range
+            if y + 1 < h
+                && let Some(py) = points.get(next_row_idx)
+            {
+                let id = *ids.get(i + w).expect("must be present");
+
+                let origin = p0.2 * scale + height;
+                let target = py.2 * scale + height;
+                let diff = target - origin;
+
+                let bridge_id = self
+                    .commands
+                    .spawn((
+                        Transform::from_translation(origin).looking_at(target, Vec3::Y),
+                        Bridge { a: p0_id, b: id },
+                        BridgeConnector(x_bridges[x]),
+                        Name::new(format!("Render line {p0_id} {id}")),
+                        RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                        Visibility::Inherited,
+                        ChildOf(surface),
+                        related!(
+                            Children[draw_bridge_cylinder(
+                                &mut self.meshes,
+                                &mut self.materials,
+                                diff.length(),
+                                scale
+                            )]
+                        ),
+                    ))
+                    .id();
+
+                let is_y_mid = y < y_mid && y + 1 >= y_mid;
+                if is_y_mid {
+                    let center = origin + diff * 0.5;
+                    let complete_bridge = x_bridges[x];
+                    let id = self
+                        .commands
+                        .spawn((
+                            Transform::from_translation(center),
+                            CompleteBridgeCenter {
+                                complete_bridge,
+                                single_segment: Some(bridge_id),
+                            },
+                            ChildOf(surface),
+                            Visibility::Inherited,
+                            Mesh3d(self.meshes.add(Sphere::new(0.1 * scale))),
+                            MeshMaterial3d(self.materials.add(Color::from(GREEN_800))),
+                            Picking3dInteractable::default(),
+                            CantSnapToEntities::All,
+                        ))
+                        .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
+                        .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
+                        .observe(moved_complete_bridge)
+                        .id();
+                    self.bounding_entites.add_bounding_entity(id);
+                }
+            }
+
+            // let is_y_mid = y > y_mid && y < y_mid + 1;
+        }
+
+        self.event_writer.write(RedrawEvent::HighQuality);
+    }
+}
+
+pub fn generate_default_curve(mut surface_creator: SurfaceCreator) {
     let (w, h): (usize, usize) = (6, 6);
     let min_x = -w.to_f32().unwrap() / 2.0 + if w % 2 == 0 { 0.5 } else { 0.0 };
     let min_y = -h.to_f32().unwrap() / 2.0 + if h % 2 == 0 { 0.5 } else { 0.0 };
@@ -467,201 +689,14 @@ pub fn generate_default_curve(
     let mut curr_y = min_y;
     for y in 0..h as i32 {
         for x in 0..w as i32 {
-            points.push((y as usize, x as usize, curr_x, 0.0, curr_y));
+            points.push((y as usize, x as usize, Vec3::new(curr_x, 0.0, curr_y)));
             curr_x += 1.0;
         }
         curr_x = min_x;
         curr_y += 1.0;
     }
 
-    let mut ids = vec![];
-
-    for p in &points {
-        let id = commands
-            .spawn((
-                RenderPoint(p.0, p.1),
-                Name::new(format!("Render Point {} {}", p.0, p.1)),
-                Transform::from_xyz(p.2 * scale, p.3 * scale + height, p.4 * scale),
-                Mesh3d(sphere.clone()),
-                MeshMaterial3d(material.clone()),
-                Picking3dInteractable::default(),
-                RenderLayers::from(DisplayIn::BothNormalAndOrtho),
-                Visibility::Inherited,
-                ChildOf(surface),
-            ))
-            .observe(update_material_on::<Pointer<Over>>(material_hover.clone()))
-            .observe(update_material_on::<Pointer<Out>>(material.clone()))
-            //.observe(drag_point)
-            .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
-            .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
-            .id();
-        bounding_entites.add_bounding_entity(id);
-        ids.push(id);
-    }
-
-    let mut x_bridges = Vec::new();
-    let mut y_bridges = Vec::new();
-
-    for x in 0..w {
-        x_bridges.push(
-            commands
-                .spawn((
-                    CompleteBridge(Vec::new()),
-                    Name::new(format!("x_bridge {x}")),
-                    Transform::default(),
-                    Visibility::Inherited,
-                    ChildOf(surface),
-                ))
-                .id(),
-        );
-    }
-
-    for y in 0..h {
-        y_bridges.push(
-            commands
-                .spawn((
-                    CompleteBridge(Vec::new()),
-                    Name::new(format!("y_bridge {y}")),
-                    Transform::default(),
-                    Visibility::Inherited,
-                    ChildOf(surface),
-                ))
-                .id(),
-        );
-    }
-
-    let to_xy = |i| (i % w, i / w);
-    let from_xy = |x, y| x + y * w;
-
-    let x_mid = w / 2;
-    let y_mid = h / 2;
-    // Draw lines between neighbouring controls points to generate a visible grid
-    for i in 0..points.len() {
-        let p0 = points[i];
-        let p0_id = ids[i];
-
-        let (x, y) = to_xy(i);
-        let (_, y_next) = to_xy(i + 1);
-
-        // Check if we are not at the edge of the array (next index is one row up)
-        if y == y_next
-            && let Some(px) = points.get(i + 1)
-        {
-            let id = *ids.get(i + 1).expect("must be present");
-
-            let origin = Vec3::new(p0.2 * scale, p0.3 * scale, p0.4 * scale);
-            let target = Vec3::new(px.2 * scale, px.3 * scale, px.4 * scale);
-            let diff = target - origin;
-
-            let bridge_id = commands
-                .spawn((
-                    Transform::from_translation(origin).looking_at(target, Vec3::Y),
-                    Bridge { a: p0_id, b: id },
-                    BridgeConnector(y_bridges[y]),
-                    Name::new(format!("Render line {p0_id} {id}")),
-                    RenderLayers::from(DisplayIn::BothNormalAndOrtho),
-                    Visibility::Inherited,
-                    ChildOf(surface),
-                    related!(
-                        Children[draw_bridge_cylinder(
-                            &mut meshes,
-                            &mut materials,
-                            diff.length(),
-                            scale
-                        )]
-                    ),
-                ))
-                .id();
-
-            let is_x_mid = x < x_mid && x + 1 >= x_mid;
-            if is_x_mid {
-                let complete_bridge = y_bridges[y];
-
-                let center = origin + diff * 0.5;
-
-                let id = commands
-                    .spawn((
-                        Transform::from_translation(center),
-                        CompleteBridgeCenter {
-                            complete_bridge,
-                            single_segment: Some(bridge_id),
-                        },
-                        ChildOf(surface),
-                        Visibility::Inherited,
-                        Mesh3d(meshes.add(Sphere::new(0.1 * scale))),
-                        MeshMaterial3d(materials.add(Color::from(GREEN_800))),
-                        Picking3dInteractable::default(),
-                        CantSnapToEntities::All,
-                    ))
-                    .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
-                    .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
-                    .observe(moved_complete_bridge)
-                    .id();
-                bounding_entites.add_bounding_entity(id);
-            }
-        }
-
-        let next_row_idx = from_xy(x, y + 1);
-        // Check if next row is still in range
-        if y + 1 < h
-            && let Some(py) = points.get(next_row_idx)
-        {
-            let id = *ids.get(i + w).expect("must be present");
-
-            let origin = Vec3::new(p0.2 * scale, p0.3 * scale, p0.4 * scale);
-            let target = Vec3::new(py.2 * scale, py.3 * scale, py.4 * scale);
-            let diff = target - origin;
-
-            let bridge_id = commands
-                .spawn((
-                    Transform::from_translation(origin).looking_at(target, Vec3::Y),
-                    Bridge { a: p0_id, b: id },
-                    BridgeConnector(x_bridges[x]),
-                    Name::new(format!("Render line {p0_id} {id}")),
-                    RenderLayers::from(DisplayIn::BothNormalAndOrtho),
-                    Visibility::Inherited,
-                    ChildOf(surface),
-                    related!(
-                        Children[draw_bridge_cylinder(
-                            &mut meshes,
-                            &mut materials,
-                            diff.length(),
-                            scale
-                        )]
-                    ),
-                ))
-                .id();
-
-            let is_y_mid = y < y_mid && y + 1 >= y_mid;
-            if is_y_mid {
-                let center = origin + diff * 0.5;
-                let complete_bridge = x_bridges[x];
-                let id = commands
-                    .spawn((
-                        Transform::from_translation(center),
-                        CompleteBridgeCenter {
-                            complete_bridge,
-                            single_segment: Some(bridge_id),
-                        },
-                        ChildOf(surface),
-                        Visibility::Inherited,
-                        Mesh3d(meshes.add(Sphere::new(0.1 * scale))),
-                        MeshMaterial3d(materials.add(Color::from(GREEN_800))),
-                        Picking3dInteractable::default(),
-                        CantSnapToEntities::All,
-                    ))
-                    .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
-                    .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
-                    .observe(moved_complete_bridge)
-                    .id();
-                bounding_entites.add_bounding_entity(id);
-            }
-        }
-
-        // let is_y_mid = y > y_mid && y < y_mid + 1;
-    }
-
-    event_writer.write(RedrawEvent::HighQuality);
+    surface_creator.create_surface_from_points(points, w, h);
 }
 
 fn moved_complete_bridge(
@@ -720,6 +755,8 @@ fn handle_keyboard(
     // mut toggle_writer: EventWriter<ToggleC1Enable>,
     mut history: EventWriter<HistoryUndoEvent>,
     mut change_curvature: EventWriter<ChangeCurvatureDisplayModeEvent>,
+    mut increase_degree: EventWriter<IncreaseDegreeEvent>,
+    mut decrease_degree: EventWriter<DecreaseDegreeEvent>,
     renderinfo: Res<RenderInformation>,
 ) {
     if keyboard.just_released(KeyCode::KeyU) {
@@ -730,6 +767,14 @@ fn handle_keyboard(
         change_curvature.write(ChangeCurvatureDisplayModeEvent(
             renderinfo.curvature_mode.next(),
         ));
+    }
+
+    if keyboard.just_released(KeyCode::KeyI) {
+        increase_degree.write(IncreaseDegreeEvent);
+    }
+
+    if keyboard.just_released(KeyCode::KeyD) {
+        decrease_degree.write(DecreaseDegreeEvent);
     }
 }
 
@@ -801,6 +846,16 @@ impl Plugin for BezierRenderPlugin {
                 .after(render_curves),
         );
 
+        app.add_systems(
+            PostUpdate,
+            (
+                handle_degree_increase_event.run_if(on_event::<IncreaseDegreeEvent>),
+                handle_degree_reduction_event.run_if(on_event::<DecreaseDegreeEvent>),
+            ),
+        );
+
+        app.add_systems(PostUpdate, handle_generic_deleted_event);
+
         // app.init_resource::<ConstraintState>();
         app.init_resource::<RenderInformation>();
         app.init_resource::<CreateCurveState>();
@@ -819,6 +874,8 @@ impl Plugin for BezierRenderPlugin {
         app.add_event::<DeleteModeEvent>();
         app.add_event::<EndModeEvent>();
         app.add_event::<EntityDeletedEvent>();
+        app.add_event::<IncreaseDegreeEvent>();
+        app.add_event::<DecreaseDegreeEvent>();
         app.init_state::<ControlState>();
     }
 }

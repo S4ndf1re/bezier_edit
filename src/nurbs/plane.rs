@@ -13,12 +13,12 @@ impl Ray3d {
     }
 
     pub fn plane_intersection(&self, plane: &Plane3d) -> Option<f64> {
-        let denom = &plane.normal * &self.direction;
+        let denom = plane.normal * self.direction;
 
         // NOTE: Choose any eps that is regarded as sufficient. The closer to 0, the more exact
         // the intersection will be
         if denom.abs() > 0.000001 {
-            let t = (&(&plane.origin - &self.origin) * &plane.normal) / denom;
+            let t = ((plane.origin - self.origin) * plane.normal) / denom;
 
             if t >= 0.0 {
                 return Some(t);
@@ -29,12 +29,12 @@ impl Ray3d {
     }
 
     pub fn plane_intersection_both_ends(&self, plane: &Plane3d) -> Option<f64> {
-        let denom = &plane.normal * &self.direction;
+        let denom = plane.normal * self.direction;
 
         // NOTE: Choose any eps that is regarded as sufficient. The closer to 0, the more exact
         // the intersection will be
         if denom.abs() > 0.000001 {
-            let t = (&(&plane.origin - &self.origin) * &plane.normal) / denom;
+            let t = ((plane.origin - self.origin) * plane.normal) / denom;
 
             return Some(t);
         }
@@ -45,7 +45,7 @@ impl Ray3d {
 
 impl Parametric<1, Point> for Ray3d {
     fn f(&self, ts: &[f64; 1]) -> Point {
-        &self.origin + &(ts[0] * &self.direction)
+        self.origin + (ts[0] * self.direction)
     }
 
     fn derive(&self, _: &[f64; 1], _: usize) -> Point {
@@ -66,8 +66,8 @@ pub struct Plane3d {
 
 impl Plane3d {
     pub fn new(origin: Point, normal: Point, u: Point, v: Point) -> Self {
-        assert!((&u * &normal).abs() <= 0.00001,);
-        assert!((&v * &normal).abs() <= 0.00001);
+        assert!((u * normal).abs() <= 0.00001,);
+        assert!((v * normal).abs() <= 0.00001);
 
         Self {
             origin,
@@ -92,14 +92,14 @@ impl Plane3d {
     pub fn point_projected_on_plane_orthogonal(&self, point: Point) -> Option<(f64, f64)> {
         let ray = Ray3d {
             origin: point,
-            direction: -1.0 * &self.normal,
+            direction: -1.0 * self.normal,
         };
 
         if let Some(hit) = ray.plane_intersection(self) {
             let point = ray.f(&[hit]);
-            let delta_p = &point - &self.origin;
+            let delta_p = point - self.origin;
 
-            return Some((&delta_p * &self.u, &delta_p * &self.v));
+            return Some((delta_p * self.u, delta_p * self.v));
         }
 
         None
@@ -119,7 +119,7 @@ impl From<Transform> for Plane3d {
 
 impl Parametric<2, Point> for Plane3d {
     fn f(&self, ts: &[f64; 2]) -> Point {
-        &(&(&self.u * ts[0]) + &(&self.v * ts[1])) + &self.origin
+        ((self.u * ts[0]) + (self.v * ts[1])) + self.origin
     }
 
     fn derive(&self, _: &[f64; 2], _: usize) -> Point {

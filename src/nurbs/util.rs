@@ -39,7 +39,7 @@ pub fn bernstein_to_point(i: usize, r: usize, t: f64, bezier_points: &[Point]) -
     }
 
     for j in 0..=r {
-        sum = &sum + &(&bezier_points[j + r] * bernstein(j, r, t));
+        sum = sum + (bezier_points[j + r] * bernstein(j, r, t));
     }
 
     sum
