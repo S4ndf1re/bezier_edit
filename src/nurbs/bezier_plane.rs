@@ -1,11 +1,35 @@
 use num::pow::Pow;
 
-use crate::nurbs::bezier::{de_casteljau, derive_after_de_casteljau, split_at};
+use crate::nurbs::bezier::{
+    de_casteljau, decrease_degree, derive_after_de_casteljau, increase_degree, split_at,
+};
 use crate::nurbs::point::Point;
 
 use super::bounding_box_3d::BoundingBox3D;
 
 pub type ControlPoints2D = Vec<Vec<Point>>;
+
+fn transpose_control_points(points: &ControlPoints2D) -> ControlPoints2D {
+    let m = points.len() - 1;
+    assert!(m > 1);
+
+    let n = points
+        .first()
+        .unwrap() // Ok, since assert! prevents empty lists
+        .len()
+        - 1;
+    assert!(n > 1);
+
+    let mut result = vec![vec![Point::default(); m + 1]; n + 1];
+
+    for i in 0..=m {
+        for j in 0..=n {
+            result[j][i] = points[i][j];
+        }
+    }
+
+    result
+}
 
 /// Assume a mxn grid of control points, where m and n are degrees of a bezier curve, meaning m+1 and n+1 points are needed.
 /// First compute m+1 bezier curves of degree n. Use the resulting points to compute a single bezier curve of m+1 points
@@ -262,4 +286,62 @@ pub fn determine_u_v(
         1.0,
         box_volume_threshold,
     )
+}
+
+pub fn decrease_degree_surface(control_points: &ControlPoints2D) -> ControlPoints2D {
+    let m = control_points.len() - 1;
+    assert!(m > 1);
+
+    let n = control_points
+        .first()
+        .unwrap() // Ok, since assert! prevents empty lists
+        .len()
+        - 1;
+    assert!(n > 1);
+
+    let mut new_points = vec![Vec::new(); m + 1];
+
+    // Firs in u direction
+    for (i, row) in control_points.iter().enumerate() {
+        new_points[i] = decrease_degree(row);
+    }
+
+    // Then transpose and in v direction
+    let mut new_points = transpose_control_points(&new_points);
+    let iter_points = new_points.clone();
+    for (i, row) in iter_points.iter().enumerate() {
+        new_points[i] = decrease_degree(row);
+    }
+
+    transpose_control_points(&new_points)
+}
+
+pub fn increase_degree_surface(control_points: &ControlPoints2D) -> ControlPoints2D {
+    let m = control_points.len() - 1;
+    assert!(m > 1);
+
+    let n = control_points
+        .first()
+        .unwrap() // Ok, since assert! prevents empty lists
+        .len()
+        - 1;
+    assert!(n > 1);
+
+    // NOTE: This must be of size m+1 (original size), since the the correct sizes are determined
+    // automatically
+    let mut new_points = vec![Vec::new(); m + 1];
+
+    // Firs in u direction
+    for (i, row) in control_points.iter().enumerate() {
+        new_points[i] = increase_degree(row);
+    }
+
+    // Then transpose and in v direction
+    let mut new_points = transpose_control_points(&new_points);
+    let iter_points = new_points.clone();
+    for (i, row) in iter_points.iter().enumerate() {
+        new_points[i] = increase_degree(row);
+    }
+
+    transpose_control_points(&new_points)
 }

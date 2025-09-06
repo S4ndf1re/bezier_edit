@@ -162,7 +162,7 @@ pub fn increase_degree<T: AsRef<[Point]>>(points: T) -> Vec<Point> {
     new_points
 }
 
-/// Farin 5.4
+/// Farin 5.4 Gradreduzierung. Bidirectional
 pub fn decrease_degree<T: AsRef<[Point]>>(points: T) -> Vec<Point> {
     let points = points.as_ref();
     if points.len() < 2 {
@@ -184,15 +184,28 @@ pub fn decrease_degree<T: AsRef<[Point]>>(points: T) -> Vec<Point> {
             Point::default()
         };
 
-        points_left[i] =
-            ((n as f64) * b_i - (n as f64 - i as f64) * b_hat_i) / (n as f64 - i as f64);
+        points_left[i] = ((n as f64) * b_i - (i as f64) * b_hat_i) / (n as f64 - i as f64);
     }
 
     // Then from right to left
     for i in 0..n {
         // Should go from n (n-0 = n) -> 1 (n-(n-1) = 1)
         let i = n - i;
+        let b_i = points[i];
+        let b_hat_i = if i < n {
+            points_right[i]
+        } else {
+            Point::default()
+        };
+
+        points_right[i - 1] = ((n as f64) * b_i - (n as f64 - i as f64) * b_hat_i) / (i as f64);
     }
 
-    todo!()
+    let mid = m / 2;
+
+    let mut result = Vec::with_capacity(m + 1);
+    result.extend(points_left[0..mid].iter());
+    result.extend(points_right[mid..=m].iter());
+
+    result
 }

@@ -10,5 +10,16 @@ pub mod util;
 
 use bevy::prelude::*;
 
+use crate::projection::BoundingEntitiesManager;
+
 #[derive(Event)]
 pub struct EntityDeletedEvent(pub Entity);
+
+pub fn handle_generic_deleted_event(
+    mut reader: EventReader<EntityDeletedEvent>,
+    mut bounding_entities: BoundingEntitiesManager,
+) {
+    for evt in reader.read() {
+        bounding_entities.remove_entity(&evt.0);
+    }
+}
