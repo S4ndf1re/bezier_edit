@@ -21,7 +21,7 @@ impl Point {
     }
 
     pub fn magnitude(&self) -> f64 {
-        (self * self).sqrt()
+        (*self * *self).sqrt()
     }
 
     pub fn cross(&self, other: &Self) -> Point {
@@ -35,44 +35,44 @@ impl Point {
 
     pub fn normalize(&self) -> Point {
         if self.magnitude() > 0.0 {
-            self * (1.0 / self.magnitude())
+            *self * (1.0 / self.magnitude())
         } else {
             *self
         }
     }
 }
 
-impl Add<&Point> for &Point {
+impl Add<Point> for Point {
     type Output = Point;
-    fn add(self, rhs: &Point) -> Self::Output {
+    fn add(self, rhs: Point) -> Self::Output {
         Point::new(self.x + rhs.x, self.y + rhs.y, self.z + rhs.z, Some(self.w))
     }
 }
 
-impl Mul<&Point> for &Point {
+impl Mul<Point> for Point {
     type Output = f64;
-    fn mul(self, rhs: &Point) -> Self::Output {
+    fn mul(self, rhs: Point) -> Self::Output {
         self.x * rhs.x + self.y * rhs.y + self.z * rhs.z
     }
 }
 
-impl Mul<f64> for &Point {
+impl Mul<f64> for Point {
     type Output = Point;
     fn mul(self, rhs: f64) -> Self::Output {
         Point::new(self.x * rhs, self.y * rhs, self.z * rhs, None)
     }
 }
 
-impl Mul<&Point> for f64 {
+impl Mul<Point> for f64 {
     type Output = Point;
-    fn mul(self, rhs: &Point) -> Self::Output {
+    fn mul(self, rhs: Point) -> Self::Output {
         rhs * self
     }
 }
 
-impl Sub for &Point {
+impl Sub for Point {
     type Output = Point;
-    fn sub(self, rhs: &Point) -> Self::Output {
+    fn sub(self, rhs: Point) -> Self::Output {
         Point::new(self.x - rhs.x, self.y - rhs.y, self.z - rhs.z, Some(self.w))
     }
 }

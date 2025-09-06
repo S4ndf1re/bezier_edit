@@ -81,7 +81,7 @@ pub fn bezier_surface_picking(
                 v = hit.1;
                 let evaluated = eval_2d_bezier_curves(&control_points, hit.0, hit.1);
                 let (u_diff, v_diff) = derive_2d(&control_points, hit.0, hit.1, 1);
-                let normal = &u_diff.cross(&v_diff);
+                let normal = u_diff.cross(&v_diff);
                 let normal_pointer = meshes.add(Cuboid::new(
                     0.07 * scale,
                     0.07 * scale,
@@ -149,7 +149,7 @@ pub fn update_surface_click(
     for (surface, mut transform, children) in set.p0() {
         let point = eval_2d_bezier_curves(&points, surface.u, surface.v);
         let (u_diff, v_diff) = derive_2d(&points, surface.u, surface.v, 1);
-        let normal = &u_diff.cross(&v_diff);
+        let normal = u_diff.cross(&v_diff);
 
         transform.translation = Vec3::new(point.x as f32, point.y as f32, point.z as f32);
         transform.look_to(Into::<Vec3>::into(-1.0 * normal), Vec3::Y);
@@ -201,7 +201,7 @@ pub fn handle_state_change_event(
         let control_points = collect_control_points(control_points);
         let evaluated = eval_2d_bezier_curves(&control_points, surface_click.u, surface_click.v);
         let (u_diff, v_diff) = derive_2d(&control_points, surface_click.u, surface_click.v, 1);
-        let normal = &u_diff.cross(&v_diff);
+        let normal = u_diff.cross(&v_diff);
 
         root.with_children(|ui| {
             ui.spawn((

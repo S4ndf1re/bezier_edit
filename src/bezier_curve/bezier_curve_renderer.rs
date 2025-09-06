@@ -4,6 +4,7 @@ use super::components::*;
 use super::curvature_display_mode::{
     ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
 };
+use super::degree_manipulation::{handle_degree_increase_event, handle_degree_reduction_event};
 use super::helper_curves::{
     CreateCurveState, RedrawCurvesEvent, add_point, commit_curve, commit_plane,
     enter_create_curve_mode, render_curves,
@@ -395,7 +396,7 @@ pub fn redraw_boxes(
     for (u, v) in scale_info.to_uv_sample() {
         let point = eval_2d_bezier_curves(&multi_curves, u, v);
         let (u_diff, v_diff) = derive_2d(&multi_curves, u, v, 1);
-        let normal = &u_diff.cross(&v_diff) * -1.0;
+        let normal = u_diff.cross(&v_diff) * -1.0;
         let (u_diff_2, v_diff_2) = derive_2d(&multi_curves, u, v, 2);
 
         let color = if scale_info.curvature_mode == CurvatureDisplayMode::None {
@@ -403,11 +404,11 @@ pub fn redraw_boxes(
         } else {
             curvature_to_color(
                 &scale_info.curvature_mode,
-                &normal,
-                &u_diff,
-                &v_diff,
-                &u_diff_2,
-                &v_diff_2,
+                normal,
+                u_diff,
+                v_diff,
+                u_diff_2,
+                v_diff_2,
                 scale_info.scale as f64,
             )
         };
@@ -799,6 +800,11 @@ impl Plugin for BezierRenderPlugin {
             add_point
                 .run_if(in_state(ControlState::CreateCurve).or(in_state(ControlState::CreatePlane)))
                 .after(render_curves),
+        );
+
+        app.add_systems(
+            PostUpdate,
+            (handle_degree_increase_event, handle_degree_reduction_event),
         );
 
         // app.init_resource::<ConstraintState>();

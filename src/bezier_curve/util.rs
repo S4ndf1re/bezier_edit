@@ -44,7 +44,7 @@ pub fn compute_points(
     let resulting_point = eval_2d_bezier_curves(control_points, uvs[0], uvs[1]);
 
     let (u_diff_1, v_diff_1) = derive_2d(control_points, uvs[0], uvs[1], 1);
-    let normal = &u_diff_1.cross(&v_diff_1) * -1.0;
+    let normal = u_diff_1.cross(&v_diff_1) * -1.0;
 
     let (u_diff_2, v_diff_2) = derive_2d(control_points, uvs[0], uvs[1], 2);
 
@@ -108,11 +108,11 @@ pub fn create_mesh_from_control_points(
         if let Some(pixel) = image.pixel_bytes_mut(UVec3::new(local_point.u, local_point.v, 0)) {
             let color = curvature_to_color(
                 curvature_mode,
-                &local_point.normal,
-                &local_point.u_diff_1,
-                &local_point.v_diff_1,
-                &local_point.u_diff_2,
-                &local_point.v_diff_2,
+                local_point.normal,
+                local_point.u_diff_1,
+                local_point.v_diff_1,
+                local_point.u_diff_2,
+                local_point.v_diff_2,
                 scale,
             );
             pixel[0] = { color.0 * u8::MAX as f64 } as u8;
@@ -147,11 +147,11 @@ pub fn create_mesh_from_control_points(
 
 pub fn curvature_to_color(
     curvature_mode: &CurvatureDisplayMode,
-    normal: &Point,
-    u_diff_1: &Point,
-    v_diff_1: &Point,
-    u_diff_2: &Point,
-    v_diff_2: &Point,
+    normal: Point,
+    u_diff_1: Point,
+    v_diff_1: Point,
+    u_diff_2: Point,
+    v_diff_2: Point,
     scale: f64,
 ) -> (f64, f64, f64) {
     if *curvature_mode == CurvatureDisplayMode::None {
@@ -160,18 +160,20 @@ pub fn curvature_to_color(
         let (direction, magnitude) = match *curvature_mode {
             CurvatureDisplayMode::U => {
                 let direction = u_diff_2 * normal / (u_diff_2.magnitude() * normal.magnitude());
-                let magnitude = u_diff_1.cross(u_diff_2).magnitude() / pow(u_diff_1.magnitude(), 3);
+                let magnitude =
+                    u_diff_1.cross(&u_diff_2).magnitude() / pow(u_diff_1.magnitude(), 3);
                 (direction, magnitude)
             }
             CurvatureDisplayMode::V => {
                 let direction = v_diff_2 * normal / (v_diff_2.magnitude() * normal.magnitude());
-                let magnitude = v_diff_1.cross(v_diff_2).magnitude() / pow(v_diff_1.magnitude(), 3);
+                let magnitude =
+                    v_diff_1.cross(&v_diff_2).magnitude() / pow(v_diff_1.magnitude(), 3);
                 (direction, magnitude)
             }
             _ => {
                 let sum_1 = (u_diff_1 + v_diff_1) / 2.0;
                 let sum_2 = (u_diff_2 + v_diff_2) / 2.0;
-                let direction = &sum_2 * normal / (sum_2.magnitude() * normal.magnitude());
+                let direction = sum_2 * normal / (sum_2.magnitude() * normal.magnitude());
                 let magnitude = sum_1.cross(&sum_2).magnitude() / pow(sum_1.magnitude(), 3);
                 (direction, magnitude)
             }

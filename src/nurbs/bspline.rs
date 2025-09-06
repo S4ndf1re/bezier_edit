@@ -36,15 +36,15 @@ pub fn generate_intervals_chordale_distance<T: AsRef<[Point]>>(ds: T, l: usize) 
 
     let mut result = vec![0.0; l + 1];
     result[0] = 0.0;
-    result[1] = (&ds[de_boor_idx(1)] - &ds[de_boor_idx(-1)]).magnitude();
+    result[1] = (ds[de_boor_idx(1)] - ds[de_boor_idx(-1)]).magnitude();
 
     for i in 2..=l - 1 {
         result[i] = result[i - 1]
-            + (&ds[de_boor_idx(i as i32)] - &ds[de_boor_idx((i - 1) as i32)]).magnitude();
+            + (ds[de_boor_idx(i as i32)] - ds[de_boor_idx((i - 1) as i32)]).magnitude();
     }
 
     result[l] = result[l - 1]
-        + (&ds[de_boor_idx((l + 1) as i32)] - &ds[de_boor_idx((l - 1) as i32)]).magnitude();
+        + (ds[de_boor_idx((l + 1) as i32)] - ds[de_boor_idx((l - 1) as i32)]).magnitude();
 
     result
 }
@@ -56,31 +56,30 @@ fn generate_control_points<T: AsRef<[Point]>>(ds: T, us: &[f64], l: usize) -> Ve
 
     bs[0] = ds[de_boor_idx(-1)];
     bs[1] = ds[de_boor_idx(0)];
-    bs[2] = &(delta_u_i(us, 1) / (delta_u_i(us, 0) + delta_u_i(us, 1)) * &ds[de_boor_idx(0)])
-        + &(delta_u_i(us, 0) / (delta_u_i(us, 0) + delta_u_i(us, 1)) * &ds[de_boor_idx(1)]);
+    bs[2] = delta_u_i(us, 1) / (delta_u_i(us, 0) + delta_u_i(us, 1)) * ds[de_boor_idx(0)]
+        + delta_u_i(us, 0) / (delta_u_i(us, 0) + delta_u_i(us, 1)) * ds[de_boor_idx(1)];
 
     for i in 2..=l - 1 {
         let delta = delta_u_i(us, i - 2) + delta_u_i(us, i - 1) + delta_u_i(us, i);
-        bs[3 * i - 2] = &((delta_u_i(us, i - 1) + delta_u_i(us, i)) / delta
-            * &ds[de_boor_idx((i - 1) as i32)])
-            + &(delta_u_i(us, i - 2) / delta * &ds[de_boor_idx(i as i32)]);
+        bs[3 * i - 2] = (delta_u_i(us, i - 1) + delta_u_i(us, i)) / delta
+            * ds[de_boor_idx((i - 1) as i32)]
+            + delta_u_i(us, i - 2) / delta * ds[de_boor_idx(i as i32)];
 
-        bs[3 * i - 1] = &((delta_u_i(us, i - 2) + delta_u_i(us, i - 1)) / delta
-            * &ds[de_boor_idx((i) as i32)])
-            + &(delta_u_i(us, i) / delta * &ds[de_boor_idx((i - 1) as i32)]);
+        bs[3 * i - 1] = (delta_u_i(us, i - 2) + delta_u_i(us, i - 1)) / delta
+            * ds[de_boor_idx((i) as i32)]
+            + delta_u_i(us, i) / delta * ds[de_boor_idx((i - 1) as i32)];
     }
 
-    bs[3 * l - 2] = &(delta_u_i(us, l - 1) / (delta_u_i(us, l - 2) + delta_u_i(us, l - 1))
-        * &ds[de_boor_idx((l - 1) as i32)])
-        + &(delta_u_i(us, l - 2) / (delta_u_i(us, l - 2) + delta_u_i(us, l - 1))
-            * &ds[de_boor_idx(l as i32)]);
+    bs[3 * l - 2] = (delta_u_i(us, l - 1) / (delta_u_i(us, l - 2) + delta_u_i(us, l - 1))
+        * ds[de_boor_idx((l - 1) as i32)])
+        + (delta_u_i(us, l - 2) / (delta_u_i(us, l - 2) + delta_u_i(us, l - 1))
+            * ds[de_boor_idx(l as i32)]);
     bs[3 * l - 1] = ds[de_boor_idx(l as i32)];
     bs[3 * l] = ds[de_boor_idx((l + 1) as i32)];
 
     for i in 1..=l - 1 {
-        bs[3 * i] = &(delta_u_i(us, i) / (delta_u_i(us, i - 1) + delta_u_i(us, i))
-            * &bs[3 * i - 1])
-            + &(delta_u_i(us, i - 1) / (delta_u_i(us, i - 1) + delta_u_i(us, i)) * &bs[3 * i + 1]);
+        bs[3 * i] = (delta_u_i(us, i) / (delta_u_i(us, i - 1) + delta_u_i(us, i)) * bs[3 * i - 1])
+            + (delta_u_i(us, i - 1) / (delta_u_i(us, i - 1) + delta_u_i(us, i)) * bs[3 * i + 1]);
     }
 
     bs
@@ -182,7 +181,7 @@ pub fn cubic_bspline_interpolation<T: AsRef<[Point]>>(
         let mut us = vec![0.0; l + 1];
         us[0] = 0.0;
         for i in 1..=l {
-            us[i] = us[i - 1] + (&points[i] - &points[i - 1]).magnitude();
+            us[i] = us[i - 1] + (points[i] - points[i - 1]).magnitude();
         }
         let us_max = us.last().expect("Interval must be found");
         us.iter()
@@ -270,15 +269,14 @@ pub fn de_boor<T: AsRef<[Point]>, S: AsRef<[f64]>>(
     for k in 1..=n - rank {
         stage = vec![Point::new(0.0, 0.0, 0.0, None); n + 1 - k];
         for i in idx + 1 - n + k..=idx + 1 {
-            let d_i = &stages[k - 1][(idx + 1) - i];
-            let d_i1 = &stages[k - 1][(idx + 1) - (i - 1)];
+            let d_i = stages[k - 1][(idx + 1) - i];
+            let d_i1 = stages[k - 1][(idx + 1) - (i - 1)];
 
             let alpha_k_i = (u - us[i - 1]) / (us[i + n - k] - us[i - 1]);
             let w_k_i = (1.0 - alpha_k_i) * d_i1.w + alpha_k_i * d_i.w;
 
-            stage[(idx + 1) - i] = &(&((1.0 - alpha_k_i) * d_i1.w * d_i1)
-                + &(alpha_k_i * d_i.w * d_i))
-                * (1.0 / w_k_i);
+            stage[(idx + 1) - i] =
+                ((1.0 - alpha_k_i) * d_i1.w * d_i1 + (alpha_k_i * d_i.w * d_i)) * (1.0 / w_k_i);
         }
         stages.push(stage);
     }
