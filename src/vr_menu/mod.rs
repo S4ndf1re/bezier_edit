@@ -13,6 +13,7 @@ use crate::{
         },
         components::ControlState,
         curvature_display_mode::ChangeCurvatureDisplayModeEvent,
+        degree_manipulation::{DecreaseDegreeEvent, IncreaseDegreeEvent},
         render_info::{ChangeSurfaceMeshMode, RenderInformation},
     },
     picking3d::{self, events::Pointer3d, picking_3d::Picking3dInteractable},
@@ -36,6 +37,8 @@ struct GltfAssets {
     blocks: Option<Handle<Gltf>>,
     pencil: Option<Handle<Gltf>>,
     checkmark: Option<Handle<Gltf>>,
+    minus: Option<Handle<Gltf>>,
+    plus: Option<Handle<Gltf>>,
 }
 
 #[derive(Component)]
@@ -58,6 +61,12 @@ struct PencilMode;
 
 #[derive(Component)]
 struct CheckmarkMode;
+
+#[derive(Component)]
+struct MinusMode;
+
+#[derive(Component)]
+struct PlusMode;
 
 #[derive(Component)]
 struct VrMenuRoot;
@@ -167,6 +176,38 @@ fn spawn_checkmark(scene: Handle<Scene>, scale: f32) -> impl Bundle {
     )
 }
 
+fn spawn_minus(scene: Handle<Scene>, scale: f32) -> impl Bundle {
+    let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians())
+        * Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians())
+        * Quat::from_axis_angle(Vec3::Z, 90.0_f32.to_radians());
+
+    (
+        Transform::from_xyz(0.0, 0.0, -0.2 * scale)
+            .with_scale(Vec3::ONE * 0.01 * scale)
+            .with_rotation(rotation),
+        Visibility::Inherited,
+        SceneRoot(scene),
+        Picking3dInteractable::default(),
+        MinusMode,
+    )
+}
+
+fn spawn_plus(scene: Handle<Scene>, scale: f32) -> impl Bundle {
+    let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians())
+        * Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians())
+        * Quat::from_axis_angle(Vec3::Z, 90.0_f32.to_radians());
+
+    (
+        Transform::from_xyz(0.0, 0.0, -0.2 * scale)
+            .with_scale(Vec3::ONE * 0.01 * scale)
+            .with_rotation(rotation),
+        Visibility::Inherited,
+        SceneRoot(scene),
+        Picking3dInteractable::default(),
+        PlusMode,
+    )
+}
+
 #[derive(Component)]
 pub struct OriginalMaterial(StandardMaterial);
 
@@ -258,12 +299,10 @@ fn trigger_color_scene_spawn(
     snapping_state: Res<TranslationControllerState>,
     magnets: Query<&MagnetMode>,
 ) {
-    info!("triggering on entity: {}", trigger.target());
-    if magnets.get(trigger.target()).is_ok() {
-        info!("Magnet scene ready");
-        if snapping_state.curve_snapping == SnappingBehaviour::NoSnap {
-            color_changer.change_color(trigger.target(), WHITE.into());
-        }
+    if magnets.get(trigger.target()).is_ok()
+        && snapping_state.curve_snapping == SnappingBehaviour::NoSnap
+    {
+        color_changer.change_color(trigger.target(), WHITE.into());
     }
 }
 
@@ -280,12 +319,16 @@ pub struct MenuHandler<'w, 's> {
     blocks: Query<'w, 's, Entity, With<BlocksMode>>,
     pencils: Query<'w, 's, Entity, With<PencilMode>>,
     checkboxes: Query<'w, 's, Entity, With<CheckmarkMode>>,
+    minus: Query<'w, 's, Entity, With<MinusMode>>,
+    plus: Query<'w, 's, Entity, With<PlusMode>>,
     set_end_mode: EventWriter<'w, EndModeEvent>,
     set_delete_mode: EventWriter<'w, DeleteModeEvent>,
     set_create_curve_mode: EventWriter<'w, CreateCurveEvent>,
     set_create_camera_mode: EventWriter<'w, CreateOrthoCameraEvent>,
     toggle_snap_mode: EventWriter<'w, ToggleSnappingBehaviour>,
     change_curvature_display_mode: EventWriter<'w, ChangeCurvatureDisplayModeEvent>,
+    decrease_degree: EventWriter<'w, DecreaseDegreeEvent>,
+    increase_degree: EventWriter<'w, IncreaseDegreeEvent>,
     control_state: Res<'w, State<ControlState>>,
     models: Res<'w, GltfAssets>,
     gltf: Res<'w, Assets<Gltf>>,
@@ -492,6 +535,58 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
             .observe(handle_hover_over3d);
+
+        let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
+        transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 105.0_f32.to_radians()));
+        let model = self
+            .gltf
+            .get(
+                self.models
+                    .minus
+                    .clone()
+                    .expect("must be loaded to run this system")
+                    .id(),
+            )
+            .unwrap();
+
+        self.commands
+            .spawn((
+                transform,
+                MinusMode,
+                children![spawn_minus(model.scenes[0].clone(), self.info.scale,)],
+                Visibility::Inherited,
+                ChildOf(root),
+            ))
+            .observe(handle_hover_out)
+            .observe(handle_hover_out3d)
+            .observe(handle_hover_over)
+            .observe(handle_hover_over3d);
+
+        let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
+        transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -105.0_f32.to_radians()));
+        let model = self
+            .gltf
+            .get(
+                self.models
+                    .plus
+                    .clone()
+                    .expect("must be loaded to run this system")
+                    .id(),
+            )
+            .unwrap();
+
+        self.commands
+            .spawn((
+                transform,
+                PlusMode,
+                children![spawn_plus(model.scenes[0].clone(), self.info.scale,)],
+                Visibility::Inherited,
+                ChildOf(root),
+            ))
+            .observe(handle_hover_out)
+            .observe(handle_hover_out3d)
+            .observe(handle_hover_over)
+            .observe(handle_hover_over3d);
     }
 
     pub fn apply_menu_state(&mut self) {
@@ -514,6 +609,10 @@ impl<'w, 's> MenuHandler<'w, 's> {
                 self.set_create_curve_mode.write(CreateCurveEvent);
             } else if self.checkboxes.get(selected).is_ok() {
                 self.set_end_mode.write(EndModeEvent);
+            } else if self.minus.get(selected).is_ok() {
+                self.decrease_degree.write(DecreaseDegreeEvent);
+            } else if self.plus.get(selected).is_ok() {
+                self.increase_degree.write(IncreaseDegreeEvent);
             }
         }
     }
@@ -587,6 +686,8 @@ fn setup_models(server: ResMut<AssetServer>, mut models: ResMut<GltfAssets>) {
     let blocks: Handle<Gltf> = server.load("box_mode/scene.gltf");
     let pencil: Handle<Gltf> = server.load("pencil/scene.gltf");
     let checkmark: Handle<Gltf> = server.load("checkmark/scene.gltf");
+    let minus: Handle<Gltf> = server.load("minus/scene.gltf");
+    let plus: Handle<Gltf> = server.load("plus/scene.gltf");
 
     models.magnet = Some(magnet);
     models.trashcan = Some(trashcan);
@@ -595,6 +696,8 @@ fn setup_models(server: ResMut<AssetServer>, mut models: ResMut<GltfAssets>) {
     models.blocks = Some(blocks);
     models.pencil = Some(pencil);
     models.checkmark = Some(checkmark);
+    models.minus = Some(minus);
+    models.plus = Some(plus);
 }
 
 fn are_models_loaded(
@@ -644,6 +747,18 @@ fn are_models_loaded(
 
     if let Some(checkmark) = &models.checkmark
         && assets.get(checkmark.id()).is_none()
+    {
+        return false;
+    }
+
+    if let Some(minus) = &models.minus
+        && assets.get(minus.id()).is_none()
+    {
+        return false;
+    }
+
+    if let Some(plus) = &models.plus
+        && assets.get(plus.id()).is_none()
     {
         return false;
     }
