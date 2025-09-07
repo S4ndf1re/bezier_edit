@@ -1,5 +1,4 @@
 use crate::bezier_curve::render_info::RenderInformation;
-use crate::click_decider::{AddLeftTrace, AddRightTrace};
 use crate::picking3d::events::{
     Click, Drag, DragEnd, DragStart, HoveredBy, MoveIn, MoveOut, Pointer3d,
 };
@@ -8,8 +7,8 @@ use crate::picking3d::pointer_state::Pointer3dState;
 use crate::vr_control::trigger::{ControllerSqueeze, ControllerTrigger};
 use crate::vr_control::{AimLeft, AimRight, GripLeft, GripRight};
 use bevy::color::palettes::css::POWDER_BLUE;
-use bevy::math::bounding::{Aabb3d, BoundingSphere, IntersectsVolume};
 use bevy::math::Vec3;
+use bevy::math::bounding::{Aabb3d, BoundingSphere, IntersectsVolume};
 use bevy::prelude::*;
 
 use super::picking_state::VectorState;
@@ -314,8 +313,6 @@ fn handle_input_grab(
     right_tracked: Single<(&GlobalTransform, Entity), With<GripRight>>,
     mut picking_state: ResMut<PickingState>,
     mut moved_marked_query: Query<(&GlobalTransform, &mut MoveMarker, Entity)>,
-    mut left_writer: EventWriter<AddLeftTrace>,
-    mut right_writer: EventWriter<AddRightTrace>,
     mut click_writer: EventWriter<Pointer3d<Click>>,
     info: Res<RenderInformation>,
 ) {
@@ -327,21 +324,6 @@ fn handle_input_grab(
             HoveredBy::Left => *left_tracked,
             HoveredBy::Right => *right_tracked,
         };
-
-        match hover_by {
-            HoveredBy::Left => {
-                left_writer.write(AddLeftTrace {
-                    transform: tracked.0.compute_transform(),
-                    click_value: state as f64,
-                });
-            }
-            HoveredBy::Right => {
-                right_writer.write(AddRightTrace {
-                    transform: tracked.0.compute_transform(),
-                    click_value: state as f64,
-                });
-            }
-        }
 
         let current_state = state > 0.2;
 

@@ -20,10 +20,13 @@ use crate::{
     projection::ProjectedSnappingDetector,
 };
 
-use super::translation_controller::{
-    CantSnapToCurve, CantSnapToEntities, Control, ControlParent, MovedEntityEvent, SnappedArrow,
-    SnappedPoint, SnappingBehaviour, TranslationControllerState, drag_controller,
-    drag_controller3d, draw_arrow,
+use super::{
+    accumulated::AccumulatedMovementStore,
+    translation_controller::{
+        CantSnapToCurve, CantSnapToEntities, Control, ControlParent, MovedEntityEvent,
+        SnappedArrow, SnappedPoint, SnappingBehaviour, TranslationControllerState, drag_controller,
+        drag_controller3d, draw_arrow,
+    },
 };
 
 #[allow(clippy::complexity)]
@@ -49,6 +52,8 @@ pub struct ObligatoryDragParams<'w, 's> {
     cant_snap_to_curve: Query<'w, 's, Read<CantSnapToCurve>>,
     cant_snap_to_entities: Query<'w, 's, Read<CantSnapToEntities>>,
     moved_entity_writer: EventWriter<'w, MovedEntityEvent>,
+    accumulated_movement: ResMut<'w, AccumulatedMovementStore>,
+    snapped_control_arrow: Query<'w, 's, Entity, With<SnappedArrow>>,
 }
 
 impl<'w, 's> ObligatoryDragParams<'w, 's> {
@@ -68,6 +73,8 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         let mut t = p0.get_mut(control_parent.1.0).unwrap();
 
         t.translation = t.translation + translation + closest_move_direction;
+        self.accumulated_movement
+            .reset(control_parent.1.0, t.translation);
         t.translation
     }
 
@@ -126,6 +133,8 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     .observe(drag_controller)
                     .observe(drag_controller3d);
                 });
+            self.accumulated_movement
+                .reset(control_parent.1.0, t.translation);
             t.translation
         } else {
             // all curves are too far away to snap to
@@ -156,6 +165,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         }
     }
 
+    #[allow(clippy::complexity)]
     fn check_and_process_already_snapped(
         &mut self,
         control_parent: (Entity, &ControlParent),
@@ -164,10 +174,19 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         cant_snap_to_curve: Option<CantSnapToCurve>,
         cant_snap_to_entities: Option<CantSnapToEntities>,
         snap: SnappedPoint,
+        is_snapped_arrow: bool,
     ) -> Vec3 {
         match snap {
             SnappedPoint::ToCurve { u: _, curve: _ } => {
-                let point = Point::from(t.translation + translation);
+                let point = if is_snapped_arrow {
+                    Point::from(t.translation + translation)
+                } else {
+                    Point::from(
+                        self.accumulated_movement
+                            .current_point(&control_parent.1.0)
+                            .unwrap(),
+                    )
+                };
 
                 let shortest = self
                     .transform_set
@@ -176,13 +195,20 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                 if let Some((curve, u, p, dist, _)) = shortest
                     && dist < 0.05 * self.info.scale as f64
                 {
-                    let mut snap = self.snapped.get_mut(control_parent.1.0).unwrap().1;
-                    *snap = SnappedPoint::ToCurve { u, curve };
+                    if is_snapped_arrow {
+                        let mut snap = self.snapped.get_mut(control_parent.1.0).unwrap().1;
+                        *snap = SnappedPoint::ToCurve { u, curve };
 
-                    let mut p0 = self.transform_set.p0();
-                    let mut t = p0.get_mut(control_parent.1.0).unwrap();
-                    t.translation = p.into();
-                    t.translation
+                        let mut p0 = self.transform_set.p0();
+                        let mut t = p0.get_mut(control_parent.1.0).unwrap();
+
+                        t.translation = p.into();
+                        self.accumulated_movement
+                            .reset(control_parent.1.0, t.translation);
+                        t.translation
+                    } else {
+                        t.translation
+                    }
                 } else {
                     let entity = self.snapped.get(control_parent.1.0).unwrap().0;
                     self.commands
@@ -215,14 +241,21 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                 if let Some(closest_move_direction) =
                     self.transform_set.p2().detect_closest_projected(
                         control_parent.1.0,
-                        translation,
+                        self.accumulated_movement
+                            .current_diff(&control_parent.1.0)
+                            .unwrap(),
                         cant_snap_to_entities,
                     )
                     && closest_move_direction.length() < 0.05 * self.info.scale
                 {
                     let mut p0 = self.transform_set.p0();
                     let mut t = p0.get_mut(control_parent.1.0).unwrap();
-                    t.translation = t.translation + translation + closest_move_direction;
+                    t.translation = t.translation
+                        + self
+                            .accumulated_movement
+                            .current_diff(&control_parent.1.0)
+                            .unwrap()
+                        + closest_move_direction;
                     t.translation
                 } else {
                     // Remove snapped component
@@ -233,7 +266,14 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                         .remove::<SnappedPoint>();
 
                     // Consider adding back the curve when not
-                    self.snap_to_curve(control_parent, t, translation, cant_snap_to_curve)
+                    self.snap_to_curve(
+                        control_parent,
+                        t,
+                        self.accumulated_movement
+                            .current_diff(&control_parent.1.0)
+                            .unwrap(),
+                        cant_snap_to_curve,
+                    )
                 }
             }
         }
@@ -243,7 +283,11 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         &mut self,
         control_parent: (Entity, &ControlParent),
         translation: Vec3,
+        arrow: Entity,
     ) {
+        self.accumulated_movement
+            .add_diff(&control_parent.1.0, translation);
+        let is_snapped_arrow = self.snapped_control_arrow.get(arrow).is_ok();
         // Only adjust the control parent
         let is_already_snapped = self.snapped.get(control_parent.1.0).is_ok();
         let cant_snap_to_curve = self
@@ -292,6 +336,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                         cant_snap_to_curve,
                         cant_snap_to_entities,
                         snap,
+                        is_snapped_arrow,
                     )
                 }
             } else {

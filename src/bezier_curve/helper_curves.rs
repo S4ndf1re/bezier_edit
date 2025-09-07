@@ -10,7 +10,6 @@ use crate::translation_control::translation_controller::CantSnapToCurve;
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::{
     RootTransform,
-    click_decider::LogTrace,
     nurbs::{bezier::shortest_distance_to_point, point::Point},
     picking3d::events::{self, Pointer3d},
     translation_control::translation_controller::EnableTranslationControl,
@@ -194,7 +193,6 @@ fn handle_click_on_curve_point3d(
     trigger: Trigger<Pointer3d<events::Click>>,
     mut commands: Commands,
     enabled: Query<&EnableTranslationControl>,
-    trace_log_writer: EventWriter<LogTrace>,
     state: Res<State<ControlState>>,
     points: Query<(Entity, &ChildOf), With<ControlCurvePoint>>,
     children: Query<&Children>,
@@ -230,11 +228,7 @@ fn handle_click_on_curve_point3d(
         }
     } else if *state == ControlState::Main {
         enable_gizmo3d(EnableTranslationControl::OnlyTranslation)(
-            trigger,
-            commands,
-            enabled,
-            trace_log_writer,
-            state,
+            trigger, commands, enabled, state,
         );
     }
 }

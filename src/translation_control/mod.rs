@@ -1,5 +1,6 @@
+mod accumulated;
 pub mod control_storage;
-pub mod obligatory_drag_params;
+mod obligatory_drag_params;
 pub mod translation_controller;
 
 use bevy::prelude::*;
@@ -7,7 +8,6 @@ use translation_controller::EnableTranslationControl;
 
 use crate::{
     bezier_curve::components::ControlState,
-    click_decider::LogTrace,
     picking3d::events::{self, Pointer3d},
 };
 
@@ -37,10 +37,9 @@ pub fn enable_gizmo3d(
     Trigger<Pointer3d<events::Click>>,
     Commands,
     Query<&EnableTranslationControl>,
-    EventWriter<LogTrace>,
     Res<State<ControlState>>,
 ) {
-    move |trigger, mut commands, enabled, mut trace_log_writer, state| {
+    move |trigger, mut commands, enabled, state| {
         #[allow(clippy::collapsible_if)]
         if *state == ControlState::Main {
             if let Ok(mut entity) = commands.get_entity(trigger.target()) {
@@ -49,7 +48,6 @@ pub fn enable_gizmo3d(
                 } else {
                     entity.insert(enable_translation_control);
                 }
-                trace_log_writer.write(LogTrace::default());
             }
         }
     }

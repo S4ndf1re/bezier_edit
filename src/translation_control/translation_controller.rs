@@ -1,7 +1,6 @@
 use crate::bezier_curve::bezier_curve_renderer::RedrawEvent;
 use crate::bezier_curve::helper_curves::{CurveCollection, RedrawCurvesEvent};
 use crate::bezier_curve::render_info::RenderInformation;
-use crate::click_decider::LogTrace;
 use crate::history::plugin::HistoryLogEvent;
 use crate::nurbs::bezier::{de_casteljau, derive_after_de_casteljau};
 use crate::nurbs::parametric::{Circle3D, MinDistanceToPoint, Parametric};
@@ -19,6 +18,7 @@ use bevy::prelude::*;
 use std::collections::HashSet;
 use std::f32::consts::FRAC_PI_2;
 
+use super::accumulated::AccumulatedMovementStore;
 use super::control_storage::ControlDirection;
 use super::obligatory_drag_params::ObligatoryDragParams;
 
@@ -509,6 +509,7 @@ fn drag_start(
     arrows: Res<ControlStorage>,
     scale: Res<RenderInformation>,
     mut history: EventWriter<HistoryLogEvent>,
+    mut accumulated_movement: ResMut<AccumulatedMovementStore>,
 ) {
     let mut root = commands.get_entity(root.single().unwrap()).unwrap();
     let dragged_entity = trigger.target();
@@ -519,6 +520,8 @@ fn drag_start(
     let control_parent = control_parents.get(dragged_parent).unwrap();
     let mut start_transform = *all_transforms.get(control_parent.0).unwrap();
     start_transform.rotation = Quat::IDENTITY;
+
+    accumulated_movement.start_movement_entity(control_parent.0, start_transform.translation);
 
     let scale = scale.scale;
 
@@ -567,7 +570,7 @@ fn drag_start3d(
     arrows: Res<ControlStorage>,
     scale: Res<RenderInformation>,
     mut history: EventWriter<HistoryLogEvent>,
-    mut trace_log_writer: EventWriter<LogTrace>,
+    mut accumulated_movement: ResMut<AccumulatedMovementStore>,
 ) {
     let mut root = commands.get_entity(root.single().unwrap()).unwrap();
     let dragged_entity = trigger.target();
@@ -577,6 +580,8 @@ fn drag_start3d(
 
     let control_parent = control_parents.get(dragged_parent).unwrap();
     let start_transform = all_transforms.get(control_parent.0).unwrap();
+
+    accumulated_movement.start_movement_entity(control_parent.0, start_transform.translation);
 
     let scale = scale.scale;
 
@@ -609,8 +614,6 @@ fn drag_start3d(
         control_parent.0,
         Some(*start_transform),
     ));
-
-    trace_log_writer.write(LogTrace::default());
 }
 
 #[allow(clippy::complexity)]
@@ -623,12 +626,15 @@ fn drag_end_trigger_redraw(
     mut commands: Commands,
     query: Query<Entity, With<ShadowMarker>>,
     mut history: EventWriter<HistoryLogEvent>,
+    mut accumulated_movement: ResMut<AccumulatedMovementStore>,
 ) {
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
 
     let dragged_parent = dragged_childof.parent();
     let control_parent = control_parents.get(dragged_parent).unwrap();
+
+    accumulated_movement.end_movement(&control_parent.0);
 
     redraw_writer.write(RedrawEvent::HighQuality);
     redraw_curves_writer.write(RedrawCurvesEvent);
@@ -650,13 +656,15 @@ fn drag_end3d_trigger_redraw(
     mut commands: Commands,
     query: Query<Entity, With<ShadowMarker>>,
     mut history: EventWriter<HistoryLogEvent>,
-    mut trace_log_writer: EventWriter<LogTrace>,
+    mut accumulated_movement: ResMut<AccumulatedMovementStore>,
 ) {
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
 
     let dragged_parent = dragged_childof.parent();
     let control_parent = control_parents.get(dragged_parent).unwrap();
+
+    accumulated_movement.end_movement(&control_parent.0);
 
     redraw_writer.write(RedrawEvent::HighQuality);
     redraw_curves_writer.write(RedrawCurvesEvent);
@@ -666,8 +674,6 @@ fn drag_end3d_trigger_redraw(
     }
 
     history.write(HistoryLogEvent::End(control_parent.0, None));
-
-    trace_log_writer.write(LogTrace::default());
 }
 
 pub fn handle_translate_by_delta_event(
@@ -680,7 +686,11 @@ pub fn handle_translate_by_delta_event(
         if let Ok(children) = children.get(evt.entity) {
             for child in children {
                 if let Ok(control_parent) = control_parents.get(*child) {
-                    obligatory.update_position_drag_universal(control_parent, evt.delta);
+                    obligatory.update_position_drag_universal(
+                        control_parent,
+                        evt.delta,
+                        Entity::PLACEHOLDER,
+                    );
                 }
             }
         }
@@ -690,13 +700,13 @@ pub fn handle_translate_by_delta_event(
 #[allow(clippy::complexity)]
 pub fn drag_plane(
     trigger: Trigger<Pointer<Drag>>,
-    control_query: Query<(&Control, &ChildOf)>,
+    control_query: Query<(Entity, &Control, &ChildOf)>,
     camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
     mut params: ParamSet<(ObligatoryDragParams, Query<&GlobalTransform>)>,
 ) {
-    let (control, child_of) = control_query.get(trigger.target()).unwrap();
+    let (control_entity, control, child_of) = control_query.get(trigger.target()).unwrap();
 
     let parent = child_of.parent();
     let control_parent = control_parents.get_mut(parent).unwrap();
@@ -730,22 +740,24 @@ pub fn drag_plane(
         let axis = control.0;
         let translation = diff * axis;
 
-        params
-            .p0()
-            .update_position_drag_universal((parent, control_parent), translation);
+        params.p0().update_position_drag_universal(
+            (parent, control_parent),
+            translation,
+            control_entity,
+        );
     }
 }
 
 #[allow(clippy::complexity)]
 pub fn drag_plane3d(
     trigger: Trigger<Pointer3d<crate::picking3d::events::Drag>>,
-    control_query: Query<(&Control, &ChildOf)>,
+    control_query: Query<(Entity, &Control, &ChildOf)>,
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
     mut params: ObligatoryDragParams,
 ) {
     // NOTE: Make sure that the draw event is triggered only once. Otherwise this difference adding happens multiple times for the same event........
-    let (control, child_of) = control_query.get(trigger.target()).unwrap();
+    let (control_entity, control, child_of) = control_query.get(trigger.target()).unwrap();
 
     let parent = child_of.parent();
 
@@ -762,19 +774,19 @@ pub fn drag_plane3d(
     let axis = control.0;
     let translation = axis * diff;
 
-    params.update_position_drag_universal((parent, control_parent), translation);
+    params.update_position_drag_universal((parent, control_parent), translation, control_entity);
 }
 
 #[allow(clippy::complexity)]
 pub fn drag_controller(
     trigger: Trigger<Pointer<Drag>>,
-    control_query: Query<(&Control, &ChildOf)>,
+    control_query: Query<(Entity, &Control, &ChildOf)>,
     camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
     mut params: ParamSet<(ObligatoryDragParams, Query<&GlobalTransform>)>,
 ) {
-    let (control, child_of) = control_query.get(trigger.target()).unwrap();
+    let (control_entity, control, child_of) = control_query.get(trigger.target()).unwrap();
 
     let parent = child_of.parent();
     let control_parent = control_parents.get_mut(parent).unwrap();
@@ -809,22 +821,24 @@ pub fn drag_controller(
         let direction = (diff.dot(axis)) / (diff.length() * axis.length());
         let translation = axis * direction * diff.length();
 
-        params
-            .p0()
-            .update_position_drag_universal((parent, control_parent), translation);
+        params.p0().update_position_drag_universal(
+            (parent, control_parent),
+            translation,
+            control_entity,
+        );
     }
 }
 
 #[allow(clippy::complexity)]
 pub fn drag_controller3d(
     trigger: Trigger<Pointer3d<crate::picking3d::events::Drag>>,
-    control_query: Query<(&Control, &ChildOf)>,
+    control_query: Query<(Entity, &Control, &ChildOf)>,
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
     mut params: ObligatoryDragParams,
 ) {
     // NOTE: Make sure that the draw event is triggered only once. Otherwise this difference adding happens multiple times for the same event........
-    let (control, child_of) = control_query.get(trigger.target()).unwrap();
+    let (control_entity, control, child_of) = control_query.get(trigger.target()).unwrap();
 
     let parent = child_of.parent();
 
@@ -842,7 +856,7 @@ pub fn drag_controller3d(
     let direction = (axis.dot(diff)) / (axis.length() * diff.length());
     let translation = axis * diff.length() * direction;
 
-    params.update_position_drag_universal((parent, control_parent), translation);
+    params.update_position_drag_universal((parent, control_parent), translation, control_entity);
 }
 
 #[allow(clippy::complexity)]
@@ -1231,6 +1245,7 @@ impl Plugin for TranslationController {
         app.init_resource::<ControlStorage>();
 
         app.init_resource::<TranslationControllerState>();
+        app.init_resource::<AccumulatedMovementStore>();
         app.add_event::<ToggleSnappingBehaviour>();
         app.add_event::<MovedEntityEvent>();
         app.add_event::<MoveEntityByDeltaEvent>();
