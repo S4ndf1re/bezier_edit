@@ -24,8 +24,8 @@ use super::{
     accumulated::AccumulatedMovementStore,
     translation_controller::{
         CantSnapToCurve, CantSnapToEntities, Control, ControlParent, MovedEntityEvent,
-        SnappedArrow, SnappedPoint, SnappingBehaviour, TranslationControllerState, drag_controller,
-        drag_controller3d, draw_arrow,
+        SnappedArrow, SnappedPoint, SnappingBehaviour, StepMode, TranslationControllerState,
+        drag_controller, drag_controller3d, draw_arrow,
     },
 };
 
@@ -57,6 +57,72 @@ pub struct ObligatoryDragParams<'w, 's> {
 }
 
 impl<'w, 's> ObligatoryDragParams<'w, 's> {
+    fn handel_default(
+        &mut self,
+        control_parent: (Entity, &ControlParent),
+        translation: Vec3,
+    ) -> Vec3 {
+        let mut p0 = self.transform_set.p0();
+        let mut t = p0.get_mut(control_parent.1.0).unwrap();
+        t.translation = match self.state.step_mode {
+            StepMode::MM5 => {
+                if self
+                    .accumulated_movement
+                    .current_diff(&control_parent.1.0)
+                    .unwrap()
+                    .length()
+                    > 0.05 * self.info.scale
+                {
+                    let current = self
+                        .accumulated_movement
+                        .current_point(&control_parent.1.0)
+                        .unwrap();
+                    // 0.05
+                    let scaled = current * (20.0 / self.info.scale);
+                    let floored = scaled.round();
+                    let final_vec = floored / (20.0 / self.info.scale);
+                    self.accumulated_movement
+                        .reset(control_parent.1.0, final_vec);
+                    info!(
+                        "Current: {current}\nscaled: {scaled}\nfloored: {floored}\nfinal: {final_vec}"
+                    );
+                    final_vec
+                } else {
+                    t.translation
+                }
+            }
+            StepMode::MM10 => {
+                if self
+                    .accumulated_movement
+                    .current_diff(&control_parent.1.0)
+                    .unwrap()
+                    .length()
+                    > 0.10 * self.info.scale
+                {
+                    let current = self
+                        .accumulated_movement
+                        .current_point(&control_parent.1.0)
+                        .unwrap();
+                    // 0.10
+                    let scaled = current * (10.0 / self.info.scale);
+                    let floored = scaled.round();
+                    let final_vec = floored / (10.0 / self.info.scale);
+                    self.accumulated_movement
+                        .reset(control_parent.1.0, final_vec);
+                    info!(
+                        "Current: {current}\nscaled: {scaled}\nfloored: {floored}\nfinal: {final_vec}"
+                    );
+                    final_vec
+                } else {
+                    t.translation
+                }
+            }
+            _ => t.translation + translation,
+        };
+
+        t.translation
+    }
+
     fn snap_to_projection(
         &mut self,
         control_parent: (Entity, &ControlParent),
@@ -137,11 +203,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                 .reset(control_parent.1.0, t.translation);
             t.translation
         } else {
-            // all curves are too far away to snap to
-            let mut p0 = self.transform_set.p0();
-            let mut t = p0.get_mut(control_parent.1.0).unwrap();
-            t.translation += translation;
-            t.translation
+            self.handel_default(control_parent, translation)
         }
     }
 
@@ -228,10 +290,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     {
                         self.snap_to_projection(control_parent, translation, closest_move_direction)
                     } else {
-                        let mut p0 = self.transform_set.p0();
-                        let mut t = p0.get_mut(control_parent.1.0).unwrap();
-                        t.translation = point.into();
-                        t.translation
+                        self.handel_default(control_parent, translation)
                     }
                 }
             }

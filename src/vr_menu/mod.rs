@@ -18,7 +18,7 @@ use crate::{
     },
     picking3d::{self, events::Pointer3d, picking_3d::Picking3dInteractable},
     translation_control::translation_controller::{
-        SnappingBehaviour, ToggleSnappingBehaviour, TranslationControllerState,
+        self, SnappingBehaviour, ToggleSnappingBehaviour, TranslationControllerState,
     },
 };
 
@@ -39,6 +39,9 @@ struct GltfAssets {
     checkmark: Option<Handle<Gltf>>,
     minus: Option<Handle<Gltf>>,
     plus: Option<Handle<Gltf>>,
+    mm_0: Option<Handle<Gltf>>,
+    mm_5: Option<Handle<Gltf>>,
+    mm_10: Option<Handle<Gltf>>,
 }
 
 #[derive(Component)]
@@ -67,6 +70,9 @@ struct MinusMode;
 
 #[derive(Component)]
 struct PlusMode;
+
+#[derive(Component)]
+struct StepMode;
 
 #[derive(Component)]
 struct VrMenuRoot;
@@ -204,6 +210,22 @@ fn spawn_plus(scene: Handle<Scene>, scale: f32) -> impl Bundle {
         Visibility::Inherited,
         SceneRoot(scene),
         Picking3dInteractable::default(),
+        StepMode,
+    )
+}
+
+fn spawn_text(scene: Handle<Scene>, scale: f32) -> impl Bundle {
+    let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians())
+        * Quat::from_axis_angle(Vec3::X, 180.0_f32.to_radians())
+        * Quat::from_axis_angle(Vec3::Y, 180.0_f32.to_radians());
+
+    (
+        Transform::from_xyz(0.0, 0.0, -0.2 * scale)
+            .with_scale(Vec3::ONE * 0.1 * scale)
+            .with_rotation(rotation),
+        Visibility::Inherited,
+        SceneRoot(scene),
+        Picking3dInteractable::default(),
         PlusMode,
     )
 }
@@ -321,6 +343,7 @@ pub struct MenuHandler<'w, 's> {
     checkboxes: Query<'w, 's, Entity, With<CheckmarkMode>>,
     minus: Query<'w, 's, Entity, With<MinusMode>>,
     plus: Query<'w, 's, Entity, With<PlusMode>>,
+    steps: Query<'w, 's, Entity, With<StepMode>>,
     set_end_mode: EventWriter<'w, EndModeEvent>,
     set_delete_mode: EventWriter<'w, DeleteModeEvent>,
     set_create_curve_mode: EventWriter<'w, CreateCurveEvent>,
@@ -330,6 +353,7 @@ pub struct MenuHandler<'w, 's> {
     decrease_degree: EventWriter<'w, DecreaseDegreeEvent>,
     increase_degree: EventWriter<'w, IncreaseDegreeEvent>,
     control_state: Res<'w, State<ControlState>>,
+    translation_state: ResMut<'w, TranslationControllerState>,
     models: Res<'w, GltfAssets>,
     gltf: Res<'w, Assets<Gltf>>,
     mesh_mode_writer: EventWriter<'w, ChangeSurfaceMeshMode>,
@@ -587,6 +611,54 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
             .observe(handle_hover_over3d);
+
+        let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
+        transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 180.0_f32.to_radians()));
+        let model = match self.translation_state.step_mode {
+            translation_controller::StepMode::None => self
+                .gltf
+                .get(
+                    self.models
+                        .mm_0
+                        .clone()
+                        .expect("must be loaded to run this system")
+                        .id(),
+                )
+                .unwrap(),
+            translation_controller::StepMode::MM5 => self
+                .gltf
+                .get(
+                    self.models
+                        .mm_5
+                        .clone()
+                        .expect("must be loaded to run this system")
+                        .id(),
+                )
+                .unwrap(),
+            translation_controller::StepMode::MM10 => self
+                .gltf
+                .get(
+                    self.models
+                        .mm_10
+                        .clone()
+                        .expect("must be loaded to run this system")
+                        .id(),
+                )
+                .unwrap(),
+        };
+
+        self.commands
+            .spawn((
+                transform,
+                StepMode,
+                children![spawn_text(model.scenes[0].clone(), self.info.scale,)],
+                Visibility::Inherited,
+                ChildOf(root),
+            ))
+            .observe(handle_hover_out)
+            .observe(handle_hover_out3d)
+            .observe(handle_hover_over)
+            .observe(handle_hover_over3d);
     }
 
     pub fn apply_menu_state(&mut self) {
@@ -613,6 +685,8 @@ impl<'w, 's> MenuHandler<'w, 's> {
                 self.decrease_degree.write(DecreaseDegreeEvent);
             } else if self.plus.get(selected).is_ok() {
                 self.increase_degree.write(IncreaseDegreeEvent);
+            } else if self.steps.get(selected).is_ok() {
+                self.translation_state.step_mode = self.translation_state.step_mode.next();
             }
         }
     }
@@ -688,6 +762,9 @@ fn setup_models(server: ResMut<AssetServer>, mut models: ResMut<GltfAssets>) {
     let checkmark: Handle<Gltf> = server.load("checkmark/scene.gltf");
     let minus: Handle<Gltf> = server.load("minus/scene.gltf");
     let plus: Handle<Gltf> = server.load("plus/scene.gltf");
+    let mm_0: Handle<Gltf> = server.load("0mm/scene.gltf");
+    let mm_5: Handle<Gltf> = server.load("5mm/scene.gltf");
+    let mm_10: Handle<Gltf> = server.load("10mm/scene.gltf");
 
     models.magnet = Some(magnet);
     models.trashcan = Some(trashcan);
@@ -698,6 +775,10 @@ fn setup_models(server: ResMut<AssetServer>, mut models: ResMut<GltfAssets>) {
     models.checkmark = Some(checkmark);
     models.minus = Some(minus);
     models.plus = Some(plus);
+
+    models.mm_0 = Some(mm_0);
+    models.mm_5 = Some(mm_5);
+    models.mm_10 = Some(mm_10);
 }
 
 fn are_models_loaded(
@@ -759,6 +840,24 @@ fn are_models_loaded(
 
     if let Some(plus) = &models.plus
         && assets.get(plus.id()).is_none()
+    {
+        return false;
+    }
+
+    if let Some(mm_0) = &models.mm_0
+        && assets.get(mm_0.id()).is_none()
+    {
+        return false;
+    }
+
+    if let Some(mm_5) = &models.mm_5
+        && assets.get(mm_5.id()).is_none()
+    {
+        return false;
+    }
+
+    if let Some(mm_10) = &models.mm_10
+        && assets.get(mm_10.id()).is_none()
     {
         return false;
     }

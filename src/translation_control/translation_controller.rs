@@ -85,9 +85,28 @@ pub enum SnappingBehaviour {
     Snap,
 }
 
+#[derive(Default, Clone, Copy)]
+pub enum StepMode {
+    #[default]
+    None,
+    MM10,
+    MM5,
+}
+
+impl StepMode {
+    pub fn next(self) -> Self {
+        match self {
+            Self::None => Self::MM10,
+            Self::MM10 => Self::MM5,
+            Self::MM5 => Self::None,
+        }
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct TranslationControllerState {
     pub curve_snapping: SnappingBehaviour,
+    pub step_mode: StepMode,
 }
 
 #[derive(Event)]
