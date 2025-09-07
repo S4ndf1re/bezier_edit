@@ -19,10 +19,12 @@ use crate::{
     translation_control::translation_controller::{
         SnappingBehaviour, ToggleSnappingBehaviour, TranslationControllerState,
     },
-    vr_control::{
-        GripLeft, GripRight,
-        trigger::{ControllerSqueeze, ControllerTrigger},
-    },
+};
+
+#[cfg(feature = "vr_enable")]
+use crate::vr_control::{
+    GripLeft, GripRight,
+    trigger::{ControllerSqueeze, ControllerTrigger},
 };
 
 #[derive(Resource, Default)]
