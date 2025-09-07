@@ -19,6 +19,10 @@ use crate::{
     translation_control::translation_controller::{
         SnappingBehaviour, ToggleSnappingBehaviour, TranslationControllerState,
     },
+    vr_control::{
+        GripLeft, GripRight,
+        trigger::{ControllerSqueeze, ControllerTrigger},
+    },
 };
 
 #[derive(Resource, Default)]
@@ -513,6 +517,7 @@ impl<'w, 's> MenuHandler<'w, 's> {
     }
 }
 
+#[cfg(not(feature = "vr_enable"))]
 fn spawn_despawn_model_into_scene(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut manager: MenuHandler,
@@ -535,6 +540,40 @@ fn spawn_despawn_model_into_scene(
             manager.apply_menu_state();
             manager.despawn_menu();
         }
+    }
+}
+
+#[cfg(feature = "vr_enable")]
+fn spawn_despawn_model_into_scene(
+    left_tracked: Query<&GlobalTransform, With<GripLeft>>,
+    right_tracked: Query<&GlobalTransform, With<GripRight>>,
+    squeeze: Res<ControllerSqueeze>,
+    mut manager: MenuHandler,
+) {
+    let mut spawn_menu = false;
+    let mut transform = Transform::default();
+    if squeeze.left > 0.2
+        && let Ok(transform_left) = left_tracked.single()
+    {
+        spawn_menu = true;
+        transform = transform_left.compute_transform();
+    }
+
+    if squeeze.right > 0.2
+        && let Ok(transform_right) = right_tracked.single()
+    {
+        spawn_menu = true;
+        transform = transform_right.compute_transform();
+    }
+
+    if spawn_menu {
+        let translation = transform.translation;
+        let transform = Transform::from_translation(translation)
+            .looking_to(-transform.forward(), transform.up());
+        manager.spawn_at_position_and_orientation(transform);
+    } else {
+        manager.apply_menu_state();
+        manager.despawn_menu();
     }
 }
 
