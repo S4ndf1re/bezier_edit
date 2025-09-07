@@ -131,6 +131,7 @@ fn create_app() -> App {
     use linked_entities::LinkedEntitiesPlugin;
     use picking3d::picking_3d::ObjectPicking3d;
     use projection::ProjectionPlugin;
+    use vr_menu::VrMenuPlugin;
 
     info!("Creating VR App");
     let mut app = App::new();
@@ -156,6 +157,7 @@ fn create_app() -> App {
     .add_plugins(TracingPlugin)
     .add_plugins(ProjectionPlugin)
     .add_plugins(LinkedEntitiesPlugin)
+    .add_plugins(VrMenuPlugin)
     .add_systems(Startup, (setup.before(generate_default_curve),))
     .init_resource::<ControlStorage>()
     .insert_resource(ClearColor(GRAY_700.into()));

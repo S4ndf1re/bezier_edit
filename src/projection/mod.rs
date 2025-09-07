@@ -253,6 +253,7 @@ fn handle_enable_ortho_camera(
                         ));
                     })
                     .observe(handle_disable_ortho_camera)
+                    .observe(handle_disable_ortho_camera3d)
                     .observe(enable_gizmo(EnableTranslationControl::WithRotation))
                     .observe(enable_gizmo3d(EnableTranslationControl::WithRotation))
                     .id(),
