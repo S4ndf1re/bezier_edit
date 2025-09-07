@@ -1,0 +1,11 @@
+Model Information:
+* title:	Polaroid Camera
+* source:	https://sketchfab.com/3d-models/polaroid-camera-25424b0668804ae3a4d3c69a2cd17538
+* author:	Big guy (https://sketchfab.com/ondra.lit)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Polaroid Camera" (https://sketchfab.com/3d-models/polaroid-camera-25424b0668804ae3a4d3c69a2cd17538) by Big guy (https://sketchfab.com/ondra.lit) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

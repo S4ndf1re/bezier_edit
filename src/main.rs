@@ -14,6 +14,7 @@ mod translation_control;
 mod ui;
 pub mod util;
 pub mod vr_control;
+pub mod vr_menu;
 
 use crate::advanced_orbit_controls::AdvancedOrbitControls;
 use crate::thirdparty_copy::transform_util_copy::{SnapToPosition, SnapToRotation};
@@ -96,6 +97,7 @@ fn create_app() -> App {
     use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
     use linked_entities::LinkedEntitiesPlugin;
     use projection::ProjectionPlugin;
+    use vr_menu::VrMenuPlugin;
 
     info!("Creating Non-VR App");
     let mut app = App::new();
@@ -110,6 +112,7 @@ fn create_app() -> App {
         .add_plugins(WorldInspectorPlugin::new())
         .add_plugins(ProjectionPlugin)
         .add_plugins(LinkedEntitiesPlugin)
+        .add_plugins(VrMenuPlugin)
         .init_resource::<ControlStorage>()
         .insert_resource(ClearColor(GRAY_700.into()))
         .add_systems(Startup, setup.before(generate_default_curve));

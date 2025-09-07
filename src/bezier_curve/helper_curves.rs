@@ -86,8 +86,6 @@ pub fn add_point_3d(
             .inverse()
             .transform_point3(evt.position);
 
-        info!("Adding point at {:?}", pos);
-
         commands.get_entity(parent).unwrap().with_children(|cmd| {
             cmd.spawn((
                 TemporaryCurvePoint(state.counter),
@@ -151,8 +149,6 @@ pub fn add_point(
         {
             let position = position_ray.get_point(hit);
             let pos = root.compute_affine().inverse().transform_point3(position);
-
-            info!("Adding point at {:?}", pos);
 
             commands.get_entity(parent).unwrap().with_children(|cmd| {
                 cmd.spawn((

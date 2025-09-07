@@ -17,11 +17,7 @@ use struct_patch::Patch;
 
 use crate::{
     bezier_curve::{
-        bezier_curve_renderer::{CreateCurveEvent, EndModeEvent},
-        curvature_display_mode::{ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode},
-        render_info::{
-            ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UpdateBoxDimEvent,
-        },
+        render_info::{RenderInformation, UpdateBoxDimEvent},
         surface_click::SurfaceClickChangeset,
     },
     history::plugin::HistoryUndoEvent,
@@ -39,10 +35,8 @@ struct VSlider;
 pub struct UiState {
     u: f64,
     v: f64,
-    curvature_mode: CurvatureDisplayMode,
     u_box_count: u32,
     v_box_count: u32,
-    surface_mesh_mode: SurfaceMeshMode,
 }
 
 fn spawn_background<'a>(
@@ -65,32 +59,6 @@ fn spawn_background<'a>(
         })),
         UiMeshPlane3d,
     ))
-}
-
-fn spawn_lock_buttons(ui: &mut RelatedSpawnerCommands<'_, ChildOf>) {
-    ui.spawn((
-        Name::new("Button Background Lock"),
-        UiLayout::window()
-            .pos(Rl((25.0, 50.0)))
-            .size((Rw(40.0), Rh(90.0)))
-            .anchor(Anchor::Center)
-            .pack(),
-    ))
-    .with_children(|ui| {
-        ui.spawn(UiButton::new("Lock".to_owned(), 6, Rl(100.0)));
-    });
-
-    ui.spawn((
-        Name::new("Button Background Unlock"),
-        UiLayout::window()
-            .pos(Rl((75.0, 50.0)))
-            .size((Rw(40.0), Rh(90.0)))
-            .anchor(Anchor::Center)
-            .pack(),
-    ))
-    .with_children(|ui| {
-        ui.spawn(UiButton::new("Unlock".to_owned(), 6, Rl(100.0)));
-    });
 }
 
 fn spawn_uv_control(ui: &mut RelatedSpawnerCommands<'_, ChildOf>) {
@@ -178,33 +146,6 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: ResMut
         ui.spawn(
             UiLayout::window()
                 .size(Rl((40.0, 100.0)))
-                .pos(Rl((5.0, 0.0)))
-                .anchor(Anchor::TopLeft)
-                .pack(),
-        )
-        .with_children(|ui| {
-            ui.spawn(UiButton::new(
-                format!("{}", &ui_state.curvature_mode),
-                4,
-                Rl(100.0),
-            ))
-            .observe(
-                |trigger: Trigger<ButtonClickedEvent>,
-                 mut commands: Commands,
-                 mut state: ResMut<UiState>,
-                 mut writer: EventWriter<ChangeCurvatureDisplayModeEvent>| {
-                    state.curvature_mode = state.curvature_mode.next();
-                    if let Ok(mut entity) = commands.get_entity(trigger.target()) {
-                        entity.trigger(ChangeTextEvent::new(format!("{}", state.curvature_mode)));
-                    }
-                    writer.write(ChangeCurvatureDisplayModeEvent(state.curvature_mode));
-                },
-            );
-        });
-
-        ui.spawn(
-            UiLayout::window()
-                .size(Rl((40.0, 100.0)))
                 .pos(Rl((55.0, 0.0)))
                 .anchor(Anchor::TopLeft)
                 .pack(),
@@ -274,122 +215,6 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: ResMut
                     });
                 },
             );
-        });
-    });
-
-    ui.spawn((
-        Name::new("Layout Fifth"),
-        UiLayout::window()
-            .pos(Rl((5.0, 70.0)))
-            .size((Rw(90.0), Rh(10.0)))
-            .anchor(Anchor::TopLeft)
-            .pack(),
-    ))
-    .with_children(|ui| {
-        ui.spawn(UiButton::new(
-            format!("MeshMode: {}", ui_state.surface_mesh_mode),
-            14,
-            Rl(100.0),
-        ))
-        .observe(
-            |trigger: Trigger<ButtonClickedEvent>,
-             mut commands: Commands,
-             mut state: ResMut<UiState>,
-             mut writer: EventWriter<ChangeSurfaceMeshMode>| {
-                state.surface_mesh_mode = state.surface_mesh_mode.next();
-                writer.write(ChangeSurfaceMeshMode(state.surface_mesh_mode));
-                if let Ok(mut entity) = commands.get_entity(trigger.target()) {
-                    entity.trigger(ChangeTextEvent::new(format!(
-                        "MeshMode: {}",
-                        state.surface_mesh_mode
-                    )));
-                }
-            },
-        );
-    });
-
-    ui.spawn((
-        Name::new("Layout Sixt"),
-        UiLayout::window()
-            .pos(Rl((5.0, 80.0)))
-            .size((Rw(90.0), Rh(10.0)))
-            .anchor(Anchor::TopLeft)
-            .pack(),
-    ))
-    .with_children(|ui| {
-        ui.spawn(
-            UiLayout::window()
-                .pos(Rl((0.0, 0.0)))
-                .size(Rl((45.0, 100.0)))
-                .anchor(Anchor::TopLeft)
-                .pack(),
-        )
-        .with_children(|ui| {
-            ui.spawn(UiButton::new("Create".to_owned(), 6, Rl(100.0)))
-                .observe(
-                    |_: Trigger<ButtonClickedEvent>, mut writer: EventWriter<CreateCurveEvent>| {
-                        writer.write(CreateCurveEvent);
-                    },
-                );
-        });
-
-        ui.spawn(
-            UiLayout::window()
-                .pos(Rl((55.0, 0.0)))
-                .size(Rl((45.0, 100.0)))
-                .anchor(Anchor::TopLeft)
-                .pack(),
-        )
-        .with_children(|ui| {
-            ui.spawn(UiButton::new("Confirm".to_owned(), 7, Rl(100.0)))
-                .observe(
-                    |_: Trigger<ButtonClickedEvent>, mut writer: EventWriter<EndModeEvent>| {
-                        writer.write(EndModeEvent);
-                    },
-                );
-        });
-    });
-
-    ui.spawn((
-        Name::new("Layout Seventh"),
-        UiLayout::window()
-            .pos(Rl((5.0, 90.0)))
-            .size((Rw(90.0), Rh(10.0)))
-            .anchor(Anchor::TopLeft)
-            .pack(),
-    ))
-    .with_children(|ui| {
-        ui.spawn(
-            UiLayout::window()
-                .pos(Rl((0.0, 0.0)))
-                .size(Rl((45.0, 100.0)))
-                .anchor(Anchor::TopLeft)
-                .pack(),
-        )
-        .with_children(|ui| {
-            ui.spawn(UiButton::new("Camera".to_owned(), 6, Rl(100.0)))
-                .observe(
-                    |_: Trigger<ButtonClickedEvent>,
-                     mut writer: EventWriter<CreateOrthoCameraEvent>| {
-                        writer.write(CreateOrthoCameraEvent);
-                    },
-                );
-        });
-
-        ui.spawn(
-            UiLayout::window()
-                .pos(Rl((55.0, 0.0)))
-                .size(Rl((45.0, 100.0)))
-                .anchor(Anchor::TopLeft)
-                .pack(),
-        )
-        .with_children(|ui| {
-            ui.spawn(UiButton::new("Delete".to_owned(), 7, Rl(100.0)))
-                .observe(
-                    |_: Trigger<ButtonClickedEvent>, mut writer: EventWriter<DeleteModeEvent>| {
-                        writer.write(DeleteModeEvent);
-                    },
-                );
         });
     });
 }

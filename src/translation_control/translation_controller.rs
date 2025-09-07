@@ -975,7 +975,6 @@ fn rotate_controller(
             control_rotation.last_vector = diff;
 
             let angle = atan2(last_diff.cross(diff).length(), last_diff.dot(diff));
-            info!(angle);
             let sign = (last_diff.cross(diff).dot(control_rotation.normal)).signum();
 
             let mut parent_transform_mut = changable_transforms.get_mut(control_parent.0).unwrap();
