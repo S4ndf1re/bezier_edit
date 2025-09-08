@@ -25,6 +25,10 @@ use bezier_curve::bezier_curve_renderer::*;
 use history::plugin::HistoryPlugin;
 
 use crate::bezier_curve::render_info::RenderInformation;
+use crate::linked_entities::LinkedEntitiesPlugin;
+use crate::picking3d::picking_3d::ObjectPicking3d;
+use crate::projection::ProjectionPlugin;
+use crate::vr_menu::VrMenuPlugin;
 use bevy::render::view::RenderLayers;
 use projection::DisplayIn;
 use translation_control::translation_controller::TranslationController;

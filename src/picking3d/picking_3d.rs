@@ -7,8 +7,8 @@ use crate::picking3d::pointer_state::Pointer3dState;
 use crate::vr_control::trigger::{ControllerSqueeze, ControllerTrigger};
 use crate::vr_control::{AimLeft, AimRight, GripLeft, GripRight};
 use bevy::color::palettes::css::POWDER_BLUE;
-use bevy::math::Vec3;
 use bevy::math::bounding::{Aabb3d, BoundingSphere, IntersectsVolume};
+use bevy::math::Vec3;
 use bevy::prelude::*;
 
 use super::picking_state::VectorState;
@@ -96,7 +96,9 @@ fn check_intersections(
 
         if test.intersects(&bb_sphere_left) {
             // event_writer.write(Intersection::Left(p.1));
-            if !state.contains_entity_and_controller(&p.1, &HoveredBy::Left) {
+            if !state.contains_entity_and_controller(&p.1, &HoveredBy::Left)
+                && state.ensure_inserted(p.1, HoveredBy::Left, p.0.translation())
+            {
                 commands.trigger_targets(
                     Pointer3d {
                         position: left_tracked.0.translation(),
@@ -107,12 +109,13 @@ fn check_intersections(
                     p.1,
                 );
             }
-            state.ensure_inserted(p.1, HoveredBy::Left, p.0.translation());
         }
 
         if test.intersects(&bb_sphere_right) {
             // event_writer.write(Intersection::Right(p.1));
-            if !state.contains_entity_and_controller(&p.1, &HoveredBy::Right) {
+            if !state.contains_entity_and_controller(&p.1, &HoveredBy::Right)
+                && state.ensure_inserted(p.1, HoveredBy::Right, p.0.translation())
+            {
                 commands.trigger_targets(
                     Pointer3d {
                         position: right_tracked.0.translation(),
@@ -123,7 +126,6 @@ fn check_intersections(
                     p.1,
                 );
             }
-            state.ensure_inserted(p.1, HoveredBy::Right, p.0.translation());
         }
     }
 
@@ -136,7 +138,11 @@ fn check_intersections(
             let collisions = mesh_ray_casting.cast_ray(
                 ray,
                 &MeshRayCastSettings {
-                    filter: &|entity| pickable.get(entity).is_ok(),
+                    filter: &|entity| {
+                        pickable
+                            .get(entity)
+                            .is_ok_and(|p| *p.3 == Picking3dInteractable::Default)
+                    },
                     ..Default::default()
                 }
                 .with_visibility(RayCastVisibility::Any)
@@ -147,7 +153,9 @@ fn check_intersections(
                 let (transform, _, _, _) = pickable
                     .get(collision.0)
                     .expect("This is already checked in the mesh_ray_casting filter option");
-                if !state.contains_entity_and_controller(&collision.0, &hovered_by) {
+                if !state.contains_entity_and_controller(&collision.0, &hovered_by)
+                    && state.ensure_inserted(collision.0, hovered_by, transform.translation())
+                {
                     commands.trigger_targets(
                         Pointer3d {
                             position: collision.1.point,
@@ -158,7 +166,6 @@ fn check_intersections(
                         collision.0,
                     );
                 }
-                state.ensure_inserted(collision.0, hovered_by, transform.translation());
             }
         }
     }

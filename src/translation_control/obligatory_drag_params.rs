@@ -1,8 +1,8 @@
 use bevy::{
     color::palettes::tailwind::{YELLOW_400, YELLOW_600},
     ecs::system::{
-        SystemParam,
         lifetimeless::{Read, Write},
+        SystemParam,
     },
     prelude::*,
 };
@@ -23,9 +23,9 @@ use crate::{
 use super::{
     accumulated::AccumulatedMovementStore,
     translation_controller::{
-        CantSnapToCurve, CantSnapToEntities, Control, ControlParent, MovedEntityEvent,
-        SnappedArrow, SnappedPoint, SnappingBehaviour, StepMode, TranslationControllerState,
-        drag_controller, drag_controller3d, draw_arrow,
+        drag_controller, drag_controller3d, draw_arrow, CantSnapToCurve, CantSnapToEntities,
+        Control, ControlParent, MovedEntityEvent, SnappedArrow, SnappedPoint,
+        SnappingBehaviour, StepMode, TranslationControllerState,
     },
 };
 
@@ -83,9 +83,6 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     let final_vec = floored / (20.0 / self.info.scale);
                     self.accumulated_movement
                         .reset(control_parent.1.0, final_vec);
-                    info!(
-                        "Current: {current}\nscaled: {scaled}\nfloored: {floored}\nfinal: {final_vec}"
-                    );
                     final_vec
                 } else {
                     t.translation
@@ -109,9 +106,6 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     let final_vec = floored / (10.0 / self.info.scale);
                     self.accumulated_movement
                         .reset(control_parent.1.0, final_vec);
-                    info!(
-                        "Current: {current}\nscaled: {scaled}\nfloored: {floored}\nfinal: {final_vec}"
-                    );
                     final_vec
                 } else {
                     t.translation

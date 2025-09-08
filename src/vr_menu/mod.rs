@@ -1,12 +1,13 @@
-use bevy::{
-    color::palettes::{css::WHITE, tailwind::RED_500},
-    ecs::system::{SystemParam, lifetimeless::Read},
-    prelude::*,
-    scene::SceneInstanceReady,
+use crate::bezier_curve::bezier_curve_renderer::hover_3d;
+use crate::picking3d::events::HoveredBy;
+use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
+#[cfg(feature = "vr_enable")]
+use crate::vr_control::{
+    trigger::{ControllerSqueeze, ControllerTrigger}, GripLeft,
+    GripRight,
 };
-
+use crate::vr_control::{AimLeft, AimRight};
 use crate::{
-    MainCamera,
     bezier_curve::{
         bezier_curve_renderer::{
             CreateCurveEvent, CreateOrthoCameraEvent, DeleteModeEvent, EndModeEvent,
@@ -20,12 +21,14 @@ use crate::{
     translation_control::translation_controller::{
         self, SnappingBehaviour, ToggleSnappingBehaviour, TranslationControllerState,
     },
+    MainCamera,
 };
-
-#[cfg(feature = "vr_enable")]
-use crate::vr_control::{
-    GripLeft, GripRight,
-    trigger::{ControllerSqueeze, ControllerTrigger},
+use bevy::log::tracing::Instrument;
+use bevy::{
+    color::palettes::{css::WHITE, tailwind::RED_500},
+    ecs::system::{lifetimeless::Read, SystemParam},
+    prelude::*,
+    scene::SceneInstanceReady,
 };
 
 #[derive(Resource, Default)]
@@ -81,8 +84,6 @@ struct VrMenuRoot;
 struct VrMenuState {
     currently_selected: Option<Entity>,
 }
-
-pub fn update_model_position() {}
 
 fn spawn_magnet(scene: Handle<Scene>, scale: f32) -> impl Bundle {
     let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians());
@@ -243,6 +244,22 @@ struct ColorChangerChildren<'w, 's> {
 }
 
 impl<'w, 's> ColorChangerChildren<'w, 's> {
+    fn set_initial_color(&mut self, parent: Entity) {
+        for child in self.children.iter_descendants(parent) {
+            if let Ok(mat_handle) = self.materials.get(child) {
+                let original =
+                    if let Some(material) = self.materials_assets.get_mut(mat_handle.id()) {
+                        material.clone()
+                    } else {
+                        StandardMaterial::default()
+                    };
+
+                self.commands
+                    .entity(child)
+                    .insert((OriginalMaterial(original),));
+            }
+        }
+    }
     fn change_color(&mut self, parent: Entity, color: Color) {
         for child in self.children.iter_descendants(parent) {
             if let Ok(mat_handle) = self.materials.get(child) {
@@ -256,10 +273,9 @@ impl<'w, 's> ColorChangerChildren<'w, 's> {
                 let mut duplicate = original.clone();
                 duplicate.base_color = color;
 
-                self.commands.entity(child).insert((
-                    OriginalMaterial(original),
-                    MeshMaterial3d(self.materials_assets.add(duplicate)),
-                ));
+                self.commands
+                    .entity(child)
+                    .insert((MeshMaterial3d(self.materials_assets.add(duplicate)),));
             }
         }
     }
@@ -315,16 +331,26 @@ fn handle_hover_out3d(
     color_changer.change_color_back(trigger.target());
 }
 
-fn trigger_color_scene_spawn(
+fn trigger_scene_spawn(
     trigger: Trigger<SceneInstanceReady>,
+    mut commands: Commands,
     mut color_changer: ColorChangerChildren,
     snapping_state: Res<TranslationControllerState>,
     magnets: Query<&MagnetMode>,
+    children: Query<&Children>,
 ) {
+    color_changer.set_initial_color(trigger.target());
+
     if magnets.get(trigger.target()).is_ok()
         && snapping_state.curve_snapping == SnappingBehaviour::NoSnap
     {
         color_changer.change_color(trigger.target(), WHITE.into());
+    }
+
+    for child in children.iter_descendants(trigger.target()) {
+        commands
+            .entity(child)
+            .insert(Picking3dInteractable::default());
     }
 }
 
@@ -376,6 +402,11 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .spawn((VrMenuRoot, transform, Visibility::Inherited))
             .id();
 
+        #[cfg(feature = "vr_enable")]
+        let scale = 3.0;
+        #[cfg(not(feature = "vr_enable"))]
+        let scale = 1.0;
+
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 15.0_f32.to_radians()));
         let model = self
@@ -393,14 +424,18 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .spawn((
                 transform,
                 MagnetMode,
-                children![spawn_magnet(model.scenes[0].clone(), self.info.scale)],
+                children![spawn_magnet(
+                    model.scenes[0].clone(),
+                    self.info.scale * scale
+                )],
                 Visibility::Inherited,
                 ChildOf(root),
             ))
             .observe(handle_hover_out)
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
-            .observe(handle_hover_over3d);
+            .observe(handle_hover_over3d)
+            .observe(hover_3d);
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -15.0_f32.to_radians()));
@@ -419,14 +454,18 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .spawn((
                 transform,
                 TrashcanMode,
-                children![spawn_trash(model.scenes[0].clone(), self.info.scale,)],
+                children![spawn_trash(
+                    model.scenes[0].clone(),
+                    self.info.scale * scale
+                )],
                 Visibility::Inherited,
                 ChildOf(root),
             ))
             .observe(handle_hover_out)
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
-            .observe(handle_hover_over3d);
+            .observe(handle_hover_over3d)
+            .observe(hover_3d);
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 45.0_f32.to_radians()));
@@ -445,14 +484,18 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .spawn((
                 transform,
                 CurvatureMode,
-                children![spawn_curveature(model.scenes[0].clone(), self.info.scale,)],
+                children![spawn_curveature(
+                    model.scenes[0].clone(),
+                    self.info.scale * scale
+                )],
                 Visibility::Inherited,
                 ChildOf(root),
             ))
             .observe(handle_hover_out)
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
-            .observe(handle_hover_over3d);
+            .observe(handle_hover_over3d)
+            .observe(hover_3d);
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -45.0_f32.to_radians()));
@@ -471,14 +514,18 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .spawn((
                 transform,
                 CameraMode,
-                children![spawn_camera(model.scenes[0].clone(), self.info.scale,)],
+                children![spawn_camera(
+                    model.scenes[0].clone(),
+                    self.info.scale * scale
+                )],
                 Visibility::Inherited,
                 ChildOf(root),
             ))
             .observe(handle_hover_out)
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
-            .observe(handle_hover_over3d);
+            .observe(handle_hover_over3d)
+            .observe(hover_3d);
 
         if *self.control_state == ControlState::CreateCurve {
             let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
@@ -498,14 +545,18 @@ impl<'w, 's> MenuHandler<'w, 's> {
                 .spawn((
                     transform,
                     CheckmarkMode,
-                    children![spawn_checkmark(model.scenes[0].clone(), self.info.scale,)],
+                    children![spawn_checkmark(
+                        model.scenes[0].clone(),
+                        self.info.scale * scale,
+                    )],
                     Visibility::Inherited,
                     ChildOf(root),
                 ))
                 .observe(handle_hover_out)
                 .observe(handle_hover_out3d)
                 .observe(handle_hover_over)
-                .observe(handle_hover_over3d);
+                .observe(handle_hover_over3d)
+                .observe(hover_3d);
         } else {
             let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
             transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 75.0_f32.to_radians()));
@@ -524,14 +575,18 @@ impl<'w, 's> MenuHandler<'w, 's> {
                 .spawn((
                     transform,
                     PencilMode,
-                    children![spawn_pencil(model.scenes[0].clone(), self.info.scale,)],
+                    children![spawn_pencil(
+                        model.scenes[0].clone(),
+                        self.info.scale * scale,
+                    )],
                     Visibility::Inherited,
                     ChildOf(root),
                 ))
                 .observe(handle_hover_out)
                 .observe(handle_hover_out3d)
                 .observe(handle_hover_over)
-                .observe(handle_hover_over3d);
+                .observe(handle_hover_over3d)
+                .observe(hover_3d);
         }
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
@@ -551,14 +606,18 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .spawn((
                 transform,
                 BlocksMode,
-                children![spawn_blocks(model.scenes[0].clone(), self.info.scale,)],
+                children![spawn_blocks(
+                    model.scenes[0].clone(),
+                    self.info.scale * scale,
+                )],
                 Visibility::Inherited,
                 ChildOf(root),
             ))
             .observe(handle_hover_out)
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
-            .observe(handle_hover_over3d);
+            .observe(handle_hover_over3d)
+            .observe(hover_3d);
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 105.0_f32.to_radians()));
@@ -577,14 +636,18 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .spawn((
                 transform,
                 MinusMode,
-                children![spawn_minus(model.scenes[0].clone(), self.info.scale,)],
+                children![spawn_minus(
+                    model.scenes[0].clone(),
+                    self.info.scale * scale,
+                )],
                 Visibility::Inherited,
                 ChildOf(root),
             ))
             .observe(handle_hover_out)
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
-            .observe(handle_hover_over3d);
+            .observe(handle_hover_over3d)
+            .observe(hover_3d);
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -105.0_f32.to_radians()));
@@ -603,14 +666,15 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .spawn((
                 transform,
                 PlusMode,
-                children![spawn_plus(model.scenes[0].clone(), self.info.scale,)],
+                children![spawn_plus(model.scenes[0].clone(), self.info.scale * scale,)],
                 Visibility::Inherited,
                 ChildOf(root),
             ))
             .observe(handle_hover_out)
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
-            .observe(handle_hover_over3d);
+            .observe(handle_hover_over3d)
+            .observe(hover_3d);
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 180.0_f32.to_radians()));
@@ -651,14 +715,15 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .spawn((
                 transform,
                 StepMode,
-                children![spawn_text(model.scenes[0].clone(), self.info.scale,)],
+                children![spawn_text(model.scenes[0].clone(), self.info.scale * scale,)],
                 Visibility::Inherited,
                 ChildOf(root),
             ))
             .observe(handle_hover_out)
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
-            .observe(handle_hover_over3d);
+            .observe(handle_hover_over3d)
+            .observe(hover_3d);
     }
 
     pub fn apply_menu_state(&mut self) {
@@ -720,13 +785,15 @@ fn spawn_despawn_model_into_scene(
 
 #[cfg(feature = "vr_enable")]
 fn spawn_despawn_model_into_scene(
-    left_tracked: Query<&GlobalTransform, With<GripLeft>>,
-    right_tracked: Query<&GlobalTransform, With<GripRight>>,
+    left_tracked: Query<&GlobalTransform, With<AimLeft>>,
+    right_tracked: Query<&GlobalTransform, With<AimRight>>,
     squeeze: Res<ControllerSqueeze>,
+    is_menu_existent: Query<Entity, With<VrMenuRoot>>,
     mut manager: MenuHandler,
 ) {
     let mut spawn_menu = false;
     let mut transform = Transform::default();
+
     if squeeze.left > 0.2
         && let Ok(transform_left) = left_tracked.single()
     {
@@ -741,12 +808,14 @@ fn spawn_despawn_model_into_scene(
         transform = transform_right.compute_transform();
     }
 
-    if spawn_menu {
+    let vr_menu_exists = is_menu_existent.single().is_ok();
+
+    if spawn_menu && !vr_menu_exists {
         let translation = transform.translation;
         let transform = Transform::from_translation(translation)
             .looking_to(-transform.forward(), transform.up());
         manager.spawn_at_position_and_orientation(transform);
-    } else {
+    } else if !spawn_menu && vr_menu_exists {
         manager.apply_menu_state();
         manager.despawn_menu();
     }
@@ -877,6 +946,6 @@ impl Plugin for VrMenuPlugin {
         );
         app.init_resource::<VrMenuState>();
         app.init_resource::<GltfAssets>();
-        app.add_observer(trigger_color_scene_spawn);
+        app.add_observer(trigger_scene_spawn);
     }
 }

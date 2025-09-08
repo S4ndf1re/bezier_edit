@@ -1,9 +1,9 @@
-use std::collections::{HashSet, hash_set::Iter};
+use std::collections::{hash_set::Iter, HashSet};
 
 use bevy::{
     asset::RenderAssetUsages,
     color::palettes::tailwind::{BLUE_500, RED_800},
-    ecs::system::{SystemParam, lifetimeless::Read},
+    ecs::system::{lifetimeless::Read, SystemParam},
     prelude::*,
     render::{
         camera::ScalingMode,
@@ -12,8 +12,8 @@ use bevy::{
     },
 };
 
+use crate::bezier_curve::bezier_curve_renderer::hover_3d;
 use crate::{
-    RootTransform,
     bezier_curve::{
         bezier_curve_renderer::{EndModeEvent, RedrawEvent},
         components::ControlState,
@@ -27,6 +27,7 @@ use crate::{
     translation_control::{
         enable_gizmo, enable_gizmo3d, translation_controller::EnableTranslationControl,
     },
+    RootTransform,
 };
 use crate::{
     picking3d::events::Pointer3d, translation_control::translation_controller::CantSnapToEntities,
@@ -256,6 +257,7 @@ fn handle_enable_ortho_camera(
                     .observe(handle_disable_ortho_camera3d)
                     .observe(enable_gizmo(EnableTranslationControl::WithRotation))
                     .observe(enable_gizmo3d(EnableTranslationControl::WithRotation))
+                    .observe(hover_3d)
                     .id(),
                 );
 

@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 
 use super::curvature_display_mode::{
-    ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
+    handle_change_curvature, ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode,
 };
 use super::degree_manipulation::{
-    DecreaseDegreeEvent, IncreaseDegreeEvent, handle_degree_increase_event,
-    handle_degree_reduction_event,
+    handle_degree_increase_event, handle_degree_reduction_event, DecreaseDegreeEvent,
+    IncreaseDegreeEvent,
 };
 use super::helper_curves::{
-    CreateCurveState, RedrawCurvesEvent, add_point, commit_curve, commit_plane,
-    enter_create_curve_mode, render_curves,
+    add_point, commit_curve, commit_plane, enter_create_curve_mode, render_curves,
+    CreateCurveState, RedrawCurvesEvent,
 };
 use super::{components::*, handle_generic_deleted_event};
 
@@ -21,20 +21,20 @@ use super::ortho_camera::create_camera_on_click;
 #[cfg(feature = "vr_enable")]
 use super::ortho_camera::create_camera_on_click3d;
 use super::render_info::{
-    ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
-    handle_box_dim_event, handle_change_surface_mode,
+    handle_box_dim_event, handle_change_surface_mode, ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode,
+    UVEither, UpdateBoxDimEvent,
 };
 use super::surface_click::{
-    SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
+    bezier_surface_picking, handle_state_change_event, update_surface_click, SurfaceClickChangeset,
 };
 use super::util::{
     collect_control_points, compute_point_by_params, create_mesh_from_control_points,
     curvature_to_color,
 };
-use crate::RootTransform;
 use crate::bezier_curve::EntityDeletedEvent;
 use crate::history::plugin::HistoryUndoEvent;
-use crate::nurbs::bezier_plane::{ControlPoints2D, derive_2d, eval_2d_bezier_curves};
+use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves, ControlPoints2D};
+use crate::picking3d::events::{HoveredBy, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::projection::{BoundingEntitiesManager, DisplayIn};
 use crate::translation_control::translation_controller::{
@@ -42,6 +42,8 @@ use crate::translation_control::translation_controller::{
 };
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::util::update_material_on;
+use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
+use crate::RootTransform;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::css::BLACK;
@@ -120,6 +122,21 @@ pub struct DeleteModeEvent;
 
 #[derive(Event)]
 pub struct EndModeEvent;
+
+pub fn hover_3d(
+    trigger: Trigger<Pointer3d<crate::picking3d::events::MoveIn>>,
+    mut left_vibrate: EventWriter<VibrateLeftEvent>,
+    mut right_vibrate: EventWriter<VibrateRightEvent>,
+) {
+    match trigger.controler {
+        HoveredBy::Left => {
+            left_vibrate.write(VibrateLeftEvent::new(Vibration::default()));
+        }
+        HoveredBy::Right => {
+            right_vibrate.write(VibrateRightEvent::new(Vibration::default()));
+        }
+    }
+}
 
 fn handle_create_ortho_camera_event(
     mut reader: EventReader<CreateOrthoCameraEvent>,
@@ -448,7 +465,7 @@ pub fn redraw_boxes(
 #[derive(SystemParam)]
 pub struct SurfaceCreator<'w, 's> {
     commands: Commands<'w, 's>,
-    info: Res<'w, RenderInformation>,
+    pub info: Res<'w, RenderInformation>,
     materials: ResMut<'w, Assets<StandardMaterial>>,
     meshes: ResMut<'w, Assets<Mesh>>,
     root: Query<'w, 's, Entity, With<RootTransform>>,
@@ -491,7 +508,7 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                 .spawn((
                     RenderPoint(p.0, p.1),
                     Name::new(format!("Render Point {} {}", p.0, p.1)),
-                    Transform::from_translation(p.2 * scale + height),
+                    Transform::from_translation(p.2),
                     Mesh3d(sphere.clone()),
                     MeshMaterial3d(material.clone()),
                     Picking3dInteractable::default(),
@@ -501,6 +518,13 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                 ))
                 .observe(update_material_on::<Pointer<Over>>(material_hover.clone()))
                 .observe(update_material_on::<Pointer<Out>>(material.clone()))
+                .observe(update_material_on::<
+                    Pointer3d<crate::picking3d::events::MoveIn>,
+                >(material_hover.clone()))
+                .observe(update_material_on::<
+                    Pointer3d<crate::picking3d::events::MoveIn>,
+                >(material.clone()))
+                .observe(hover_3d)
                 //.observe(drag_point)
                 .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
                 .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
@@ -559,8 +583,8 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
             {
                 let id = *ids.get(i + 1).expect("must be present");
 
-                let origin = p0.2 * scale + height;
-                let target = px.2 * scale + height;
+                let origin = p0.2;
+                let target = px.2;
                 let diff = target - origin;
 
                 let bridge_id = self
@@ -589,6 +613,8 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                     let complete_bridge = y_bridges[y];
 
                     let center = origin + diff * 0.5;
+                    let material = self.materials.add(Color::from(GREEN_800));
+                    let material_hover = self.materials.add(Color::from(GREEN_600));
 
                     let id = self
                         .commands
@@ -601,12 +627,19 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                             ChildOf(surface),
                             Visibility::Inherited,
                             Mesh3d(self.meshes.add(Sphere::new(0.1 * scale))),
-                            MeshMaterial3d(self.materials.add(Color::from(GREEN_800))),
+                            MeshMaterial3d(material.clone()),
                             Picking3dInteractable::default(),
                             CantSnapToEntities::All,
                         ))
                         .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
                         .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
+                        .observe(update_material_on::<
+                            Pointer3d<crate::picking3d::events::MoveIn>,
+                        >(material_hover.clone()))
+                        .observe(update_material_on::<
+                            Pointer3d<crate::picking3d::events::MoveIn>,
+                        >(material.clone()))
+                        .observe(hover_3d)
                         .observe(moved_complete_bridge)
                         .id();
                     self.bounding_entites.add_bounding_entity(id);
@@ -620,8 +653,8 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
             {
                 let id = *ids.get(i + w).expect("must be present");
 
-                let origin = p0.2 * scale + height;
-                let target = py.2 * scale + height;
+                let origin = p0.2;
+                let target = py.2;
                 let diff = target - origin;
 
                 let bridge_id = self
@@ -649,6 +682,10 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                 if is_y_mid {
                     let center = origin + diff * 0.5;
                     let complete_bridge = x_bridges[x];
+
+                    let material = self.materials.add(Color::from(GREEN_800));
+                    let material_hover = self.materials.add(Color::from(GREEN_600));
+
                     let id = self
                         .commands
                         .spawn((
@@ -660,12 +697,19 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                             ChildOf(surface),
                             Visibility::Inherited,
                             Mesh3d(self.meshes.add(Sphere::new(0.1 * scale))),
-                            MeshMaterial3d(self.materials.add(Color::from(GREEN_800))),
+                            MeshMaterial3d(material.clone()),
                             Picking3dInteractable::default(),
                             CantSnapToEntities::All,
                         ))
                         .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
                         .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
+                        .observe(update_material_on::<
+                            Pointer3d<crate::picking3d::events::MoveIn>,
+                        >(material_hover.clone()))
+                        .observe(update_material_on::<
+                            Pointer3d<crate::picking3d::events::MoveIn>,
+                        >(material.clone()))
+                        .observe(hover_3d)
                         .observe(moved_complete_bridge)
                         .id();
                     self.bounding_entites.add_bounding_entity(id);
@@ -689,7 +733,12 @@ pub fn generate_default_curve(mut surface_creator: SurfaceCreator) {
     let mut curr_y = min_y;
     for y in 0..h as i32 {
         for x in 0..w as i32 {
-            points.push((y as usize, x as usize, Vec3::new(curr_x, 0.0, curr_y)));
+            points.push((
+                y as usize,
+                x as usize,
+                Vec3::new(curr_x, 0.0, curr_y) * surface_creator.info.scale
+                    + surface_creator.info.height,
+            ));
             curr_x += 1.0;
         }
         curr_x = min_x;

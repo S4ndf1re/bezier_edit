@@ -1,4 +1,4 @@
-use crate::bezier_curve::bezier_curve_renderer::RedrawEvent;
+use crate::bezier_curve::bezier_curve_renderer::{hover_3d, RedrawEvent};
 use crate::bezier_curve::helper_curves::{CurveCollection, RedrawCurvesEvent};
 use crate::bezier_curve::render_info::RenderInformation;
 use crate::history::plugin::HistoryLogEvent;
@@ -194,8 +194,8 @@ pub fn draw_plane(
     obj.observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()))
         .observe(update_material_on::<Pointer3d<MoveIn>>(mat_hover.clone()))
-        .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()));
-    // TODO: Add vibration once the other vibrations are fixed
+        .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()))
+        .observe(hover_3d);
 }
 
 pub fn draw_arrow(
@@ -221,26 +221,7 @@ pub fn draw_arrow(
         .observe(update_material_on::<Pointer3d<MoveIn>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()));
     if !is_shadow {
-        obj.observe(
-            |trigger: Trigger<Pointer3d<MoveIn>>,
-             picking3d_interactable: Query<&Picking3dInteractable>,
-             mut writer_left: EventWriter<VibrateLeftEvent>,
-             mut writer_right: EventWriter<VibrateRightEvent>| {
-                // FIXME: This must get fixed. Otherwise no vibration on hover occurs
-                if let Ok(Picking3dInteractable::Default) =
-                    picking3d_interactable.get(trigger.observer())
-                {
-                    match trigger.controler {
-                        HoveredBy::Left => {
-                            writer_left.write(VibrateLeftEvent::new(Vibration::default()));
-                        }
-                        HoveredBy::Right => {
-                            writer_right.write(VibrateRightEvent::new(Vibration::default()));
-                        }
-                    };
-                }
-            },
-        );
+        obj.observe(hover_3d);
     }
 
     child_builder
@@ -310,26 +291,7 @@ fn draw_ring(
             .observe(update_material_on::<Pointer<Out>>(mat.clone()))
             .observe(update_material_on::<Pointer3d<MoveIn>>(mat_hover.clone()))
             .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()))
-            .observe(
-                |trigger: Trigger<Pointer3d<MoveIn>>,
-                 picking3d_interactable: Query<&Picking3dInteractable>,
-                 mut writer_left: EventWriter<VibrateLeftEvent>,
-                 mut writer_right: EventWriter<VibrateRightEvent>| {
-                    // FIXME: This must get fixed. Otherwise no vibration on hover occurs
-                    if let Ok(Picking3dInteractable::Default) =
-                        picking3d_interactable.get(trigger.observer())
-                    {
-                        match trigger.controler {
-                            HoveredBy::Left => {
-                                writer_left.write(VibrateLeftEvent::new(Vibration::default()));
-                            }
-                            HoveredBy::Right => {
-                                writer_right.write(VibrateRightEvent::new(Vibration::default()));
-                            }
-                        };
-                    }
-                },
-            );
+            .observe(hover_3d);
     }
 }
 
