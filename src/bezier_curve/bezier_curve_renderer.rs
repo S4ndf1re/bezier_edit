@@ -21,8 +21,9 @@ use super::ortho_camera::create_camera_on_click;
 #[cfg(feature = "vr_enable")]
 use super::ortho_camera::create_camera_on_click3d;
 use super::render_info::{
-    ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
-    UpdateIsoDimEvent, handle_box_dim_event, handle_change_surface_mode, handle_iso_dim_event,
+    ChangeCoordinateMode, ChangeSurfaceMeshMode, CoordinateMode, RenderInformation,
+    SurfaceMeshMode, UVEither, UpdateBoxDimEvent, UpdateIsoDimEvent, handle_box_dim_event,
+    handle_change_coordinate_mode, handle_change_surface_mode, handle_iso_dim_event,
 };
 use super::surface_click::{
     SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
@@ -493,11 +494,16 @@ pub fn redraw_boxes(
             scale_info.box_dim.2 * scale_info.scale,
         );
 
+        let mut transform = Transform::from_translation(Vec3::from(point));
+        if scale_info.coordinate_mode == CoordinateMode::NUV {
+            transform.align(Vec3::NEG_Z, Vec3::from(v_diff), Vec3::X, Vec3::from(u_diff));
+            transform.look_to(Vec3::from(v_diff), Vec3::from(normal));
+        } else {
+            transform.look_to(Vec3::NEG_Z, Vec3::Y);
+        }
         commands.spawn((
             ChildOf(surface.single().unwrap()),
-            Transform::from_translation(Vec3::from(point))
-                // TODO: mode to align by xyz and nuv (nuv is this one below)
-                .looking_to(Vec3::from(u_diff), Vec3::from(normal)),
+            transform,
             Name::new("Box"),
             CurveBox,
             Mesh3d(meshes.add(mesh)),
@@ -543,7 +549,6 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
             .id();
 
         let scale = self.info.scale;
-        let height = Vec3::new(0.0, self.info.height, 0.0);
         let material = self.materials.add(Color::from(GRAY_400));
         let material_hover = self.materials.add(Color::from(GRAY_600));
         let sphere = self
@@ -910,6 +915,7 @@ impl Plugin for BezierRenderPlugin {
         app.add_systems(
             PostUpdate,
             (
+                handle_change_coordinate_mode.run_if(in_state(ControlState::Main)),
                 handle_change_surface_mode.run_if(in_state(ControlState::Main)),
                 handle_create_curve_event.run_if(in_state(ControlState::Main)),
                 handle_create_ortho_camera_event.run_if(in_state(ControlState::Main)),
@@ -970,6 +976,7 @@ impl Plugin for BezierRenderPlugin {
         app.add_event::<RedrawBoxesEvent>();
         app.add_event::<RedrawLinesEvent>();
         app.add_event::<ChangeSurfaceMeshMode>();
+        app.add_event::<ChangeCoordinateMode>();
         app.add_event::<RedrawCurvesEvent>();
         app.add_event::<CreateCurveEvent>();
         app.add_event::<CreatePlaneEvent>();

@@ -8,6 +8,31 @@ use super::{
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum CoordinateMode {
+    #[default]
+    XYZ,
+    NUV,
+}
+
+impl CoordinateMode {
+    pub fn next(self) -> Self {
+        match self {
+            Self::XYZ => Self::NUV,
+            Self::NUV => Self::XYZ,
+        }
+    }
+}
+
+impl Display for CoordinateMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CoordinateMode::XYZ => write!(f, "XYZ"),
+            CoordinateMode::NUV => write!(f, "NUV"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum SurfaceMeshMode {
     #[default]
     Mesh,
@@ -34,6 +59,9 @@ impl Display for SurfaceMeshMode {
 
 #[derive(Event)]
 pub struct ChangeSurfaceMeshMode(pub SurfaceMeshMode);
+
+#[derive(Event)]
+pub struct ChangeCoordinateMode(pub CoordinateMode);
 
 #[derive(Event, Default)]
 pub struct UpdateBoxDimEvent {
@@ -66,6 +94,7 @@ pub struct RenderInformation {
     pub v_box_count: u32,
     pub box_dim: (f32, f32, f32),
     pub surface_mesh_mode: SurfaceMeshMode,
+    pub coordinate_mode: CoordinateMode,
 }
 
 impl RenderInformation {
@@ -119,6 +148,7 @@ impl Default for RenderInformation {
             v_box_count: 0,
             box_dim: (0.25, 0.10, 0.25),
             surface_mesh_mode: SurfaceMeshMode::default(),
+            coordinate_mode: CoordinateMode::default(),
         }
     }
 }
@@ -185,5 +215,22 @@ pub fn handle_change_surface_mode(
 
     if redraw {
         redraw_writer.write(RedrawEvent::HighQuality);
+    }
+}
+
+pub fn handle_change_coordinate_mode(
+    mut reader: EventReader<ChangeCoordinateMode>,
+    mut info: ResMut<RenderInformation>,
+    mut redraw_writer: EventWriter<RedrawBoxesEvent>,
+) {
+    let mut redraw = false;
+
+    for evt in reader.read() {
+        info.coordinate_mode = evt.0;
+        redraw = true;
+    }
+
+    if redraw {
+        redraw_writer.write(RedrawBoxesEvent);
     }
 }
