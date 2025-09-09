@@ -1,13 +1,14 @@
 use crate::bezier_curve::bezier_curve_renderer::hover_3d;
 use crate::picking3d::events::HoveredBy;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
+use crate::vr_control::{AimLeft, AimRight};
 #[cfg(feature = "vr_enable")]
 use crate::vr_control::{
-    trigger::{ControllerSqueeze, ControllerTrigger}, GripLeft,
-    GripRight,
+    GripLeft, GripRight,
+    trigger::{ControllerSqueeze, ControllerTrigger},
 };
-use crate::vr_control::{AimLeft, AimRight};
 use crate::{
+    MainCamera,
     bezier_curve::{
         bezier_curve_renderer::{
             CreateCurveEvent, CreateOrthoCameraEvent, DeleteModeEvent, EndModeEvent,
@@ -21,12 +22,11 @@ use crate::{
     translation_control::translation_controller::{
         self, SnappingBehaviour, ToggleSnappingBehaviour, TranslationControllerState,
     },
-    MainCamera,
 };
 use bevy::log::tracing::Instrument;
 use bevy::{
     color::palettes::{css::WHITE, tailwind::RED_500},
-    ecs::system::{lifetimeless::Read, SystemParam},
+    ecs::system::{SystemParam, lifetimeless::Read},
     prelude::*,
     scene::SceneInstanceReady,
 };
@@ -43,6 +43,7 @@ struct GltfAssets {
     minus: Option<Handle<Gltf>>,
     plus: Option<Handle<Gltf>>,
     mm_0: Option<Handle<Gltf>>,
+    mm_1: Option<Handle<Gltf>>,
     mm_5: Option<Handle<Gltf>>,
     mm_10: Option<Handle<Gltf>>,
 }
@@ -689,6 +690,16 @@ impl<'w, 's> MenuHandler<'w, 's> {
                         .id(),
                 )
                 .unwrap(),
+            translation_controller::StepMode::MM1 => self
+                .gltf
+                .get(
+                    self.models
+                        .mm_1
+                        .clone()
+                        .expect("must be loaded to run this system")
+                        .id(),
+                )
+                .unwrap(),
             translation_controller::StepMode::MM5 => self
                 .gltf
                 .get(
@@ -832,6 +843,7 @@ fn setup_models(server: ResMut<AssetServer>, mut models: ResMut<GltfAssets>) {
     let minus: Handle<Gltf> = server.load("minus/scene.gltf");
     let plus: Handle<Gltf> = server.load("plus/scene.gltf");
     let mm_0: Handle<Gltf> = server.load("0mm/scene.gltf");
+    let mm_1: Handle<Gltf> = server.load("1mm/scene.gltf");
     let mm_5: Handle<Gltf> = server.load("5mm/scene.gltf");
     let mm_10: Handle<Gltf> = server.load("10mm/scene.gltf");
 
@@ -846,6 +858,7 @@ fn setup_models(server: ResMut<AssetServer>, mut models: ResMut<GltfAssets>) {
     models.plus = Some(plus);
 
     models.mm_0 = Some(mm_0);
+    models.mm_1 = Some(mm_1);
     models.mm_5 = Some(mm_5);
     models.mm_10 = Some(mm_10);
 }

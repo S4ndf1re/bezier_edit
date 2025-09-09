@@ -1,8 +1,8 @@
 use bevy::{
     color::palettes::tailwind::{YELLOW_400, YELLOW_600},
     ecs::system::{
-        lifetimeless::{Read, Write},
         SystemParam,
+        lifetimeless::{Read, Write},
     },
     prelude::*,
 };
@@ -23,9 +23,9 @@ use crate::{
 use super::{
     accumulated::AccumulatedMovementStore,
     translation_controller::{
-        drag_controller, drag_controller3d, draw_arrow, CantSnapToCurve, CantSnapToEntities,
-        Control, ControlParent, MovedEntityEvent, SnappedArrow, SnappedPoint,
-        SnappingBehaviour, StepMode, TranslationControllerState,
+        CantSnapToCurve, CantSnapToEntities, Control, ControlParent, MovedEntityEvent,
+        SnappedArrow, SnappedPoint, SnappingBehaviour, StepMode, TranslationControllerState,
+        drag_controller, drag_controller3d, draw_arrow,
     },
 };
 
@@ -65,6 +65,29 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         let mut p0 = self.transform_set.p0();
         let mut t = p0.get_mut(control_parent.1.0).unwrap();
         t.translation = match self.state.step_mode {
+            StepMode::MM1 => {
+                if self
+                    .accumulated_movement
+                    .current_diff(&control_parent.1.0)
+                    .unwrap()
+                    .length()
+                    > 0.01 * self.info.scale
+                {
+                    let current = self
+                        .accumulated_movement
+                        .current_point(&control_parent.1.0)
+                        .unwrap();
+                    // 0.05
+                    let scaled = current * (100.0 / self.info.scale);
+                    let floored = scaled.round();
+                    let final_vec = floored / (100.0 / self.info.scale);
+                    self.accumulated_movement
+                        .reset(control_parent.1.0, final_vec);
+                    final_vec
+                } else {
+                    t.translation
+                }
+            }
             StepMode::MM5 => {
                 if self
                     .accumulated_movement

@@ -98,6 +98,7 @@ pub enum StepMode {
     None,
     MM10,
     MM5,
+    MM1,
 }
 
 impl StepMode {
@@ -105,7 +106,8 @@ impl StepMode {
         match self {
             Self::None => Self::MM10,
             Self::MM10 => Self::MM5,
-            Self::MM5 => Self::None,
+            Self::MM5 => Self::MM1,
+            Self::MM1 => Self::None,
         }
     }
 }
