@@ -3,7 +3,7 @@ use std::fmt::Display;
 use bevy::prelude::*;
 
 use super::{
-    bezier_curve_renderer::{RedrawBoxesEvent, RedrawEvent, Resolution},
+    bezier_curve_renderer::{RedrawBoxesEvent, RedrawEvent, RedrawLinesEvent, Resolution},
     curvature_display_mode::CurvatureDisplayMode,
 };
 
@@ -42,6 +42,12 @@ pub struct UpdateBoxDimEvent {
     pub box_dim: Option<(f32, f32, f32)>,
 }
 
+#[derive(Event, Default)]
+pub struct UpdateIsoDimEvent {
+    pub u_iso_count: Option<u32>,
+    pub v_iso_count: Option<u32>,
+}
+
 pub enum UVEither {
     U(f64),
     V(f64),
@@ -54,6 +60,8 @@ pub struct RenderInformation {
     pub resolution: Resolution,
     pub fast_resolution: Resolution,
     pub curvature_mode: CurvatureDisplayMode,
+    pub u_iso_count: u32,
+    pub v_iso_count: u32,
     pub u_box_count: u32,
     pub v_box_count: u32,
     pub box_dim: (f32, f32, f32),
@@ -77,19 +85,19 @@ impl RenderInformation {
     }
 
     pub fn to_line_uv(&self) -> Vec<UVEither> {
-        if self.u_box_count == 0 || self.v_box_count == 0 {
+        if self.u_iso_count == 0 || self.v_iso_count == 0 {
             return vec![];
         }
 
-        let u_step = 1.0 / self.u_box_count as f64;
-        let v_step = 1.0 / self.v_box_count as f64;
+        let u_step = 1.0 / self.u_iso_count as f64;
+        let v_step = 1.0 / self.v_iso_count as f64;
 
         let mut result = Vec::new();
-        for i in 0..=self.u_box_count {
+        for i in 0..=self.u_iso_count {
             result.push(UVEither::U((i as f64) * u_step));
         }
 
-        for i in 0..=self.v_box_count {
+        for i in 0..=self.v_iso_count {
             result.push(UVEither::V((i as f64) * v_step));
         }
 
@@ -105,6 +113,8 @@ impl Default for RenderInformation {
             resolution: (300, 300),
             fast_resolution: (50, 50),
             curvature_mode: CurvatureDisplayMode::None,
+            u_iso_count: 0,
+            v_iso_count: 0,
             u_box_count: 0,
             v_box_count: 0,
             box_dim: (0.25, 0.10, 0.25),
@@ -117,30 +127,47 @@ pub fn handle_box_dim_event(
     mut reader: EventReader<UpdateBoxDimEvent>,
     mut info: ResMut<RenderInformation>,
     mut redraw_writer: EventWriter<RedrawBoxesEvent>,
-    mut redraw_all: EventWriter<RedrawEvent>,
 ) {
     let mut redraw = false;
     for evt in reader.read() {
         if let Some(u_count) = evt.u_box_count {
             info.u_box_count = u_count;
-            redraw = true;
         }
 
         if let Some(v_count) = evt.v_box_count {
             info.v_box_count = v_count;
-            redraw = true;
         }
 
         if let Some(dim) = evt.box_dim {
             info.box_dim = dim;
-            redraw = true;
         }
+        redraw = true;
     }
 
-    if redraw && info.surface_mesh_mode != SurfaceMeshMode::Lines {
+    if redraw {
         redraw_writer.write(RedrawBoxesEvent);
-    } else if redraw && info.surface_mesh_mode == SurfaceMeshMode::Lines {
-        redraw_all.write(RedrawEvent::HighQuality);
+    }
+}
+
+pub fn handle_iso_dim_event(
+    mut reader: EventReader<UpdateIsoDimEvent>,
+    mut info: ResMut<RenderInformation>,
+    mut redraw_all: EventWriter<RedrawLinesEvent>,
+) {
+    let mut redraw = false;
+    for evt in reader.read() {
+        if let Some(u_count) = evt.u_iso_count {
+            info.u_iso_count = u_count;
+        }
+
+        if let Some(v_count) = evt.v_iso_count {
+            info.v_iso_count = v_count;
+        }
+        redraw = true;
+    }
+
+    if redraw {
+        redraw_all.write(RedrawLinesEvent::HighQuality);
     }
 }
 

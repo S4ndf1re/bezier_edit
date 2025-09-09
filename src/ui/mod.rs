@@ -3,7 +3,10 @@ pub mod slider;
 
 use crate::{
     MainCamera,
-    bezier_curve::bezier_curve_renderer::{CreateOrthoCameraEvent, DeleteModeEvent},
+    bezier_curve::{
+        bezier_curve_renderer::{CreateOrthoCameraEvent, DeleteModeEvent},
+        render_info::UpdateIsoDimEvent,
+    },
 };
 use bevy::{
     color::palettes::tailwind::GRAY_900, ecs::relationship::RelatedSpawnerCommands, prelude::*,
@@ -37,6 +40,8 @@ pub struct UiState {
     v: f64,
     u_box_count: u32,
     v_box_count: u32,
+    u_iso_count: u32,
+    v_iso_count: u32,
 }
 
 fn spawn_background<'a>(
@@ -211,6 +216,64 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: ResMut
                     state.v_box_count = trigger.value as u32;
                     update_info.write(UpdateBoxDimEvent {
                         v_box_count: Some(state.v_box_count),
+                        ..Default::default()
+                    });
+                },
+            );
+        });
+    });
+
+    ui.spawn((
+        Name::new("Layout Fifth"),
+        UiLayout::window()
+            .pos(Rl((0.0, 75.0)))
+            .size((Rw(100.0), Rh(20.0)))
+            .anchor(Anchor::TopLeft)
+            .pack(),
+    ))
+    .with_children(|ui| {
+        ui.spawn(
+            UiLayout::window()
+                .size(Rl((90.0, 40.0)))
+                .pos(Rl((5.0, 5.0)))
+                .anchor(Anchor::TopLeft)
+                .pack(),
+        )
+        .with_children(|ui| {
+            let mut slider = UiSlider::new("U #Iso:".to_owned(), 0.0, 100.0, Rl((100.0, 100.0)));
+            slider.set(0.0);
+            slider.set_to_string_fn(|value| format!("{}", value as u32));
+            ui.spawn(slider).observe(
+                |trigger: Trigger<SliderValueChangedEvent>,
+                 mut state: ResMut<UiState>,
+                 mut update_info: EventWriter<UpdateIsoDimEvent>| {
+                    state.u_iso_count = trigger.value as u32;
+                    update_info.write(UpdateIsoDimEvent {
+                        u_iso_count: Some(state.u_iso_count),
+                        ..Default::default()
+                    });
+                },
+            );
+        });
+
+        ui.spawn(
+            UiLayout::window()
+                .size(Rl((90.0, 40.0)))
+                .pos(Rl((5.0, 50.0)))
+                .anchor(Anchor::TopLeft)
+                .pack(),
+        )
+        .with_children(|ui| {
+            let mut slider = UiSlider::new("V #Iso:".to_owned(), 0.0, 100.0, Rl((100.0, 100.0)));
+            slider.set_to_string_fn(|value| format!("{}", value as u32));
+            slider.set(0.0);
+            ui.spawn(slider).observe(
+                |trigger: Trigger<SliderValueChangedEvent>,
+                 mut state: ResMut<UiState>,
+                 mut update_info: EventWriter<UpdateIsoDimEvent>| {
+                    state.v_iso_count = trigger.value as u32;
+                    update_info.write(UpdateIsoDimEvent {
+                        v_iso_count: Some(state.v_iso_count),
                         ..Default::default()
                     });
                 },

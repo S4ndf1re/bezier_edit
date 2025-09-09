@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 
 use super::curvature_display_mode::{
-    handle_change_curvature, ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode,
+    ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
 };
 use super::degree_manipulation::{
-    handle_degree_increase_event, handle_degree_reduction_event, DecreaseDegreeEvent,
-    IncreaseDegreeEvent,
+    DecreaseDegreeEvent, IncreaseDegreeEvent, handle_degree_increase_event,
+    handle_degree_reduction_event,
 };
 use super::helper_curves::{
-    add_point, commit_curve, commit_plane, enter_create_curve_mode, render_curves,
-    CreateCurveState, RedrawCurvesEvent,
+    CreateCurveState, RedrawCurvesEvent, add_point, commit_curve, commit_plane,
+    enter_create_curve_mode, render_curves,
 };
 use super::{components::*, handle_generic_deleted_event};
 
@@ -21,19 +21,20 @@ use super::ortho_camera::create_camera_on_click;
 #[cfg(feature = "vr_enable")]
 use super::ortho_camera::create_camera_on_click3d;
 use super::render_info::{
-    handle_box_dim_event, handle_change_surface_mode, ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode,
-    UVEither, UpdateBoxDimEvent,
+    ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
+    UpdateIsoDimEvent, handle_box_dim_event, handle_change_surface_mode, handle_iso_dim_event,
 };
 use super::surface_click::{
-    bezier_surface_picking, handle_state_change_event, update_surface_click, SurfaceClickChangeset,
+    SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
 };
 use super::util::{
     collect_control_points, compute_point_by_params, create_mesh_from_control_points,
     curvature_to_color,
 };
+use crate::RootTransform;
 use crate::bezier_curve::EntityDeletedEvent;
 use crate::history::plugin::HistoryUndoEvent;
-use crate::nurbs::bezier_plane::{derive_2d, eval_2d_bezier_curves, ControlPoints2D};
+use crate::nurbs::bezier_plane::{ControlPoints2D, derive_2d, eval_2d_bezier_curves};
 use crate::picking3d::events::{HoveredBy, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::projection::{BoundingEntitiesManager, DisplayIn};
@@ -43,7 +44,6 @@ use crate::translation_control::translation_controller::{
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
-use crate::RootTransform;
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::css::BLACK;
@@ -56,10 +56,25 @@ use num::ToPrimitive;
 
 pub type Resolution = (u32, u32);
 
-#[derive(Event)]
+#[derive(Event, Clone, Copy)]
 pub enum RedrawEvent {
     HighQuality,
     Fast,
+}
+
+#[derive(Event)]
+pub enum RedrawLinesEvent {
+    HighQuality,
+    Fast,
+}
+
+impl From<RedrawEvent> for RedrawLinesEvent {
+    fn from(value: RedrawEvent) -> Self {
+        match value {
+            RedrawEvent::HighQuality => Self::HighQuality,
+            RedrawEvent::Fast => Self::Fast,
+        }
+    }
 }
 
 #[derive(Component)]
@@ -280,8 +295,10 @@ fn generate_pointcloud(
     images: ResMut<Assets<Image>>,
     scale_info: Res<RenderInformation>,
     mut redraw_boxes: EventWriter<RedrawBoxesEvent>,
+    mut redraw_iso_lines: EventWriter<RedrawLinesEvent>,
 ) {
     let mut resolution: Resolution = scale_info.fast_resolution;
+    let mut event = RedrawEvent::Fast;
     if !events.is_empty() {
         // Consume and run redraw. No matter how many events where triggered
         #[allow(clippy::never_loop)]
@@ -290,6 +307,8 @@ fn generate_pointcloud(
                 RedrawEvent::HighQuality => resolution = scale_info.resolution,
                 RedrawEvent::Fast => resolution = scale_info.fast_resolution,
             }
+
+            event = *evt;
 
             break;
         }
@@ -337,56 +356,93 @@ fn generate_pointcloud(
                 ))
                 .observe(bezier_surface_picking);
         }
-    } else {
-        let w = resolution.0;
-        let h = resolution.1;
-
-        let mut meshes_lines = Vec::new();
-
-        for line in scale_info.to_line_uv() {
-            let verticies = match line {
-                UVEither::U(u) => (0..h)
-                    .map(|v| compute_point_by_params(&multi_curves, u, v as f64 / ((h - 1) as f64)))
-                    .map(|p| p.into())
-                    .collect::<Vec<Vec3>>(),
-                UVEither::V(v) => (0..w)
-                    .map(|u| compute_point_by_params(&multi_curves, u as f64 / ((w - 1) as f64), v))
-                    .map(|p| p.into())
-                    .collect::<Vec<Vec3>>(),
-            };
-
-            let mut mesh = Mesh::new(
-                PrimitiveTopology::LineStrip,
-                RenderAssetUsages::RENDER_WORLD,
-            );
-            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, verticies);
-            meshes_lines.push(mesh);
-        }
-
-        {
-            let surface = surface.single().unwrap();
-            commands
-                .spawn((
-                    Transform::default(),
-                    ResultSurface,
-                    Visibility::default(),
-                    ChildOf(surface),
-                ))
-                .with_children(|ui| {
-                    for mesh in meshes_lines {
-                        ui.spawn((
-                            Mesh3d(meshes.add(mesh)),
-                            MeshMaterial3d(materials.add(Color::BLACK)),
-                            Name::new("Iso Line"),
-                            Pickable::IGNORE,
-                            RenderLayers::from(DisplayIn::BothNormalAndOrtho),
-                        ));
-                    }
-                });
-        }
     }
 
     redraw_boxes.write(RedrawBoxesEvent);
+    redraw_iso_lines.write(RedrawLinesEvent::from(event));
+}
+
+#[allow(clippy::complexity)]
+pub fn redraw_iso_lines(
+    surface: Query<Entity, With<Surface>>,
+    mut commands: Commands,
+    mut events: EventReader<RedrawLinesEvent>,
+    entities: Query<Entity, With<ResultLines>>,
+    scale_info: Res<RenderInformation>,
+    control_points: Query<(&Transform, &RenderPoint)>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let mut resolution: Resolution = scale_info.fast_resolution;
+    if !events.is_empty() {
+        // Consume and run redraw. No matter how many events where triggered
+        #[allow(clippy::never_loop)]
+        for evt in events.read() {
+            match evt {
+                RedrawLinesEvent::HighQuality => resolution = scale_info.resolution,
+                RedrawLinesEvent::Fast => resolution = scale_info.fast_resolution,
+            }
+
+            break;
+        }
+        events.clear()
+    } else {
+        return;
+    }
+
+    // Despawn old, respawn new
+    for p in entities.iter() {
+        commands.entity(p).despawn();
+    }
+
+    let multi_curves = collect_control_points(control_points);
+
+    let w = resolution.0;
+    let h = resolution.1;
+
+    let mut meshes_lines = Vec::new();
+
+    for line in scale_info.to_line_uv() {
+        let verticies = match line {
+            UVEither::U(u) => (0..h)
+                .map(|v| compute_point_by_params(&multi_curves, u, v as f64 / ((h - 1) as f64)))
+                .map(|p| p.into())
+                .collect::<Vec<Vec3>>(),
+            UVEither::V(v) => (0..w)
+                .map(|u| compute_point_by_params(&multi_curves, u as f64 / ((w - 1) as f64), v))
+                .map(|p| p.into())
+                .collect::<Vec<Vec3>>(),
+        };
+
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::LineStrip,
+            RenderAssetUsages::RENDER_WORLD,
+        );
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, verticies);
+        meshes_lines.push(mesh);
+    }
+
+    {
+        let surface = surface.single().unwrap();
+        commands
+            .spawn((
+                Transform::default(),
+                ResultLines,
+                Visibility::default(),
+                ChildOf(surface),
+            ))
+            .with_children(|ui| {
+                for mesh in meshes_lines {
+                    ui.spawn((
+                        Mesh3d(meshes.add(mesh)),
+                        MeshMaterial3d(materials.add(Color::BLACK)),
+                        Name::new("Iso Line"),
+                        Pickable::IGNORE,
+                        RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                    ));
+                }
+            });
+    }
 }
 
 #[allow(clippy::complexity)]
@@ -408,12 +464,6 @@ pub fn redraw_boxes(
     // Despawn old, respawn new
     for p in boxes.iter() {
         commands.entity(p).despawn();
-    }
-
-    // Early return, because line mode hijacks the box count parameters (otherwise, no lines would
-    // be visible)
-    if scale_info.surface_mesh_mode == SurfaceMeshMode::Lines {
-        return;
     }
 
     let multi_curves = collect_control_points(control_points);
@@ -840,7 +890,8 @@ impl Plugin for BezierRenderPlugin {
                 generate_pointcloud,
                 update_lines,
                 update_surface_click,
-                redraw_boxes,
+                redraw_boxes.after(generate_pointcloud),
+                redraw_iso_lines.after(generate_pointcloud),
                 render_curves,
             ),
         ); // , listen_to_mouse_left_button));
@@ -851,6 +902,7 @@ impl Plugin for BezierRenderPlugin {
                 handle_state_change_event,
                 handle_change_curvature,
                 handle_box_dim_event,
+                handle_iso_dim_event,
             ),
         );
 
@@ -914,7 +966,9 @@ impl Plugin for BezierRenderPlugin {
         app.add_event::<SurfaceClickChangeset>();
         app.add_event::<ChangeCurvatureDisplayModeEvent>();
         app.add_event::<UpdateBoxDimEvent>();
+        app.add_event::<UpdateIsoDimEvent>();
         app.add_event::<RedrawBoxesEvent>();
+        app.add_event::<RedrawLinesEvent>();
         app.add_event::<ChangeSurfaceMeshMode>();
         app.add_event::<RedrawCurvesEvent>();
         app.add_event::<CreateCurveEvent>();

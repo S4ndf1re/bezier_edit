@@ -21,4 +21,7 @@ pub struct RenderPoint(pub usize, pub usize);
 pub struct ResultSurface;
 
 #[derive(Component)]
+pub struct ResultLines;
+
+#[derive(Component)]
 pub struct CurveBox;
