@@ -1,4 +1,4 @@
-use crate::bezier_curve::bezier_curve_renderer::{hover_3d, RedrawEvent};
+use crate::bezier_curve::bezier_curve_renderer::{RedrawEvent, hover_3d};
 use crate::bezier_curve::helper_curves::{CurveCollection, RedrawCurvesEvent};
 use crate::bezier_curve::render_info::RenderInformation;
 use crate::history::plugin::HistoryLogEvent;
@@ -12,15 +12,22 @@ use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration}
 use crate::{MainCamera, RootTransform};
 use bevy::color::palettes::tailwind::{BLUE_600, BLUE_800, GRAY_500, RED_600, RED_800};
 use bevy::ecs::relationship::RelatedSpawnerCommands;
+use bevy::gizmos::start_gizmo_context;
 use bevy::math::bounding::BoundingSphere;
 use bevy::math::ops::atan2;
 use bevy::prelude::*;
+use bevy_lunex::prelude::{Text3d, Text3dStyling, TextAlign, TextAtlas, Weight};
+use bevy_xr_utils::tracking_utils::XrTrackedView;
 use std::collections::HashSet;
 use std::f32::consts::FRAC_PI_2;
+use std::sync::Arc;
 
 use super::accumulated::AccumulatedMovementStore;
 use super::control_storage::ControlDirection;
 use super::obligatory_drag_params::ObligatoryDragParams;
+
+#[derive(Component)]
+pub struct CoordinateTextMarker;
 
 #[derive(Event)]
 pub struct MovedEntityEvent {
@@ -480,11 +487,12 @@ fn show_transitional_controls(
 #[allow(clippy::too_many_arguments)]
 fn drag_start(
     trigger: Trigger<Pointer<DragStart>>,
-    root: Query<Entity, With<RootTransform>>,
+    root: Query<(Entity, &Transform), With<RootTransform>>,
+    camera: Query<&GlobalTransform, With<MainCamera>>,
     mut commands: Commands,
     arrow_query: Query<(&ChildOf, Entity), With<Control>>,
     control_parents: Query<&ControlParent>,
-    all_transforms: Query<&Transform, Without<ControlParent>>,
+    all_transforms: Query<&Transform, (Without<ControlParent>, Without<RootTransform>)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     arrows: Res<ControlStorage>,
@@ -492,7 +500,7 @@ fn drag_start(
     mut history: EventWriter<HistoryLogEvent>,
     mut accumulated_movement: ResMut<AccumulatedMovementStore>,
 ) {
-    let mut root = commands.get_entity(root.single().unwrap()).unwrap();
+    let (root, root_transform) = root.single().unwrap();
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
 
@@ -506,31 +514,73 @@ fn drag_start(
 
     let scale = scale.scale;
 
-    root.with_children(|cmd| {
-        cmd.spawn((ShadowMarker, start_transform, Visibility::default()))
-            .with_children(|parent| {
-                for arrow in arrows.as_ref().iter_arrows() {
-                    parent
-                        .spawn((
-                            Transform::from_xyz(0.0, 0.0, 0.0)
-                                .looking_to(arrow.normalized, Vec3::Y),
-                            Control(arrow.normalized),
-                            Picking3dInteractable::default(),
-                            Visibility::default(),
-                        ))
-                        .with_children(|parent| {
-                            draw_arrow(
-                                parent,
-                                materials.add(arrow.shadow_color),
-                                materials.add(arrow.shadow_color),
-                                &mut meshes,
-                                scale,
-                                true,
-                            );
-                        });
-                }
-            });
-    });
+    commands
+        .spawn((
+            ShadowMarker,
+            start_transform,
+            Visibility::default(),
+            ChildOf(root),
+        ))
+        .with_children(|parent| {
+            for arrow in arrows.as_ref().iter_arrows() {
+                parent
+                    .spawn((
+                        Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.normalized, Vec3::Y),
+                        Control(arrow.normalized),
+                        Picking3dInteractable::default(),
+                        Visibility::default(),
+                    ))
+                    .with_children(|parent| {
+                        draw_arrow(
+                            parent,
+                            materials.add(arrow.shadow_color),
+                            materials.add(arrow.shadow_color),
+                            &mut meshes,
+                            scale,
+                            true,
+                        );
+                    });
+            }
+        });
+
+    let start_transform = *all_transforms.get(control_parent.0).unwrap();
+    let camera_transform = camera.single().unwrap();
+    let camera_forward = root_transform
+        .compute_affine()
+        .inverse()
+        .transform_vector3(camera_transform.forward().normalize_or_zero());
+
+    commands.spawn((
+        ChildOf(control_parent.0),
+        Transform::from_rotation(start_transform.rotation.inverse()),
+        CoordinateTextMarker,
+        children![(
+            Transform::from_translation(-camera_forward * 1.0 * scale + Vec3::Y * scale)
+                .looking_to(camera_forward, Vec3::Y)
+                .with_scale(Vec3::ONE * 0.0025 * scale),
+            Text3d::new(format!(
+                "({:.3}, {:.3}, {:.3})",
+                start_transform.translation.x / scale,
+                start_transform.translation.y / scale,
+                start_transform.translation.z / scale
+            )),
+            Text3dStyling {
+                size: 64.0,
+                color: Srgba::new(0., 0., 0., 1.),
+                align: TextAlign::Center,
+                font: Arc::from("Rajdhani"),
+                weight: Weight::BOLD,
+                ..Default::default()
+            },
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
+                alpha_mode: AlphaMode::Blend,
+                unlit: true,
+                ..Default::default()
+            })),
+            Mesh3d::default(),
+        )],
+    ));
 
     history.write(HistoryLogEvent::Begin(
         control_parent.0,
@@ -541,11 +591,12 @@ fn drag_start(
 #[allow(clippy::too_many_arguments)]
 fn drag_start3d(
     trigger: Trigger<Pointer3d<crate::picking3d::events::DragStart>>,
-    root: Query<Entity, With<RootTransform>>,
+    root: Query<(Entity, &Transform), With<RootTransform>>,
     mut commands: Commands,
+    camera: Query<&GlobalTransform, With<XrTrackedView>>,
     arrow_query: Query<(&ChildOf, Entity), With<Control>>,
     control_parents: Query<&ControlParent>,
-    all_transforms: Query<&Transform, Without<ControlParent>>,
+    all_transforms: Query<&Transform, (Without<ControlParent>, Without<RootTransform>)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     arrows: Res<ControlStorage>,
@@ -553,47 +604,90 @@ fn drag_start3d(
     mut history: EventWriter<HistoryLogEvent>,
     mut accumulated_movement: ResMut<AccumulatedMovementStore>,
 ) {
-    let mut root = commands.get_entity(root.single().unwrap()).unwrap();
+    let (root, root_transform) = root.single().unwrap();
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
 
     let dragged_parent = dragged_childof.parent();
 
     let control_parent = control_parents.get(dragged_parent).unwrap();
-    let start_transform = all_transforms.get(control_parent.0).unwrap();
+    let mut start_transform = *all_transforms.get(control_parent.0).unwrap();
+    start_transform.rotation = Quat::IDENTITY;
 
     accumulated_movement.start_movement_entity(control_parent.0, start_transform.translation);
 
     let scale = scale.scale;
 
-    root.with_children(|cmd| {
-        cmd.spawn((ShadowMarker, *start_transform, Visibility::default()))
-            .with_children(|parent| {
-                for arrow in arrows.as_ref().iter_arrows() {
-                    parent
-                        .spawn((
-                            Transform::from_xyz(0.0, 0.0, 0.0)
-                                .looking_to(arrow.normalized, Vec3::Y),
-                            Control(arrow.normalized),
-                            Visibility::default(),
-                        ))
-                        .with_children(|parent| {
-                            draw_arrow(
-                                parent,
-                                materials.add(arrow.shadow_color),
-                                materials.add(arrow.shadow_color),
-                                &mut meshes,
-                                scale,
-                                true,
-                            );
-                        });
-                }
-            });
-    });
+    commands
+        .spawn((
+            ShadowMarker,
+            start_transform,
+            Visibility::default(),
+            ChildOf(root),
+        ))
+        .with_children(|parent| {
+            for arrow in arrows.as_ref().iter_arrows() {
+                parent
+                    .spawn((
+                        Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.normalized, Vec3::Y),
+                        Control(arrow.normalized),
+                        Visibility::default(),
+                    ))
+                    .with_children(|parent| {
+                        draw_arrow(
+                            parent,
+                            materials.add(arrow.shadow_color),
+                            materials.add(arrow.shadow_color),
+                            &mut meshes,
+                            scale,
+                            true,
+                        );
+                    });
+            }
+        });
+
+    let start_transform = *all_transforms.get(control_parent.0).unwrap();
+    let camera_transform = camera.single().unwrap();
+    let camera_forward = root_transform
+        .compute_affine()
+        .inverse()
+        .transform_vector3(camera_transform.forward().normalize_or_zero());
+
+    commands.spawn((
+        ChildOf(control_parent.0),
+        Transform::from_rotation(start_transform.rotation.inverse()),
+        CoordinateTextMarker,
+        children![(
+            Transform::from_translation(-camera_forward * 1.0 * scale + Vec3::Y * scale)
+                .looking_to(camera_forward, Vec3::Y)
+                .with_scale(Vec3::ONE * 0.0025 * scale),
+            Text3d::new(format!(
+                "({:.3}, {:.3}, {:.3})",
+                start_transform.translation.x,
+                start_transform.translation.y,
+                start_transform.translation.z
+            )),
+            Text3dStyling {
+                size: 64.0,
+                color: Srgba::new(0., 0., 0., 1.),
+                align: TextAlign::Center,
+                font: Arc::from("Rajdhani"),
+                weight: Weight::BOLD,
+                ..Default::default()
+            },
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
+                alpha_mode: AlphaMode::Blend,
+                unlit: true,
+                ..Default::default()
+            })),
+            Mesh3d::default(),
+        )],
+    ));
 
     history.write(HistoryLogEvent::Begin(
         control_parent.0,
-        Some(*start_transform),
+        Some(start_transform),
     ));
 }
 
@@ -608,6 +702,8 @@ fn drag_end_trigger_redraw(
     query: Query<Entity, With<ShadowMarker>>,
     mut history: EventWriter<HistoryLogEvent>,
     mut accumulated_movement: ResMut<AccumulatedMovementStore>,
+    children: Query<&Children>,
+    text_marker: Query<Entity, With<CoordinateTextMarker>>,
 ) {
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
@@ -624,6 +720,13 @@ fn drag_end_trigger_redraw(
         commands.get_entity(entity).unwrap().despawn();
     }
 
+    // Despawn text
+    for child in children.get(control_parent.0).unwrap() {
+        if let Ok(text_entity) = text_marker.get(*child) {
+            commands.entity(text_entity).despawn();
+        }
+    }
+
     history.write(HistoryLogEvent::End(control_parent.0, None));
 }
 
@@ -638,6 +741,8 @@ fn drag_end3d_trigger_redraw(
     query: Query<Entity, With<ShadowMarker>>,
     mut history: EventWriter<HistoryLogEvent>,
     mut accumulated_movement: ResMut<AccumulatedMovementStore>,
+    children: Query<&Children>,
+    text_marker: Query<Entity, With<CoordinateTextMarker>>,
 ) {
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
@@ -652,6 +757,13 @@ fn drag_end3d_trigger_redraw(
 
     for entity in query {
         commands.get_entity(entity).unwrap().despawn();
+    }
+
+    // Despawn text
+    for child in children.get(control_parent.0).unwrap() {
+        if let Ok(text_entity) = text_marker.get(*child) {
+            commands.entity(text_entity).despawn();
+        }
     }
 
     history.write(HistoryLogEvent::End(control_parent.0, None));
@@ -1208,6 +1320,92 @@ fn update_plane_directions(
     }
 }
 
+#[cfg(not(feature = "vr_enable"))]
+fn update_texts(
+    mut transforms: Query<&mut Transform>,
+    root: Query<Entity, With<RootTransform>>,
+    texts: Query<(Entity, &ChildOf, &Children), With<CoordinateTextMarker>>,
+    mut text3d: Query<&mut Text3d>,
+    camera: Query<&GlobalTransform, With<MainCamera>>,
+    info: Res<RenderInformation>,
+) {
+    let root = root.single().unwrap();
+    let root_transform = *transforms.get(root).unwrap();
+    let camera_transform = camera.single().unwrap();
+    let scale = info.scale;
+
+    for (text_entity, &ChildOf(parent), children) in texts {
+        let start_transform = *transforms.get(parent).unwrap();
+
+        let camera_forward = root_transform
+            .compute_affine()
+            .inverse()
+            .transform_vector3(camera_transform.forward().normalize_or_zero());
+
+        {
+            let mut transform = transforms.get_mut(text_entity).unwrap();
+            transform.rotation = start_transform.rotation.inverse();
+        }
+
+        for child in children {
+            let mut transform = transforms.get_mut(*child).unwrap();
+            transform.translation = -camera_forward * 1.0 + Vec3::Y;
+            transform.look_to(camera_forward, Vec3::Y);
+            if let Ok(mut text3d) = text3d.get_mut(*child) {
+                *text3d = Text3d::new(format!(
+                    "({:.3}, {:.3}, {:.3})",
+                    start_transform.translation.x / scale,
+                    start_transform.translation.y / scale,
+                    start_transform.translation.z / scale
+                ));
+            }
+        }
+    }
+}
+
+#[cfg(feature = "vr_enable")]
+fn update_texts(
+    mut transforms: Query<&mut Transform>,
+    root: Query<Entity, With<RootTransform>>,
+    texts: Query<(Entity, &ChildOf, &Children), With<CoordinateTextMarker>>,
+    mut text3d: Query<&mut Text3d>,
+    camera: Query<&GlobalTransform, With<XrTrackedView>>,
+    info: Res<RenderInformation>,
+) {
+    let root = root.single().unwrap();
+    let root_transform = *transforms.get(root).unwrap();
+    let camera_transform = camera.single().unwrap();
+    let scale = info.scale;
+
+    for (text_entity, &ChildOf(parent), children) in texts {
+        let start_transform = *transforms.get(parent).unwrap();
+
+        let camera_forward = root_transform
+            .compute_affine()
+            .inverse()
+            .transform_vector3(camera_transform.forward().normalize_or_zero());
+
+        {
+            let mut transform = transforms.get_mut(text_entity).unwrap();
+            transform.rotation = start_transform.rotation.inverse();
+        }
+
+        for child in children {
+            let mut transform = transforms.get_mut(*child).unwrap();
+            transform.translation = -camera_forward * 1.0 + Vec3::Y;
+            transform.look_to(camera_forward, Vec3::Y);
+            if let Ok(mut text3d) = text3d.get_mut(*child) {
+                *text3d = Text3d::new(format!(
+                    "({:.3}, {:.3}, {:.3})",
+                    start_transform.translation.x / scale,
+                    start_transform.translation.y / scale,
+                    start_transform.translation.z / scale
+                ));
+            }
+        }
+    }
+}
+
 pub struct TranslationController;
 
 impl Plugin for TranslationController {
@@ -1221,6 +1419,7 @@ impl Plugin for TranslationController {
                 update_snapped_points,
                 update_plane_directions,
                 handle_translate_by_delta_event,
+                update_texts,
             ),
         );
         app.init_resource::<ControlStorage>();

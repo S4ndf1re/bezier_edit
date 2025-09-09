@@ -98,6 +98,7 @@ fn setup(
 fn create_app() -> App {
     use bevy::color::palettes::tailwind::{GRAY_700, GRAY_900};
     use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
+    use bevy_rich_text3d::Text3dPlugin;
     use linked_entities::LinkedEntitiesPlugin;
     use projection::ProjectionPlugin;
     use vr_menu::VrMenuPlugin;
