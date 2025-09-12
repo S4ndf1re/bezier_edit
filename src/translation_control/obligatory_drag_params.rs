@@ -344,14 +344,14 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             SnappedPoint::ToProjection => {
                 // Once removed (Snapped point, consider adding it back when snapping to a
                 // projected position)
-                if let Some(accumulated_diff) =
-                    self.accumulated_movement.current_diff(&control_parent.1.0)
-                    && let Some(closest_move_direction) =
-                        self.transform_set.p2().detect_closest_projected(
-                            control_parent.1.0,
-                            accumulated_diff,
-                            cant_snap_to_entities,
-                        )
+                if let Some(closest_move_direction) =
+                    self.transform_set.p2().detect_closest_projected(
+                        control_parent.1.0,
+                        self.accumulated_movement
+                            .current_diff(&control_parent.1.0)
+                            .unwrap(),
+                        cant_snap_to_entities,
+                    )
                     && closest_move_direction.length() < 0.05 * self.info.scale
                 {
                     let mut p0 = self.transform_set.p0();
@@ -372,15 +372,19 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                         .remove::<SnappedPoint>();
 
                     // Consider adding back the curve when not
-                    self.snap_to_curve(
-                        control_parent,
-                        t,
-                        self.accumulated_movement
-                            .current_diff(&control_parent.1.0)
-                            .unwrap(),
-                        cant_snap_to_curve,
-                        is_temporarily_blocked,
-                    )
+                    if let Some(accumulated_diff) =
+                        self.accumulated_movement.current_diff(&control_parent.1.0)
+                    {
+                        self.snap_to_curve(
+                            control_parent,
+                            t,
+                            accumulated_diff,
+                            cant_snap_to_curve,
+                            is_temporarily_blocked,
+                        )
+                    } else {
+                        t.translation
+                    }
                 }
             }
         }
@@ -392,6 +396,20 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         translation: Vec3,
         arrow: Entity,
     ) {
+        if self
+            .accumulated_movement
+            .current_diff(&control_parent.1.0)
+            .is_none()
+        {
+            self.accumulated_movement.start_movement_entity(
+                control_parent.1.0,
+                self.transform_set
+                    .p0()
+                    .get(control_parent.1.0)
+                    .unwrap()
+                    .translation,
+            );
+        }
         self.accumulated_movement
             .add_diff(&control_parent.1.0, translation);
         let is_snapped_arrow = self.snapped_control_arrow.get(arrow).is_ok();
