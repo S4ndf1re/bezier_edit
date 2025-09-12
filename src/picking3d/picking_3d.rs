@@ -323,6 +323,7 @@ fn handle_input_grab(
     mut click_writer: EventWriter<Pointer3d<Click>>,
     info: Res<RenderInformation>,
 ) {
+    // TODO: Track controllers using prisma as additional mode
     for (state, hover_by) in [
         (trigger.left, HoveredBy::Left),
         (trigger.right, HoveredBy::Right),

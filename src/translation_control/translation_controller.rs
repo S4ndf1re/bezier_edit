@@ -1211,6 +1211,7 @@ fn rotate_controller3d(
         };
 
         if state.curve_snapping == SnappingBehaviour::Snap {
+            // TODO: consider using euler angles for snapping
             for axis in control_storage.iter_arrows() {
                 if axis.with_rotation {
                     let cos_score = forward.normalize_or_zero().dot(axis.normalized);
