@@ -321,6 +321,7 @@ fn update_lines(
     }
 }
 
+// TODO: Reinstate this and fix up to use ObligatoryDragParams for dragging
 // fn drag_point(
 //     trigger: Trigger<Pointer<Drag>>,
 //     mut query: Query<&mut Transform, (With<RenderPoint>, Without<Camera3d>)>,
