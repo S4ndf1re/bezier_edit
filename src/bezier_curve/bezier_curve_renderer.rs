@@ -40,6 +40,7 @@ use crate::picking3d::events::{HoveredBy, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::projection::{
     AddBoundingEntityEvent, BoundingEntitiesManager, DisplayIn, UpdateOrthoViews,
+    handle_add_bounding_entity_event,
 };
 use crate::translation_control::translation_controller::{
     CantSnapToEntities, EnableTranslationControl, MovedEntityEvent,
@@ -1016,8 +1017,16 @@ impl Plugin for BezierRenderPlugin {
         app.add_systems(
             PostUpdate,
             (
-                handle_degree_increase_event.run_if(on_event::<IncreaseDegreeEvent>),
-                handle_degree_reduction_event.run_if(on_event::<DecreaseDegreeEvent>),
+                handle_degree_increase_event
+                    .run_if(on_event::<IncreaseDegreeEvent>)
+                    // This must run after the add bounding entity, otherwise the transforms are
+                    // not set correctly
+                    .after(handle_add_bounding_entity_event),
+                handle_degree_reduction_event
+                    .run_if(on_event::<DecreaseDegreeEvent>)
+                    // This must run after the add bounding entity, otherwise the transforms are
+                    // not set correctly
+                    .after(handle_add_bounding_entity_event),
             ),
         );
 

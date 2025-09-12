@@ -167,7 +167,7 @@ pub fn increase_degree<T: AsRef<[Point]>>(points: T) -> Vec<Point> {
 /// Farin 5.4 Gradreduzierung. Bidirectional
 pub fn decrease_degree<T: AsRef<[Point]>>(points: T) -> Vec<Point> {
     let points = points.as_ref();
-    if points.len() < 2 {
+    if points.len() <= 2 {
         return points.to_owned();
     }
 
