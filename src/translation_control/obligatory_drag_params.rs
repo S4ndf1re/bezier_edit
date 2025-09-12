@@ -24,8 +24,8 @@ use super::{
     accumulated::AccumulatedMovementStore,
     translation_controller::{
         CantSnapToCurve, CantSnapToEntities, Control, ControlParent, MovedEntityEvent,
-        SnappedArrow, SnappedPoint, SnappingBehaviour, StepMode, TranslationControllerState,
-        drag_controller, drag_controller3d, draw_arrow,
+        SnappedArrow, SnappedPoint, SnappingBehaviour, StepMode, TemporaryCurveSnappingBlocker,
+        TranslationControllerState, drag_controller, drag_controller3d, draw_arrow,
     },
 };
 
@@ -51,6 +51,7 @@ pub struct ObligatoryDragParams<'w, 's> {
     meshes: ResMut<'w, Assets<Mesh>>,
     cant_snap_to_curve: Query<'w, 's, Read<CantSnapToCurve>>,
     cant_snap_to_entities: Query<'w, 's, Read<CantSnapToEntities>>,
+    is_temporarily_blocked: Query<'w, 's, Read<TemporaryCurveSnappingBlocker>>,
     moved_entity_writer: EventWriter<'w, MovedEntityEvent>,
     accumulated_movement: ResMut<'w, AccumulatedMovementStore>,
     snapped_control_arrow: Query<'w, 's, Entity, With<SnappedArrow>>,
@@ -167,28 +168,33 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         t: Transform,
         translation: Vec3,
         cant_snap_to_curve: Option<CantSnapToCurve>,
+        is_temporarily_blocked: bool,
     ) -> Vec3 {
         let shortest = self.transform_set.p1().collect_shortest(
             Point::from(t.translation + translation),
             &cant_snap_to_curve.unwrap_or_default(),
         );
 
-        if let Some((curve, u, p, dist, points)) = shortest
-            && dist < 0.05 * self.info.scale as f64
+        if let Some((curve, u, p, dist, points)) = &shortest
+            && *dist < 0.05 * self.info.scale as f64
+            && !is_temporarily_blocked
         {
             let mut p0 = self.transform_set.p0();
             let mut t = p0.get_mut(control_parent.1.0).unwrap();
-            t.translation = p.into();
+            t.translation = (*p).into();
 
             let mat = self.materials.add(StandardMaterial::from_color(YELLOW_600));
             let mat_hover = self.materials.add(StandardMaterial::from_color(YELLOW_400));
 
-            let deriv = derive_after_de_casteljau(&de_casteljau(&points, u), 1);
+            let deriv = derive_after_de_casteljau(&de_casteljau(points, *u), 1);
 
             self.commands
                 .get_entity(control_parent.1.0)
                 .unwrap()
-                .insert(SnappedPoint::ToCurve { u, curve });
+                .insert(SnappedPoint::ToCurve {
+                    u: *u,
+                    curve: *curve,
+                });
 
             // Create a new arrow (directional), that follows the curvature of the
             // curve that the point was snapped to. The direction of the arrow is
@@ -220,6 +226,18 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                 .reset(control_parent.1.0, t.translation);
             t.translation
         } else {
+            if let Some((_, _, _, dist, _)) = &shortest
+                && *dist > 0.1 * self.info.scale as f64
+                && is_temporarily_blocked
+            {
+                let _ = self.commands.get_entity(control_parent.1.0).map(|mut e| {
+                    e.remove::<TemporaryCurveSnappingBlocker>();
+                });
+            } else if shortest.is_none() {
+                let _ = self.commands.get_entity(control_parent.1.0).map(|mut e| {
+                    e.remove::<TemporaryCurveSnappingBlocker>();
+                });
+            }
             self.handel_default(control_parent, translation)
         }
     }
@@ -231,6 +249,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         translation: Vec3,
         cant_snap_to_curve: Option<CantSnapToCurve>,
         cant_snap_to_entities: Option<CantSnapToEntities>,
+        is_temporarily_blocked: bool,
     ) -> Vec3 {
         if let Some(closest_move_direction) = self.transform_set.p2().detect_closest_projected(
             control_parent.1.0,
@@ -240,7 +259,13 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         {
             self.snap_to_projection(control_parent, translation, closest_move_direction)
         } else {
-            self.snap_to_curve(control_parent, t, translation, cant_snap_to_curve)
+            self.snap_to_curve(
+                control_parent,
+                t,
+                translation,
+                cant_snap_to_curve,
+                is_temporarily_blocked,
+            )
         }
     }
 
@@ -254,6 +279,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         cant_snap_to_entities: Option<CantSnapToEntities>,
         snap: SnappedPoint,
         is_snapped_arrow: bool,
+        is_temporarily_blocked: bool,
     ) -> Vec3 {
         match snap {
             SnappedPoint::ToCurve { u: _, curve: _ } => {
@@ -293,7 +319,8 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     self.commands
                         .get_entity(entity)
                         .unwrap()
-                        .remove::<SnappedPoint>();
+                        .remove::<SnappedPoint>()
+                        .insert(TemporaryCurveSnappingBlocker);
 
                     // Once removed (Snapped point, consider adding it back when snapping to a
                     // projected position)
@@ -305,6 +332,9 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                         )
                         && closest_move_direction.length() < 0.05 * self.info.scale
                     {
+                        let _ = self.commands.get_entity(entity).map(|mut e| {
+                            e.remove::<TemporaryCurveSnappingBlocker>();
+                        });
                         self.snap_to_projection(control_parent, translation, closest_move_direction)
                     } else {
                         self.handel_default(control_parent, translation)
@@ -349,6 +379,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                             .current_diff(&control_parent.1.0)
                             .unwrap(),
                         cant_snap_to_curve,
+                        is_temporarily_blocked,
                     )
                 }
             }
@@ -378,6 +409,8 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             .ok()
             .cloned();
 
+        let is_temporarily_blocked = self.is_temporarily_blocked.get(control_parent.1.0).is_ok();
+
         let changed_entity = control_parent.1.0;
         let control_point = self.transform_set.p0().get(control_parent.1.0).copied();
         if let Ok(t) = control_point {
@@ -391,6 +424,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                         translation,
                         cant_snap_to_curve,
                         cant_snap_to_entities,
+                        is_temporarily_blocked,
                     )
                 } else {
                     // The entity is already snapped to a curve. Either continue snapping by moving
@@ -413,6 +447,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                         cant_snap_to_entities,
                         snap,
                         is_snapped_arrow,
+                        is_temporarily_blocked,
                     )
                 }
             } else {

@@ -5,7 +5,7 @@ use super::{EntityDeletedEvent, components::ControlState, render_info::RenderInf
 use crate::MainCamera;
 use crate::nurbs::bezier::de_casteljau;
 use crate::picking3d::picking_3d::Picking3dInteractable;
-use crate::projection::{BoundingEntitiesManager, DisplayIn};
+use crate::projection::{AddBoundingEntityEvent, BoundingEntitiesManager, DisplayIn};
 use crate::translation_control::translation_controller::CantSnapToCurve;
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::{
@@ -92,6 +92,7 @@ pub fn add_point_3d(
                 Mesh3d(sphere.clone()),
                 MeshMaterial3d(material.clone()),
                 RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                Visibility::Inherited,
             ));
         });
         state.counter += 1;
@@ -285,7 +286,7 @@ pub fn commit_curve(
     children: Query<&Children>,
     mut tmp_points: Query<(Entity, &TemporaryCurvePoint), Without<RootTransform>>,
     mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
-    mut bounding_entities: BoundingEntitiesManager,
+    mut bounding_entities: EventWriter<AddBoundingEntityEvent>,
 ) {
     let root = root.single().unwrap();
 
@@ -317,9 +318,8 @@ pub fn commit_curve(
 
                 let idx = point.0;
 
-                bounding_entities.add_bounding_entity(*child_point_entity);
+                bounding_entities.write(AddBoundingEntityEvent(*child_point_entity));
 
-                info!("Consolidated curve point {entity:?}");
                 commands
                     .get_entity(entity)
                     .unwrap()
@@ -334,8 +334,6 @@ pub fn commit_curve(
                     .observe(handle_click_on_curve_point3d)
                     .observe(handle_click_on_curve_point);
             }
-        } else {
-            info!("No new curve to spawn. there are no control points");
         }
         // Despawn temporary curve, that was replaced by a final curve
         commands.get_entity(curve).unwrap().despawn();

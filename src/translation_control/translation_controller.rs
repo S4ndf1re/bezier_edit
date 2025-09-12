@@ -140,6 +140,9 @@ pub enum CantSnapToEntities {
     Multiple(HashSet<Entity>),
 }
 
+#[derive(Component)]
+pub struct TemporaryCurveSnappingBlocker;
+
 fn handle_toggle_snapping(
     mut reader: EventReader<ToggleSnappingBehaviour>,
     mut state: ResMut<TranslationControllerState>,
@@ -199,6 +202,7 @@ pub fn draw_plane(
         MeshMaterial3d(mat.clone()),
         Mesh3d(plane.clone()),
         Picking3dInteractable::Default,
+        Visibility::Inherited,
     ));
     obj.observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()))
@@ -224,6 +228,7 @@ pub fn draw_arrow(
         MeshMaterial3d(mat.clone()),
         Mesh3d(cuboid.clone()),
         Picking3dInteractable::Default,
+        Visibility::Inherited,
     ));
     obj.observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()))
@@ -238,6 +243,7 @@ pub fn draw_arrow(
             Transform::from_xyz(0.0, 0.0, -0.4 * scale),
             MeshMaterial3d(mat.clone()),
             Mesh3d(line.clone()),
+            Visibility::Inherited,
         ))
         .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()));
@@ -249,6 +255,7 @@ pub fn draw_arrow(
             transform,
             MeshMaterial3d(mat.clone()),
             Mesh3d(arrow.clone()),
+            Visibility::Inherited,
         ))
         .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()));
@@ -279,7 +286,12 @@ fn draw_ring(
     transform.rotate(Quat::from_axis_angle(Vec3::X, angle));
 
     child_builder
-        .spawn((transform, Mesh3d(torus), MeshMaterial3d(mat.clone())))
+        .spawn((
+            transform,
+            Mesh3d(torus),
+            MeshMaterial3d(mat.clone()),
+            Visibility::Inherited,
+        ))
         .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()));
 
@@ -295,6 +307,7 @@ fn draw_ring(
                 MeshMaterial3d(mat.clone()),
                 CustomPicking3dHitbox::Sphere(0.035 * scale),
                 Picking3dInteractable::Default,
+                Visibility::Inherited,
             ))
             .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
             .observe(update_material_on::<Pointer<Out>>(mat.clone()))
@@ -556,6 +569,7 @@ fn drag_start(
         ChildOf(control_parent.0),
         Transform::from_rotation(start_transform.rotation.inverse()),
         CoordinateTextMarker,
+        Visibility::Inherited,
         children![(
             Transform::from_translation(-camera_forward * 1.0 * scale + Vec3::Y * scale)
                 .looking_to(camera_forward, Vec3::Y)
@@ -581,6 +595,7 @@ fn drag_start(
                 ..Default::default()
             })),
             Mesh3d::default(),
+            Visibility::Inherited,
         )],
     ));
 
@@ -659,6 +674,7 @@ fn drag_start3d(
         ChildOf(control_parent.0),
         Transform::from_rotation(start_transform.rotation.inverse()),
         CoordinateTextMarker,
+        Visibility::Inherited,
         children![(
             Transform::from_translation(-camera_forward * 1.0 * scale + Vec3::Y * scale)
                 .looking_to(camera_forward, Vec3::Y)
@@ -684,6 +700,7 @@ fn drag_start3d(
                 ..Default::default()
             })),
             Mesh3d::default(),
+            Visibility::Inherited,
         )],
     ));
 
@@ -729,6 +746,10 @@ fn drag_end_trigger_redraw(
         }
     }
 
+    let _ = commands.get_entity(control_parent.0).map(|mut e| {
+        e.remove::<TemporaryCurveSnappingBlocker>();
+    });
+
     history.write(HistoryLogEvent::End(control_parent.0, None));
 }
 
@@ -767,6 +788,10 @@ fn drag_end3d_trigger_redraw(
             commands.entity(text_entity).despawn();
         }
     }
+
+    let _ = commands.get_entity(control_parent.0).map(|mut e| {
+        e.remove::<TemporaryCurveSnappingBlocker>();
+    });
 
     history.write(HistoryLogEvent::End(control_parent.0, None));
 }

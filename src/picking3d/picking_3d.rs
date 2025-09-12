@@ -7,8 +7,8 @@ use crate::picking3d::pointer_state::Pointer3dState;
 use crate::vr_control::trigger::{ControllerSqueeze, ControllerTrigger};
 use crate::vr_control::{AimLeft, AimRight, GripLeft, GripRight};
 use bevy::color::palettes::css::POWDER_BLUE;
-use bevy::math::bounding::{Aabb3d, BoundingSphere, IntersectsVolume};
 use bevy::math::Vec3;
+use bevy::math::bounding::{Aabb3d, BoundingSphere, IntersectsVolume};
 use bevy::prelude::*;
 
 use super::picking_state::VectorState;
@@ -444,7 +444,9 @@ fn handle_input_grab(
 
                     picking_state.set_dragging(true, &hover_by);
                 }
-            } else if picking_state.check_is_dragging(&hover_by) {
+            }
+
+            if picking_state.check_is_dragging(&hover_by) {
                 for (transform, mut marker, _) in moved_marked_query.iter_mut() {
                     if picking_state.contains_entity(&marker.entity, &hover_by) {
                         let entity_global_position = transform_query.get(marker.entity).unwrap();
@@ -612,7 +614,7 @@ pub fn show_aim(
     //     }
     // }
 
-    for (squeeze, aim_query, hovered_by) in [
+    for (_, aim_query, hovered_by) in [
         (squeeze.left, aim_query_left.single(), HoveredBy::Left),
         (squeeze.right, aim_query_right.single(), HoveredBy::Right),
     ] {
@@ -654,6 +656,7 @@ pub fn show_aim(
                         Mesh3d(mesh),
                         MeshMaterial3d(material),
                         AimLineRayMarker,
+                        Visibility::Inherited,
                     ));
                 });
         }

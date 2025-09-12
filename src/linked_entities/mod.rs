@@ -1,7 +1,7 @@
 use bevy::{
     ecs::{
         relationship::RelatedSpawnerCommands,
-        system::{lifetimeless::Read, SystemParam},
+        system::{SystemParam, lifetimeless::Read},
     },
     prelude::*,
 };
@@ -205,6 +205,8 @@ impl<'w, 's> SpawnLinkedEntities<'w, 's> {
                 ))
                 .observe(enable_gizmo(enable_translation_control))
                 .observe(enable_gizmo3d(enable_translation_control));
+        } else {
+            error!("Missing transform, mesh or material when spawning linked entity");
         }
     }
 }

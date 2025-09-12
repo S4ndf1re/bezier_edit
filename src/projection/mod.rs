@@ -1,9 +1,9 @@
-use std::collections::{hash_set::Iter, HashSet};
+use std::collections::{HashSet, hash_set::Iter};
 
 use bevy::{
     asset::RenderAssetUsages,
     color::palettes::tailwind::{BLUE_500, RED_800},
-    ecs::system::{lifetimeless::Read, SystemParam},
+    ecs::system::{SystemParam, lifetimeless::Read},
     prelude::*,
     render::{
         camera::ScalingMode,
@@ -14,6 +14,7 @@ use bevy::{
 
 use crate::bezier_curve::bezier_curve_renderer::hover_3d;
 use crate::{
+    RootTransform,
     bezier_curve::{
         bezier_curve_renderer::{EndModeEvent, RedrawEvent},
         components::ControlState,
@@ -27,11 +28,13 @@ use crate::{
     translation_control::{
         enable_gizmo, enable_gizmo3d, translation_controller::EnableTranslationControl,
     },
-    RootTransform,
 };
 use crate::{
     picking3d::events::Pointer3d, translation_control::translation_controller::CantSnapToEntities,
 };
+
+#[derive(Event)]
+pub struct UpdateOrthoViews;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 /// Display an entity in either Normal camera (0), Orthogonal camera(1) or both the normal and the
@@ -51,6 +54,21 @@ impl From<DisplayIn> for RenderLayers {
             DisplayIn::Ortho => RenderLayers::layer(1),
         }
     }
+}
+
+#[derive(Event)]
+pub struct AddBoundingEntityEvent(pub Entity);
+
+pub fn handle_add_bounding_entity_event(
+    mut reader: EventReader<AddBoundingEntityEvent>,
+    mut manager: BoundingEntitiesManager,
+    mut update_writer: EventWriter<UpdateOrthoViews>,
+) {
+    for evt in reader.read() {
+        manager.add_bounding_entity(evt.0);
+    }
+
+    update_writer.write(UpdateOrthoViews);
 }
 
 #[derive(SystemParam)]
@@ -233,6 +251,7 @@ fn handle_enable_ortho_camera(
                         MeshMaterial3d(materials.add(StandardMaterial::from_color(BLUE_500))),
                         Picking3dInteractable::default(),
                         Name::new("Ortho Sufrace Parent"),
+                        Visibility::Inherited,
                     ))
                     .with_children(|cmd| {
                         cmd.spawn((
@@ -251,6 +270,7 @@ fn handle_enable_ortho_camera(
                             RenderLayers::from(DisplayIn::Normal),
                             Pickable::IGNORE,
                             Name::new("Ortho Sufrace Plane"),
+                            Visibility::Inherited,
                         ));
                     })
                     .observe(handle_disable_ortho_camera)
@@ -332,7 +352,7 @@ fn update_ortho_camera_positions(
 /// exact curve. Also, adjust the image render target to have the correct aspect ratio to not cause
 /// any weird stretching. Set the target size plane.
 fn update_ortho_camera_viewports(
-    mut reader: EventReader<RedrawEvent>,
+    mut reader: EventReader<UpdateOrthoViews>,
     mut cameras: Query<(&mut OrthoCamera, &mut Projection), Without<OrthoSurfacePlane>>,
     root: Query<&Transform, With<RootTransform>>,
     transforms: Query<&Transform, Without<RootTransform>>,
@@ -615,12 +635,21 @@ impl Plugin for ProjectionPlugin {
         app.add_systems(PostUpdate, (handle_enable_ortho_camera,));
 
         // This will run before the post update camera system update
-        app.add_systems(PreUpdate, update_ortho_camera_viewports);
+        app.add_systems(
+            PreUpdate,
+            update_ortho_camera_viewports.run_if(on_event::<UpdateOrthoViews>),
+        );
         app.add_systems(
             PostUpdate,
             update_ortho_camera_positions.before(handle_enable_ortho_camera),
         );
+        app.add_systems(
+            PostUpdate,
+            handle_add_bounding_entity_event.run_if(on_event::<AddBoundingEntityEvent>),
+        );
         app.add_event::<EnableOrthoCamera>();
+        app.add_event::<AddBoundingEntityEvent>();
+        app.add_event::<UpdateOrthoViews>();
         app.init_resource::<OrthoSurfaceRelevantEntities>();
     }
 }

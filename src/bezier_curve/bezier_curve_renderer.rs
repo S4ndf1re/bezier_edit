@@ -38,7 +38,9 @@ use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{ControlPoints2D, derive_2d, eval_2d_bezier_curves};
 use crate::picking3d::events::{HoveredBy, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
-use crate::projection::{BoundingEntitiesManager, DisplayIn};
+use crate::projection::{
+    AddBoundingEntityEvent, BoundingEntitiesManager, DisplayIn, UpdateOrthoViews,
+};
 use crate::translation_control::translation_controller::{
     CantSnapToEntities, EnableTranslationControl, MovedEntityEvent,
 };
@@ -49,7 +51,9 @@ use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::css::BLACK;
 use bevy::color::palettes::tailwind::*;
+use bevy::ecs::component::HookContext;
 use bevy::ecs::system::SystemParam;
+use bevy::ecs::world::{DeferredWorld, OnDespawn};
 use bevy::prelude::*;
 use bevy::render::mesh::PrimitiveTopology;
 use bevy::render::view::RenderLayers;
@@ -80,6 +84,7 @@ impl From<RedrawEvent> for RedrawLinesEvent {
 
 #[derive(Component)]
 #[require(Transform)]
+#[component(on_despawn = generic_on_despawn_trigger)]
 pub struct Surface;
 
 #[derive(Event)]
@@ -102,6 +107,7 @@ impl Default for Bridge {
 
 #[derive(Component)]
 #[relationship(relationship_target = CompleteBridgeCenters)]
+#[component(on_despawn = generic_on_despawn_trigger)]
 struct CompleteBridgeCenter {
     #[relationship]
     pub complete_bridge: Entity,
@@ -138,6 +144,11 @@ pub struct DeleteModeEvent;
 
 #[derive(Event)]
 pub struct EndModeEvent;
+
+pub fn generic_on_despawn_trigger(mut world: DeferredWorld, context: HookContext) {
+    let mut writer = world.resource_mut::<Events<EntityDeletedEvent>>();
+    writer.send(EntityDeletedEvent(context.entity));
+}
 
 pub fn hover_3d(
     trigger: Trigger<Pointer3d<crate::picking3d::events::MoveIn>>,
@@ -321,6 +332,19 @@ fn update_lines(
 //         + camera.up() * trigger.delta.y * -0.012;
 // }
 
+pub fn distribute_redraw_event(
+    mut redraw_event_reader: EventReader<RedrawEvent>,
+    mut redraw_boxes: EventWriter<RedrawBoxesEvent>,
+    mut redraw_iso_lines: EventWriter<RedrawLinesEvent>,
+    mut update_ortho_views: EventWriter<UpdateOrthoViews>,
+) {
+    for event in redraw_event_reader.read() {
+        redraw_boxes.write(RedrawBoxesEvent);
+        redraw_iso_lines.write(RedrawLinesEvent::from(*event));
+        update_ortho_views.write(UpdateOrthoViews);
+    }
+}
+
 #[allow(clippy::complexity)]
 fn generate_pointcloud(
     surface: Query<Entity, With<Surface>>,
@@ -332,8 +356,6 @@ fn generate_pointcloud(
     mut materials: ResMut<Assets<StandardMaterial>>,
     images: ResMut<Assets<Image>>,
     scale_info: Res<RenderInformation>,
-    mut redraw_boxes: EventWriter<RedrawBoxesEvent>,
-    mut redraw_iso_lines: EventWriter<RedrawLinesEvent>,
 ) {
     let mut resolution: Resolution = scale_info.fast_resolution;
     let mut event = RedrawEvent::Fast;
@@ -390,14 +412,12 @@ fn generate_pointcloud(
                     Mesh3d(meshes.add(mesh)),
                     MeshMaterial3d(materials.add(mat)),
                     RenderLayers::from(DisplayIn::Normal),
+                    Visibility::Inherited,
                     ChildOf(surface),
                 ))
                 .observe(bezier_surface_picking);
         }
     }
-
-    redraw_boxes.write(RedrawBoxesEvent);
-    redraw_iso_lines.write(RedrawLinesEvent::from(event));
 }
 
 #[allow(clippy::complexity)]
@@ -477,6 +497,7 @@ pub fn redraw_iso_lines(
                         Name::new("Iso Line"),
                         Pickable::IGNORE,
                         RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                        Visibility::Inherited,
                     ));
                 }
             });
@@ -563,8 +584,8 @@ pub struct SurfaceCreator<'w, 's> {
     meshes: ResMut<'w, Assets<Mesh>>,
     root: Query<'w, 's, Entity, With<RootTransform>>,
     surface: Query<'w, 's, Entity, With<Surface>>,
-    bounding_entites: BoundingEntitiesManager<'w, 's>,
     event_writer: EventWriter<'w, RedrawEvent>,
+    add_bounding_entities: EventWriter<'w, AddBoundingEntityEvent>,
 }
 
 impl<'w, 's> SurfaceCreator<'w, 's> {
@@ -577,9 +598,11 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
         let root = self.root.single().unwrap();
 
         if let Ok(surface) = self.surface.single() {
+            info!("Deleting old surface");
             self.commands.entity(surface).despawn();
         }
 
+        info!("Creating new surface");
         let surface = self
             .commands
             .spawn((Surface, ChildOf(root), Visibility::Inherited))
@@ -621,7 +644,7 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                 .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
                 .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
                 .id();
-            self.bounding_entites.add_bounding_entity(id);
+            self.add_bounding_entities.write(AddBoundingEntityEvent(id));
             ids.push(id);
         }
 
@@ -734,7 +757,7 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                         .observe(hover_3d)
                         .observe(moved_complete_bridge)
                         .id();
-                    self.bounding_entites.add_bounding_entity(id);
+                    self.add_bounding_entities.write(AddBoundingEntityEvent(id));
                 }
             }
 
@@ -804,7 +827,7 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                         .observe(hover_3d)
                         .observe(moved_complete_bridge)
                         .id();
-                    self.bounding_entites.add_bounding_entity(id);
+                    self.add_bounding_entities.write(AddBoundingEntityEvent(id));
                 }
             }
 
@@ -929,7 +952,7 @@ impl Plugin for BezierRenderPlugin {
         app.add_systems(
             Update,
             (
-                generate_pointcloud,
+                (generate_pointcloud, distribute_redraw_event).run_if(on_event::<RedrawEvent>),
                 update_lines,
                 update_surface_click,
                 redraw_boxes.after(generate_pointcloud),

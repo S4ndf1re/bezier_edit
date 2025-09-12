@@ -62,7 +62,6 @@ impl AccumulatedMovementStore {
     }
 
     pub fn reset(&mut self, entity: Entity, new_start: Vec3) {
-        info!("Resetting entity: {entity}");
         self.start_movement_entity(entity, new_start);
     }
 
