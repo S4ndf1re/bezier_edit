@@ -344,14 +344,14 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             SnappedPoint::ToProjection => {
                 // Once removed (Snapped point, consider adding it back when snapping to a
                 // projected position)
-                if let Some(closest_move_direction) =
-                    self.transform_set.p2().detect_closest_projected(
-                        control_parent.1.0,
-                        self.accumulated_movement
-                            .current_diff(&control_parent.1.0)
-                            .unwrap(),
-                        cant_snap_to_entities,
-                    )
+                if let Some(accumulated_diff) =
+                    self.accumulated_movement.current_diff(&control_parent.1.0)
+                    && let Some(closest_move_direction) =
+                        self.transform_set.p2().detect_closest_projected(
+                            control_parent.1.0,
+                            accumulated_diff,
+                            cant_snap_to_entities,
+                        )
                     && closest_move_direction.length() < 0.05 * self.info.scale
                 {
                     let mut p0 = self.transform_set.p0();
