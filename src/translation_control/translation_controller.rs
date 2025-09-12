@@ -631,7 +631,6 @@ fn drag_start3d(
     let mut start_transform = *all_transforms.get(control_parent.0).unwrap();
     start_transform.rotation = Quat::IDENTITY;
 
-    info!("Start drag of entity: {}", control_parent.0);
     accumulated_movement.start_movement_entity(control_parent.0, start_transform.translation);
 
     let scale = scale.scale;
@@ -964,7 +963,6 @@ pub fn drag_controller3d(
     let parent = child_of.parent();
 
     let control_parent = control_parents.get_mut(parent).unwrap();
-    info!("Dragging of entity: {}", control_parent.0);
 
     let diff = trigger.event.delta;
     let diff = root
