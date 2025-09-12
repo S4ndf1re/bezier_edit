@@ -1351,7 +1351,7 @@ fn update_texts(
 
         for child in children {
             let mut transform = transforms.get_mut(*child).unwrap();
-            transform.translation = -camera_forward * 1.0 + Vec3::Y;
+            transform.translation = -camera_forward * 0.3 * info.scale + Vec3::Y * info.scale;
             transform.look_to(camera_forward, Vec3::Y);
             if let Ok(mut text3d) = text3d.get_mut(*child) {
                 *text3d = Text3d::new(format!(
@@ -1376,16 +1376,20 @@ fn update_texts(
 ) {
     let root = root.single().unwrap();
     let root_transform = *transforms.get(root).unwrap();
-    let camera_transform = camera.single().unwrap();
+
+    let Ok(camera_transform) = camera.single() else {
+        return;
+    };
     let scale = info.scale;
 
     for (text_entity, &ChildOf(parent), children) in texts {
         let start_transform = *transforms.get(parent).unwrap();
+        let direction = start_transform.translation - camera_transform.translation();
 
         let camera_forward = root_transform
             .compute_affine()
             .inverse()
-            .transform_vector3(camera_transform.forward().normalize_or_zero());
+            .transform_vector3(direction.normalize_or_zero());
 
         {
             let mut transform = transforms.get_mut(text_entity).unwrap();
@@ -1394,7 +1398,7 @@ fn update_texts(
 
         for child in children {
             let mut transform = transforms.get_mut(*child).unwrap();
-            transform.translation = -camera_forward * 1.0 + Vec3::Y;
+            transform.translation = -camera_forward * 0.3 * info.scale + Vec3::Y * info.scale;
             transform.look_to(camera_forward, Vec3::Y);
             if let Ok(mut text3d) = text3d.get_mut(*child) {
                 *text3d = Text3d::new(format!(

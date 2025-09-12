@@ -236,9 +236,30 @@ fn draw_bridge_cylinder(
 #[allow(clippy::complexity)]
 fn update_lines(
     mut commands: Commands,
-    mut lines: Query<(&Bridge, Entity, &Children, &mut Transform), Without<BridgeMarker>>,
-    mut changeable: Query<(&mut Transform, &mut Mesh3d), (Without<Bridge>, With<BridgeMarker>)>,
-    transforms: Query<&Transform, (Without<BridgeMarker>, Without<Bridge>)>,
+    mut lines: Query<
+        (&Bridge, Entity, &Children, &mut Transform),
+        (Without<BridgeMarker>, Without<CompleteBridgeCenter>),
+    >,
+    mut changeable: Query<
+        (&mut Transform, &mut Mesh3d),
+        (
+            Without<Bridge>,
+            With<BridgeMarker>,
+            Without<CompleteBridgeCenter>,
+        ),
+    >,
+    mut bridge_centers: Query<
+        (&mut Transform, &CompleteBridgeCenter),
+        (Without<BridgeMarker>, Without<Bridge>),
+    >,
+    transforms: Query<
+        &Transform,
+        (
+            Without<BridgeMarker>,
+            Without<Bridge>,
+            Without<CompleteBridgeCenter>,
+        ),
+    >,
     mut meshes: ResMut<Assets<Mesh>>,
     info: Res<RenderInformation>,
 ) {
@@ -269,6 +290,22 @@ fn update_lines(
         }
 
         *transform = Transform::from_translation(origin).looking_at(target, Vec3::Y);
+    }
+
+    for (mut transform, center) in bridge_centers.iter_mut() {
+        if let Some(segment) = center.single_segment
+            && let Ok(line) = lines.get(segment)
+        {
+            let a = line.0.a;
+            let b = line.0.b;
+
+            let transform_a = transforms.get(a).unwrap().translation;
+            let transform_b = transforms.get(b).unwrap().translation;
+
+            let midpoint = transform_a * 0.5 + transform_b * 0.5;
+
+            transform.translation = midpoint;
+        }
     }
 }
 
