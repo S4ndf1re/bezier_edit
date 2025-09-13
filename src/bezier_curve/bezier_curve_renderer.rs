@@ -32,7 +32,6 @@ use super::util::{
     collect_control_points, compute_point_by_params, create_mesh_from_control_points,
     curvature_to_color,
 };
-use crate::RootTransform;
 use crate::bezier_curve::EntityDeletedEvent;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{ControlPoints2D, derive_2d, eval_2d_bezier_curves};
@@ -42,12 +41,14 @@ use crate::projection::{
     AddBoundingEntityEvent, BoundingEntitiesManager, DisplayIn, UpdateOrthoViews,
     handle_add_bounding_entity_event,
 };
+use crate::translation_control::obligatory_drag_params::ObligatoryDragParams;
 use crate::translation_control::translation_controller::{
     CantSnapToEntities, EnableTranslationControl, MovedEntityEvent,
 };
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
+use crate::{MainCamera, RootTransform};
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::css::BLACK;
@@ -320,19 +321,6 @@ fn update_lines(
         }
     }
 }
-
-// TODO: Reinstate this and fix up to use ObligatoryDragParams for dragging
-// fn drag_point(
-//     trigger: Trigger<Pointer<Drag>>,
-//     mut query: Query<&mut Transform, (With<RenderPoint>, Without<Camera3d>)>,
-//     camera: Single<&Transform, With<Camera3d>>,
-// ) {
-//     let mut point = query.get_mut(trigger.target()).unwrap();
-//
-//     point.translation = point.translation
-//         + camera.right() * trigger.delta.x * 0.012
-//         + camera.up() * trigger.delta.y * -0.012;
-// }
 
 pub fn distribute_redraw_event(
     mut redraw_event_reader: EventReader<RedrawEvent>,

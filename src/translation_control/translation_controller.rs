@@ -10,7 +10,9 @@ use crate::translation_control::control_storage::ControlStorage;
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
 use crate::{MainCamera, RootTransform};
-use bevy::color::palettes::tailwind::{BLUE_600, BLUE_800, GRAY_500, RED_600, RED_800};
+use bevy::color::palettes::tailwind::{
+    BLUE_600, BLUE_800, GRAY_400, GRAY_500, PURPLE_600, PURPLE_800, RED_600, RED_800,
+};
 use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::gizmos::start_gizmo_context;
 use bevy::math::bounding::BoundingSphere;
@@ -23,7 +25,7 @@ use std::f32::consts::FRAC_PI_2;
 use std::sync::Arc;
 
 use super::accumulated::AccumulatedMovementStore;
-use super::control_storage::ControlDirection;
+use super::control_storage::{ControlDirection, ControlPlane};
 use super::obligatory_drag_params::ObligatoryDragParams;
 
 #[derive(Component)]
@@ -74,6 +76,9 @@ pub struct SnappedArrow;
 
 #[derive(Component)]
 pub struct ControlParent(pub Entity);
+
+#[derive(Component)]
+pub struct ControlSphere;
 
 #[derive(Component)]
 pub struct Control(pub Vec3);
@@ -317,6 +322,31 @@ fn draw_ring(
     }
 }
 
+fn draw_sphere(
+    child_builder: &mut RelatedSpawnerCommands<ChildOf>,
+    mat: Handle<StandardMaterial>,
+    mat_hover: Handle<StandardMaterial>,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    scale: f32,
+) {
+    // NOTE: This should be slightly larger than the original
+    let sphere = meshes.add(Sphere::new(0.105 * scale));
+
+    child_builder
+        .spawn((
+            Transform::default(),
+            Visibility::Inherited,
+            Picking3dInteractable::Default,
+            Mesh3d(sphere),
+            MeshMaterial3d(mat.clone()),
+        ))
+        .observe(hover_3d)
+        .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
+        .observe(update_material_on::<Pointer<Out>>(mat.clone()))
+        .observe(update_material_on::<Pointer3d<MoveIn>>(mat_hover.clone()))
+        .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()));
+}
+
 #[allow(clippy::complexity)]
 fn show_transitional_controls(
     mut commands: Commands,
@@ -362,11 +392,33 @@ fn show_transitional_controls(
                     if *enabled_control == EnableTranslationControl::OnlyTranslation
                         || *enabled_control == EnableTranslationControl::WithRotation
                     {
+                        parent
+                            .spawn((
+                                Transform::default(),
+                                ControlSphere,
+                                Visibility::default(),
+                                Control(Vec3::ONE),
+                            ))
+                            .with_children(|parent| {
+                                draw_sphere(
+                                    parent,
+                                    materials.add(Color::from(GRAY_400)),
+                                    materials.add(Color::from(GRAY_500)),
+                                    &mut meshes,
+                                    scale,
+                                );
+                            })
+                            .observe(drag_sphere_controller)
+                            .observe(drag_sphere_controller3d)
+                            .observe(drag_start)
+                            .observe(drag_start3d)
+                            .observe(drag_end_trigger_redraw)
+                            .observe(drag_end3d_trigger_redraw);
+
                         for arrow in arrows.as_ref().iter_arrows() {
                             parent
                                 .spawn((
-                                    Transform::from_xyz(0.0, 0.0, 0.0)
-                                        .looking_to(arrow.normalized, Vec3::Y),
+                                    Transform::default().looking_to(arrow.normalized, Vec3::Y),
                                     Control(arrow.normalized),
                                     Visibility::default(),
                                 ))
@@ -446,7 +498,7 @@ fn show_transitional_controls(
                         && let Ok(plane_transform) = transforms.get(plane_entity)
                     {
                         let up_direction = ControlDirection::new(
-                            plane_transform.up().as_vec3(),
+                            plane_transform.up().as_vec3().normalize_or_zero(),
                             Color::from(BLUE_600),
                             Color::from(BLUE_800),
                             Color::from(GRAY_500),
@@ -454,11 +506,19 @@ fn show_transitional_controls(
                         );
 
                         let left_direction = ControlDirection::new(
-                            plane_transform.up().as_vec3(),
+                            plane_transform.left().as_vec3().normalize_or_zero(),
                             Color::from(RED_600),
                             Color::from(RED_800),
                             Color::from(GRAY_500),
                             false,
+                        );
+
+                        let plane = ControlPlane::new(
+                            plane_transform.up().as_vec3().normalize_or_zero()
+                                + plane_transform.left().as_vec3().normalize_or_zero(),
+                            plane_transform.forward().normalize_or_zero(),
+                            PURPLE_600.into(),
+                            PURPLE_800.into(),
                         );
 
                         for (arrow, direction) in [
@@ -493,6 +553,28 @@ fn show_transitional_controls(
                                 .observe(drag_end_trigger_redraw)
                                 .observe(drag_end3d_trigger_redraw);
                         }
+                        parent
+                            .spawn((
+                                Transform::from_translation((plane.axis / 3.0) * scale)
+                                    .looking_to(plane.normal, Vec3::Y),
+                                Control(plane.axis),
+                                Visibility::default(),
+                            ))
+                            .with_children(|parent| {
+                                draw_plane(
+                                    parent,
+                                    materials.add(plane.color),
+                                    materials.add(plane.hover_color),
+                                    &mut meshes,
+                                    scale,
+                                );
+                            })
+                            .observe(drag_plane)
+                            .observe(drag_plane3d)
+                            .observe(drag_start)
+                            .observe(drag_start3d)
+                            .observe(drag_end_trigger_redraw)
+                            .observe(drag_end3d_trigger_redraw);
                     }
                 });
         });
@@ -895,6 +977,78 @@ pub fn drag_plane3d(
     let translation = axis * diff;
 
     params.update_position_drag_universal((parent, control_parent), translation, control_entity);
+}
+
+#[allow(clippy::complexity)]
+pub fn drag_sphere_controller(
+    trigger: Trigger<Pointer<Drag>>,
+    control_query: Query<(Entity, &ControlSphere, &ChildOf)>,
+    camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
+    mut control_parents: Query<&ControlParent>,
+    root: Query<&GlobalTransform, With<RootTransform>>,
+    mut params: ParamSet<(ObligatoryDragParams, Query<&GlobalTransform>)>,
+) {
+    let (control_entity, _, child_of) = control_query.get(trigger.target()).unwrap();
+
+    let parent = child_of.parent();
+    let control_parent = control_parents.get_mut(parent).unwrap();
+
+    if let Ok((camera, camera_transform)) = camera.single() {
+        let diff = {
+            let dist = (params.p1().get(control_parent.0).unwrap().translation()
+                - camera_transform.translation())
+            .length();
+
+            let mouse_start = camera
+                .viewport_to_world(
+                    camera_transform,
+                    trigger.pointer_location.position - trigger.delta,
+                )
+                .unwrap();
+
+            let mouse_end = camera
+                .viewport_to_world(camera_transform, trigger.pointer_location.position)
+                .unwrap();
+
+            let start = mouse_start.get_point(dist);
+            let end = mouse_end.get_point(dist);
+            root.single()
+                .unwrap()
+                .affine()
+                .inverse()
+                .transform_vector3(end - start)
+        };
+
+        params
+            .p0()
+            .update_position_drag_universal((parent, control_parent), diff, control_entity);
+    }
+}
+
+#[allow(clippy::complexity)]
+pub fn drag_sphere_controller3d(
+    trigger: Trigger<Pointer3d<crate::picking3d::events::Drag>>,
+    control_query: Query<(Entity, &Control, &ChildOf)>,
+    mut control_parents: Query<&ControlParent>,
+    root: Query<&GlobalTransform, With<RootTransform>>,
+    mut params: ObligatoryDragParams,
+) {
+    // NOTE: Make sure that the draw event is triggered only once. Otherwise this difference adding happens multiple times for the same event........
+    let (control_entity, control, child_of) = control_query.get(trigger.target()).unwrap();
+
+    let parent = child_of.parent();
+
+    let control_parent = control_parents.get_mut(parent).unwrap();
+
+    let diff = trigger.event.delta;
+    let diff = root
+        .single()
+        .unwrap()
+        .affine()
+        .inverse()
+        .transform_vector3(diff);
+
+    params.update_position_drag_universal((parent, control_parent), diff, control_entity);
 }
 
 #[allow(clippy::complexity)]
