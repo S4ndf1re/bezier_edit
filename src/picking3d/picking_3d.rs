@@ -19,7 +19,7 @@ use super::picking_state::VectorState;
 const MIN_V: f32 = 0.05;
 
 /// PRISM Constant SC
-const SC: f32 = 0.18;
+const SC: f32 = 0.20;
 
 /// PRISM Constant maximum velocity
 const MAX_V: f32 = 0.25;
@@ -84,11 +84,11 @@ fn prism_function(
         let elapsed_time = elapsed_timer.elapsed().as_millis();
 
         let additional_movement = if elapsed_time < 500 {
-            -offset * 0.2
+            offset * 0.2
         } else if elapsed_time < 1000 {
-            -offset * 0.5
+            offset * 0.5
         } else {
-            -offset
+            offset
         };
 
         (diff_movement + additional_movement, Some(elapsed_timer))
@@ -293,7 +293,11 @@ fn test_all_hovered(
             let collisions = mesh_ray_casting.cast_ray(
                 ray,
                 &MeshRayCastSettings {
-                    filter: &|entity| pickable.get(entity).is_ok(),
+                    filter: &|entity| {
+                        pickable
+                            .get(entity)
+                            .is_ok_and(|p| *p.3 == Picking3dInteractable::Default)
+                    },
                     ..Default::default()
                 }
                 .with_visibility(RayCastVisibility::Any)
@@ -319,7 +323,11 @@ fn test_all_hovered(
             let collisions = mesh_ray_casting.cast_ray(
                 ray,
                 &MeshRayCastSettings {
-                    filter: &|entity| pickable.get(entity).is_ok(),
+                    filter: &|entity| {
+                        pickable
+                            .get(entity)
+                            .is_ok_and(|p| *p.3 == Picking3dInteractable::Default)
+                    },
                     ..Default::default()
                 }
                 .with_visibility(RayCastVisibility::Any)

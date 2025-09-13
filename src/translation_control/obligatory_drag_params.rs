@@ -432,6 +432,9 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         let changed_entity = control_parent.1.0;
         let control_point = self.transform_set.p0().get(control_parent.1.0).copied();
         if let Ok(t) = control_point {
+            if t.translation.is_nan() {
+                panic!("T is none");
+            }
             let started_translation = t.translation;
 
             let ending_translation = if self.state.curve_snapping == SnappingBehaviour::Snap {

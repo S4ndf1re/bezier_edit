@@ -1034,7 +1034,7 @@ pub fn drag_sphere_controller3d(
     mut params: ObligatoryDragParams,
 ) {
     // NOTE: Make sure that the draw event is triggered only once. Otherwise this difference adding happens multiple times for the same event........
-    let (control_entity, control, child_of) = control_query.get(trigger.target()).unwrap();
+    let (control_entity, _, child_of) = control_query.get(trigger.target()).unwrap();
 
     let parent = child_of.parent();
 
@@ -1088,11 +1088,11 @@ pub fn drag_controller(
                 .unwrap()
                 .affine()
                 .inverse()
-                .transform_point3(end - start)
+                .transform_vector3(end - start)
         };
 
         let axis = control.0;
-        let direction = (diff.dot(axis)) / (diff.length() * axis.length());
+        let direction = axis.dot(diff.normalize_or_zero());
         let translation = axis * direction * diff.length();
 
         params.p0().update_position_drag_universal(
@@ -1124,10 +1124,10 @@ pub fn drag_controller3d(
         .unwrap()
         .affine()
         .inverse()
-        .transform_point3(diff);
+        .transform_vector3(diff);
 
-    let axis = control.0;
-    let direction = (axis.dot(diff)) / (axis.length() * diff.length());
+    let axis = control.0.normalize_or_zero();
+    let direction = axis.dot(diff.normalize_or_zero());
     let translation = axis * diff.length() * direction;
 
     params.update_position_drag_universal((parent, control_parent), translation, control_entity);
@@ -1241,7 +1241,6 @@ pub fn snap_forward_to_plane(
     let sign = forward.cross(proj).dot(axis).signum();
     let delta = Quat::from_axis_angle(axis, sign * angle);
 
-    info!("Angle: {angle}, sign: {sign}, axis: {axis}");
     transform.rotation = delta * transform.rotation;
 }
 
