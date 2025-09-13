@@ -1,6 +1,6 @@
-mod accumulated;
+pub mod accumulated;
 pub mod control_storage;
-mod obligatory_drag_params;
+pub mod obligatory_drag_params;
 pub mod translation_controller;
 
 use bevy::prelude::*;

@@ -20,7 +20,9 @@ pub struct DragStart;
 pub struct Drag {
     pub start_entity_position: Vec3,
     pub current_entity_position: Vec3,
+    pub real_current_entity_position: Vec3,
     pub delta: Vec3,
+    pub real_delta: Vec3,
 }
 
 #[derive(Clone, Copy, Reflect, Debug)]
