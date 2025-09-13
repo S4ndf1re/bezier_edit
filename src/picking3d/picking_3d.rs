@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::bezier_curve::render_info::RenderInformation;
 use crate::picking3d::events::{
     Click, Drag, DragEnd, DragStart, HoveredBy, MoveIn, MoveOut, Pointer3d,
@@ -12,6 +14,15 @@ use bevy::math::bounding::{Aabb3d, BoundingSphere, IntersectsVolume};
 use bevy::prelude::*;
 
 use super::picking_state::VectorState;
+
+/// PRISM Constant minimal velocity
+const MIN_V: f32 = 0.05;
+
+/// PRISM Constant SC
+const SC: f32 = 0.18;
+
+/// PRISM Constant maximum velocity
+const MAX_V: f32 = 0.25;
 
 #[derive(Component)]
 pub struct AimLineMarker(HoveredBy);
@@ -35,6 +46,8 @@ struct MoveMarker {
     entity: Entity,
     global_start: Vec3,
     current_position: Vec3,
+    actual_position: Vec3,
+    timer: Option<Timer>,
 }
 
 #[derive(Component)]
@@ -42,6 +55,44 @@ pub enum CustomPicking3dHitbox {
     Sphere(f32),
     /// Aabb from half size
     AaBb(Vec3),
+}
+
+/// Function defined in the PRISM Paper
+/// Returns the diff movement the object will make
+fn prism_function(
+    diff_movement: Vec3,
+    offset: Vec3,
+    time: &Time,
+    time_since_max_v: Option<Timer>,
+) -> (Vec3, Option<Timer>) {
+    // TODO: this might not be m/s, feel if this seems right
+    let velocity = diff_movement.length() / time.delta_secs();
+
+    if velocity < MIN_V {
+        (Vec3::ZERO, None)
+    } else if (MIN_V..MAX_V).contains(&velocity) {
+        ((velocity / SC).min(1.0) * diff_movement, None)
+    } else {
+        let elapsed_timer = match time_since_max_v {
+            Some(mut timer) => {
+                timer.tick(time.delta());
+                timer
+            }
+            None => Timer::new(Duration::new(0, 0), TimerMode::Once),
+        };
+
+        let elapsed_time = elapsed_timer.elapsed().as_millis();
+
+        let additional_movement = if elapsed_time < 500 {
+            -offset * 0.2
+        } else if elapsed_time < 1000 {
+            -offset * 0.5
+        } else {
+            -offset
+        };
+
+        (diff_movement + additional_movement, Some(elapsed_timer))
+    }
 }
 
 #[allow(clippy::complexity)]
@@ -322,6 +373,7 @@ fn handle_input_grab(
     mut moved_marked_query: Query<(&GlobalTransform, &mut MoveMarker, Entity)>,
     mut click_writer: EventWriter<Pointer3d<Click>>,
     info: Res<RenderInformation>,
+    time: Res<Time>,
 ) {
     // TODO: Track controllers using prisma as additional mode
     for (state, hover_by) in [
@@ -421,6 +473,9 @@ fn handle_input_grab(
                         let dist = tracked.0.rotation().inverse().mul_vec3(dist);
                         let dist = dist / tracked.0.scale();
 
+                        // TODO: Figure out if Transform::default feels better here. This would
+                        // mean that it is not allowed to rotate the wrist. this will then not
+                        // change any translations.
                         commands.spawn((
                             ChildOf(tracked.1),
                             Transform::from_translation(dist),
@@ -429,6 +484,8 @@ fn handle_input_grab(
                                 entity: *entity,
                                 global_start: transform.translation(),
                                 current_position: tracked.0.transform_point(dist),
+                                actual_position: transform.translation(),
+                                timer: None,
                             },
                         ));
 
@@ -452,6 +509,13 @@ fn handle_input_grab(
                     if picking_state.contains_entity(&marker.entity, &hover_by) {
                         let entity_global_position = transform_query.get(marker.entity).unwrap();
 
+                        let (delta, new_timer) = prism_function(
+                            transform.translation() - marker.current_position,
+                            transform.translation() - marker.actual_position,
+                            &time,
+                            marker.timer.clone(),
+                        );
+
                         // Dispatch Drag event on entity. Use old state for positional calculation
                         commands.trigger_targets(
                             Pointer3d {
@@ -459,8 +523,9 @@ fn handle_input_grab(
                                 hit_entity: tracked.1,
                                 event: Drag {
                                     start_entity_position: marker.global_start,
-                                    current_entity_position: transform.translation(),
-                                    delta: transform.translation() - marker.current_position,
+                                    current_entity_position: marker.actual_position + delta,
+                                    delta,
+                                    real_delta: transform.translation() - marker.current_position,
                                 },
                                 position: entity_global_position.translation(),
                             },
@@ -469,6 +534,8 @@ fn handle_input_grab(
 
                         // Update marker to new state
                         marker.current_position = transform.translation();
+                        marker.actual_position += delta;
+                        marker.timer = new_timer;
                     }
                 }
             }
