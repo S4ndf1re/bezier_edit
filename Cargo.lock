@@ -938,7 +938,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b49135743b89c61fa3894558f84e1abf037855a892b75546034051e5c2ee2c9c"
 dependencies = [
  "bevy",
- "bevy_rich_text3d",
+ "bevy_rich_text3d 0.3.0",
  "colored",
  "radsort",
 ]
@@ -1240,6 +1240,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_rich_text3d"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ec2b838374d9bf50803985ecee2307f0226c9e42e82061a67da8410b772cce0"
+dependencies = [
+ "bevy",
+ "cosmic-text 0.14.2",
+ "rustc-hash 2.1.1",
+ "sys-locale",
+ "thiserror 2.0.12",
+ "zeno",
+]
+
+[[package]]
 name = "bevy_scene"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1526,6 +1540,7 @@ dependencies = [
  "bevy_lunex",
  "bevy_mod_openxr",
  "bevy_mod_xr",
+ "bevy_rich_text3d 0.4.2",
  "bevy_xr_utils",
  "chrono",
  "nalgebra",
@@ -2871,6 +2886,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -6134,4 +6151,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.100",
+]
+
+[[package]]
+name = "zune-core"
+version = "0.4.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f423a2c17029964870cfaabb1f13dfab7d092a62a29a89264f4d36990ca414a"
+
+[[package]]
+name = "zune-jpeg"
+version = "0.4.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f6fe2e33d02a98ee64423802e16df3de99c43e5cf5ff983767e1128b394c8ac"
+dependencies = [
+ "zune-core",
 ]

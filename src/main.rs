@@ -2,7 +2,6 @@
 
 mod advanced_orbit_controls;
 mod bezier_curve;
-pub mod click_decider;
 mod history;
 pub mod linked_entities;
 mod nurbs;
@@ -14,6 +13,7 @@ mod translation_control;
 mod ui;
 pub mod util;
 pub mod vr_control;
+pub mod vr_menu;
 
 use crate::advanced_orbit_controls::AdvancedOrbitControls;
 use crate::thirdparty_copy::transform_util_copy::{SnapToPosition, SnapToRotation};
@@ -25,6 +25,10 @@ use bezier_curve::bezier_curve_renderer::*;
 use history::plugin::HistoryPlugin;
 
 use crate::bezier_curve::render_info::RenderInformation;
+use crate::linked_entities::LinkedEntitiesPlugin;
+use crate::picking3d::picking_3d::ObjectPicking3d;
+use crate::projection::ProjectionPlugin;
+use crate::vr_menu::VrMenuPlugin;
 use bevy::render::view::RenderLayers;
 use projection::DisplayIn;
 use translation_control::translation_controller::TranslationController;
@@ -94,8 +98,10 @@ fn setup(
 fn create_app() -> App {
     use bevy::color::palettes::tailwind::{GRAY_700, GRAY_900};
     use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
+    use bevy_rich_text3d::Text3dPlugin;
     use linked_entities::LinkedEntitiesPlugin;
     use projection::ProjectionPlugin;
+    use vr_menu::VrMenuPlugin;
 
     info!("Creating Non-VR App");
     let mut app = App::new();
@@ -110,6 +116,7 @@ fn create_app() -> App {
         .add_plugins(WorldInspectorPlugin::new())
         .add_plugins(ProjectionPlugin)
         .add_plugins(LinkedEntitiesPlugin)
+        .add_plugins(VrMenuPlugin)
         .init_resource::<ControlStorage>()
         .insert_resource(ClearColor(GRAY_700.into()))
         .add_systems(Startup, setup.before(generate_default_curve));
@@ -124,10 +131,6 @@ fn create_app() -> App {
     use bevy_mod_openxr::add_xr_plugins;
     use bevy_mod_openxr::resources::OxrSessionConfig;
     use bevy_mod_openxr::types::EnvironmentBlendMode;
-    use click_decider::TracingPlugin;
-    use linked_entities::LinkedEntitiesPlugin;
-    use picking3d::picking_3d::ObjectPicking3d;
-    use projection::ProjectionPlugin;
 
     info!("Creating VR App");
     let mut app = App::new();
@@ -150,9 +153,9 @@ fn create_app() -> App {
     .add_plugins(TranslationController)
     .add_plugins(VrControlPlugin)
     .add_plugins(UiPlugin)
-    .add_plugins(TracingPlugin)
     .add_plugins(ProjectionPlugin)
     .add_plugins(LinkedEntitiesPlugin)
+    .add_plugins(VrMenuPlugin)
     .add_systems(Startup, (setup.before(generate_default_curve),))
     .init_resource::<ControlStorage>()
     .insert_resource(ClearColor(GRAY_700.into()));

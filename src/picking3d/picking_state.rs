@@ -92,12 +92,17 @@ impl PickingState {
                 .contains(controller)
     }
 
-    pub fn ensure_inserted(&mut self, entity: Entity, controller: HoveredBy, start_pos: Vec3) {
+    pub fn ensure_inserted(
+        &mut self,
+        entity: Entity,
+        controller: HoveredBy,
+        start_pos: Vec3,
+    ) -> bool {
         if self.check_is_dragging(&controller) {
-            return;
+            return false;
         }
         if self.check_pressed(&controller) {
-            return;
+            return false;
         }
 
         self.hovered_entities
@@ -115,6 +120,7 @@ impl PickingState {
         }
 
         self.start_position.insert(entity, start_pos);
+        true
     }
 
     pub fn remove_from_entity(&mut self, entity: &Entity, controller: &HoveredBy) -> bool {

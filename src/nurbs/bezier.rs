@@ -34,6 +34,8 @@ pub fn derive_after_de_casteljau(points: &[Vec<Point>], r: usize) -> Point {
     let n = points.len() - 1;
 
     let mut sum = Point::default();
+    // The rth derivative is not defined for surfaces with n < r, hence set r = min(n, r), so that n <= r
+    let r = r.min(n);
     for j in 0..=r {
         sum = sum + points[n - r][j] * (n_choose_k(r, j) as f64) * pow(-1.0, r - j);
     }
@@ -165,7 +167,7 @@ pub fn increase_degree<T: AsRef<[Point]>>(points: T) -> Vec<Point> {
 /// Farin 5.4 Gradreduzierung. Bidirectional
 pub fn decrease_degree<T: AsRef<[Point]>>(points: T) -> Vec<Point> {
     let points = points.as_ref();
-    if points.len() < 2 {
+    if points.len() <= 2 {
         return points.to_owned();
     }
 

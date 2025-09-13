@@ -1,0 +1,11 @@
+Model Information:
+* title:	Magnet
+* source:	https://sketchfab.com/3d-models/magnet-ede3a36d164649f5b053df5a8801609d
+* author:	HanSoloSnipe (https://sketchfab.com/HanSoloSnipe)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Magnet" (https://sketchfab.com/3d-models/magnet-ede3a36d164649f5b053df5a8801609d) by HanSoloSnipe (https://sketchfab.com/HanSoloSnipe) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

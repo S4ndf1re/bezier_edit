@@ -1,0 +1,11 @@
+Model Information:
+* title:	Windows Plane Screensaver Model
+* source:	https://sketchfab.com/3d-models/windows-plane-screensaver-model-90c719791aaa43b7925e4b60f3d2db9f
+* author:	Spooky Iluha (https://sketchfab.com/spookyiluha)
+
+Model License:
+* license type:	CC-BY-SA-4.0 (http://creativecommons.org/licenses/by-sa/4.0/)
+* requirements:	Author must be credited. Modified versions must have the same license. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Windows Plane Screensaver Model" (https://sketchfab.com/3d-models/windows-plane-screensaver-model-90c719791aaa43b7925e4b60f3d2db9f) by Spooky Iluha (https://sketchfab.com/spookyiluha) licensed under CC-BY-SA-4.0 (http://creativecommons.org/licenses/by-sa/4.0/)

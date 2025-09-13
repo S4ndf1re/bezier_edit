@@ -1,7 +1,6 @@
-use crate::bezier_curve::bezier_curve_renderer::RedrawEvent;
+use crate::bezier_curve::bezier_curve_renderer::{RedrawEvent, hover_3d};
 use crate::bezier_curve::helper_curves::{CurveCollection, RedrawCurvesEvent};
 use crate::bezier_curve::render_info::RenderInformation;
-use crate::click_decider::LogTrace;
 use crate::history::plugin::HistoryLogEvent;
 use crate::nurbs::bezier::{de_casteljau, derive_after_de_casteljau};
 use crate::nurbs::parametric::{Circle3D, MinDistanceToPoint, Parametric};
@@ -13,14 +12,22 @@ use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration}
 use crate::{MainCamera, RootTransform};
 use bevy::color::palettes::tailwind::{BLUE_600, BLUE_800, GRAY_500, RED_600, RED_800};
 use bevy::ecs::relationship::RelatedSpawnerCommands;
+use bevy::gizmos::start_gizmo_context;
 use bevy::math::bounding::BoundingSphere;
 use bevy::math::ops::atan2;
 use bevy::prelude::*;
+use bevy_lunex::prelude::{Text3d, Text3dStyling, TextAlign, TextAtlas, Weight};
+use bevy_xr_utils::tracking_utils::XrTrackedView;
 use std::collections::HashSet;
 use std::f32::consts::FRAC_PI_2;
+use std::sync::Arc;
 
+use super::accumulated::AccumulatedMovementStore;
 use super::control_storage::ControlDirection;
 use super::obligatory_drag_params::ObligatoryDragParams;
+
+#[derive(Component)]
+pub struct CoordinateTextMarker;
 
 #[derive(Event)]
 pub struct MovedEntityEvent {
@@ -85,9 +92,30 @@ pub enum SnappingBehaviour {
     Snap,
 }
 
+#[derive(Default, Clone, Copy)]
+pub enum StepMode {
+    #[default]
+    None,
+    MM10,
+    MM5,
+    MM1,
+}
+
+impl StepMode {
+    pub fn next(self) -> Self {
+        match self {
+            Self::None => Self::MM10,
+            Self::MM10 => Self::MM5,
+            Self::MM5 => Self::MM1,
+            Self::MM1 => Self::None,
+        }
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct TranslationControllerState {
     pub curve_snapping: SnappingBehaviour,
+    pub step_mode: StepMode,
 }
 
 #[derive(Event)]
@@ -111,6 +139,9 @@ pub enum CantSnapToEntities {
     Single(Entity),
     Multiple(HashSet<Entity>),
 }
+
+#[derive(Component)]
+pub struct TemporaryCurveSnappingBlocker;
 
 fn handle_toggle_snapping(
     mut reader: EventReader<ToggleSnappingBehaviour>,
@@ -171,12 +202,13 @@ pub fn draw_plane(
         MeshMaterial3d(mat.clone()),
         Mesh3d(plane.clone()),
         Picking3dInteractable::Default,
+        Visibility::Inherited,
     ));
     obj.observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()))
         .observe(update_material_on::<Pointer3d<MoveIn>>(mat_hover.clone()))
-        .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()));
-    // TODO: Add vibration once the other vibrations are fixed
+        .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()))
+        .observe(hover_3d);
 }
 
 pub fn draw_arrow(
@@ -196,32 +228,14 @@ pub fn draw_arrow(
         MeshMaterial3d(mat.clone()),
         Mesh3d(cuboid.clone()),
         Picking3dInteractable::Default,
+        Visibility::Inherited,
     ));
     obj.observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()))
         .observe(update_material_on::<Pointer3d<MoveIn>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()));
     if !is_shadow {
-        obj.observe(
-            |trigger: Trigger<Pointer3d<MoveIn>>,
-             picking3d_interactable: Query<&Picking3dInteractable>,
-             mut writer_left: EventWriter<VibrateLeftEvent>,
-             mut writer_right: EventWriter<VibrateRightEvent>| {
-                // FIXME: This must get fixed. Otherwise no vibration on hover occurs
-                if let Ok(Picking3dInteractable::Default) =
-                    picking3d_interactable.get(trigger.observer())
-                {
-                    match trigger.controler {
-                        HoveredBy::Left => {
-                            writer_left.write(VibrateLeftEvent::new(Vibration::default()));
-                        }
-                        HoveredBy::Right => {
-                            writer_right.write(VibrateRightEvent::new(Vibration::default()));
-                        }
-                    };
-                }
-            },
-        );
+        obj.observe(hover_3d);
     }
 
     child_builder
@@ -229,6 +243,7 @@ pub fn draw_arrow(
             Transform::from_xyz(0.0, 0.0, -0.4 * scale),
             MeshMaterial3d(mat.clone()),
             Mesh3d(line.clone()),
+            Visibility::Inherited,
         ))
         .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()));
@@ -240,6 +255,7 @@ pub fn draw_arrow(
             transform,
             MeshMaterial3d(mat.clone()),
             Mesh3d(arrow.clone()),
+            Visibility::Inherited,
         ))
         .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()));
@@ -270,7 +286,12 @@ fn draw_ring(
     transform.rotate(Quat::from_axis_angle(Vec3::X, angle));
 
     child_builder
-        .spawn((transform, Mesh3d(torus), MeshMaterial3d(mat.clone())))
+        .spawn((
+            transform,
+            Mesh3d(torus),
+            MeshMaterial3d(mat.clone()),
+            Visibility::Inherited,
+        ))
         .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()));
 
@@ -286,31 +307,13 @@ fn draw_ring(
                 MeshMaterial3d(mat.clone()),
                 CustomPicking3dHitbox::Sphere(0.035 * scale),
                 Picking3dInteractable::Default,
+                Visibility::Inherited,
             ))
             .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
             .observe(update_material_on::<Pointer<Out>>(mat.clone()))
             .observe(update_material_on::<Pointer3d<MoveIn>>(mat_hover.clone()))
             .observe(update_material_on::<Pointer3d<MoveOut>>(mat.clone()))
-            .observe(
-                |trigger: Trigger<Pointer3d<MoveIn>>,
-                 picking3d_interactable: Query<&Picking3dInteractable>,
-                 mut writer_left: EventWriter<VibrateLeftEvent>,
-                 mut writer_right: EventWriter<VibrateRightEvent>| {
-                    // FIXME: This must get fixed. Otherwise no vibration on hover occurs
-                    if let Ok(Picking3dInteractable::Default) =
-                        picking3d_interactable.get(trigger.observer())
-                    {
-                        match trigger.controler {
-                            HoveredBy::Left => {
-                                writer_left.write(VibrateLeftEvent::new(Vibration::default()));
-                            }
-                            HoveredBy::Right => {
-                                writer_right.write(VibrateRightEvent::new(Vibration::default()));
-                            }
-                        };
-                    }
-                },
-            );
+            .observe(hover_3d);
     }
 }
 
@@ -499,18 +502,20 @@ fn show_transitional_controls(
 #[allow(clippy::too_many_arguments)]
 fn drag_start(
     trigger: Trigger<Pointer<DragStart>>,
-    root: Query<Entity, With<RootTransform>>,
+    root: Query<(Entity, &Transform), With<RootTransform>>,
+    camera: Query<&GlobalTransform, With<MainCamera>>,
     mut commands: Commands,
     arrow_query: Query<(&ChildOf, Entity), With<Control>>,
     control_parents: Query<&ControlParent>,
-    all_transforms: Query<&Transform, Without<ControlParent>>,
+    all_transforms: Query<&Transform, (Without<ControlParent>, Without<RootTransform>)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     arrows: Res<ControlStorage>,
     scale: Res<RenderInformation>,
     mut history: EventWriter<HistoryLogEvent>,
+    mut accumulated_movement: ResMut<AccumulatedMovementStore>,
 ) {
-    let mut root = commands.get_entity(root.single().unwrap()).unwrap();
+    let (root, root_transform) = root.single().unwrap();
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
 
@@ -520,33 +525,79 @@ fn drag_start(
     let mut start_transform = *all_transforms.get(control_parent.0).unwrap();
     start_transform.rotation = Quat::IDENTITY;
 
+    accumulated_movement.start_movement_entity(control_parent.0, start_transform.translation);
+
     let scale = scale.scale;
 
-    root.with_children(|cmd| {
-        cmd.spawn((ShadowMarker, start_transform, Visibility::default()))
-            .with_children(|parent| {
-                for arrow in arrows.as_ref().iter_arrows() {
-                    parent
-                        .spawn((
-                            Transform::from_xyz(0.0, 0.0, 0.0)
-                                .looking_to(arrow.normalized, Vec3::Y),
-                            Control(arrow.normalized),
-                            Picking3dInteractable::default(),
-                            Visibility::default(),
-                        ))
-                        .with_children(|parent| {
-                            draw_arrow(
-                                parent,
-                                materials.add(arrow.shadow_color),
-                                materials.add(arrow.shadow_color),
-                                &mut meshes,
-                                scale,
-                                true,
-                            );
-                        });
-                }
-            });
-    });
+    commands
+        .spawn((
+            ShadowMarker,
+            start_transform,
+            Visibility::default(),
+            ChildOf(root),
+        ))
+        .with_children(|parent| {
+            for arrow in arrows.as_ref().iter_arrows() {
+                parent
+                    .spawn((
+                        Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.normalized, Vec3::Y),
+                        Control(arrow.normalized),
+                        Picking3dInteractable::default(),
+                        Visibility::default(),
+                    ))
+                    .with_children(|parent| {
+                        draw_arrow(
+                            parent,
+                            materials.add(arrow.shadow_color),
+                            materials.add(arrow.shadow_color),
+                            &mut meshes,
+                            scale,
+                            true,
+                        );
+                    });
+            }
+        });
+
+    let start_transform = *all_transforms.get(control_parent.0).unwrap();
+    let camera_transform = camera.single().unwrap();
+    let camera_forward = root_transform
+        .compute_affine()
+        .inverse()
+        .transform_vector3(camera_transform.forward().normalize_or_zero());
+
+    commands.spawn((
+        ChildOf(control_parent.0),
+        Transform::from_rotation(start_transform.rotation.inverse()),
+        CoordinateTextMarker,
+        Visibility::Inherited,
+        children![(
+            Transform::from_translation(-camera_forward * 1.0 * scale + Vec3::Y * scale)
+                .looking_to(camera_forward, Vec3::Y)
+                .with_scale(Vec3::ONE * 0.0025 * scale),
+            Text3d::new(format!(
+                "({:.3}, {:.3}, {:.3})",
+                start_transform.translation.x / scale,
+                start_transform.translation.y / scale,
+                start_transform.translation.z / scale
+            )),
+            Text3dStyling {
+                size: 64.0,
+                color: Srgba::new(0., 0., 0., 1.),
+                align: TextAlign::Center,
+                font: Arc::from("Rajdhani"),
+                weight: Weight::BOLD,
+                ..Default::default()
+            },
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
+                alpha_mode: AlphaMode::Blend,
+                unlit: true,
+                ..Default::default()
+            })),
+            Mesh3d::default(),
+            Visibility::Inherited,
+        )],
+    ));
 
     history.write(HistoryLogEvent::Begin(
         control_parent.0,
@@ -557,60 +608,106 @@ fn drag_start(
 #[allow(clippy::too_many_arguments)]
 fn drag_start3d(
     trigger: Trigger<Pointer3d<crate::picking3d::events::DragStart>>,
-    root: Query<Entity, With<RootTransform>>,
+    root: Query<(Entity, &Transform), With<RootTransform>>,
     mut commands: Commands,
+    camera: Query<&GlobalTransform, With<XrTrackedView>>,
     arrow_query: Query<(&ChildOf, Entity), With<Control>>,
     control_parents: Query<&ControlParent>,
-    all_transforms: Query<&Transform, Without<ControlParent>>,
+    all_transforms: Query<&Transform, (Without<ControlParent>, Without<RootTransform>)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     arrows: Res<ControlStorage>,
     scale: Res<RenderInformation>,
     mut history: EventWriter<HistoryLogEvent>,
-    mut trace_log_writer: EventWriter<LogTrace>,
+    mut accumulated_movement: ResMut<AccumulatedMovementStore>,
 ) {
-    let mut root = commands.get_entity(root.single().unwrap()).unwrap();
+    let (root, root_transform) = root.single().unwrap();
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
 
     let dragged_parent = dragged_childof.parent();
 
     let control_parent = control_parents.get(dragged_parent).unwrap();
-    let start_transform = all_transforms.get(control_parent.0).unwrap();
+    let mut start_transform = *all_transforms.get(control_parent.0).unwrap();
+    start_transform.rotation = Quat::IDENTITY;
+
+    accumulated_movement.start_movement_entity(control_parent.0, start_transform.translation);
 
     let scale = scale.scale;
 
-    root.with_children(|cmd| {
-        cmd.spawn((ShadowMarker, *start_transform, Visibility::default()))
-            .with_children(|parent| {
-                for arrow in arrows.as_ref().iter_arrows() {
-                    parent
-                        .spawn((
-                            Transform::from_xyz(0.0, 0.0, 0.0)
-                                .looking_to(arrow.normalized, Vec3::Y),
-                            Control(arrow.normalized),
-                            Visibility::default(),
-                        ))
-                        .with_children(|parent| {
-                            draw_arrow(
-                                parent,
-                                materials.add(arrow.shadow_color),
-                                materials.add(arrow.shadow_color),
-                                &mut meshes,
-                                scale,
-                                true,
-                            );
-                        });
-                }
-            });
-    });
+    commands
+        .spawn((
+            ShadowMarker,
+            start_transform,
+            Visibility::default(),
+            ChildOf(root),
+        ))
+        .with_children(|parent| {
+            for arrow in arrows.as_ref().iter_arrows() {
+                parent
+                    .spawn((
+                        Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.normalized, Vec3::Y),
+                        Control(arrow.normalized),
+                        Visibility::default(),
+                    ))
+                    .with_children(|parent| {
+                        draw_arrow(
+                            parent,
+                            materials.add(arrow.shadow_color),
+                            materials.add(arrow.shadow_color),
+                            &mut meshes,
+                            scale,
+                            true,
+                        );
+                    });
+            }
+        });
+
+    let start_transform = *all_transforms.get(control_parent.0).unwrap();
+    let camera_transform = camera.single().unwrap();
+    let camera_forward = root_transform
+        .compute_affine()
+        .inverse()
+        .transform_vector3(camera_transform.forward().normalize_or_zero());
+
+    commands.spawn((
+        ChildOf(control_parent.0),
+        Transform::from_rotation(start_transform.rotation.inverse()),
+        CoordinateTextMarker,
+        Visibility::Inherited,
+        children![(
+            Transform::from_translation(-camera_forward * 1.0 * scale + Vec3::Y * scale)
+                .looking_to(camera_forward, Vec3::Y)
+                .with_scale(Vec3::ONE * 0.0025 * scale),
+            Text3d::new(format!(
+                "({:.3}, {:.3}, {:.3})",
+                start_transform.translation.x,
+                start_transform.translation.y,
+                start_transform.translation.z
+            )),
+            Text3dStyling {
+                size: 64.0,
+                color: Srgba::new(0., 0., 0., 1.),
+                align: TextAlign::Center,
+                font: Arc::from("Rajdhani"),
+                weight: Weight::BOLD,
+                ..Default::default()
+            },
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
+                alpha_mode: AlphaMode::Blend,
+                unlit: true,
+                ..Default::default()
+            })),
+            Mesh3d::default(),
+            Visibility::Inherited,
+        )],
+    ));
 
     history.write(HistoryLogEvent::Begin(
         control_parent.0,
-        Some(*start_transform),
+        Some(start_transform),
     ));
-
-    trace_log_writer.write(LogTrace::default());
 }
 
 #[allow(clippy::complexity)]
@@ -623,6 +720,9 @@ fn drag_end_trigger_redraw(
     mut commands: Commands,
     query: Query<Entity, With<ShadowMarker>>,
     mut history: EventWriter<HistoryLogEvent>,
+    mut accumulated_movement: ResMut<AccumulatedMovementStore>,
+    children: Query<&Children>,
+    text_marker: Query<Entity, With<CoordinateTextMarker>>,
 ) {
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
@@ -630,12 +730,25 @@ fn drag_end_trigger_redraw(
     let dragged_parent = dragged_childof.parent();
     let control_parent = control_parents.get(dragged_parent).unwrap();
 
+    accumulated_movement.end_movement(&control_parent.0);
+
     redraw_writer.write(RedrawEvent::HighQuality);
     redraw_curves_writer.write(RedrawCurvesEvent);
 
     for entity in query {
         commands.get_entity(entity).unwrap().despawn();
     }
+
+    // Despawn text
+    for child in children.get(control_parent.0).unwrap() {
+        if let Ok(text_entity) = text_marker.get(*child) {
+            commands.entity(text_entity).despawn();
+        }
+    }
+
+    let _ = commands.get_entity(control_parent.0).map(|mut e| {
+        e.remove::<TemporaryCurveSnappingBlocker>();
+    });
 
     history.write(HistoryLogEvent::End(control_parent.0, None));
 }
@@ -650,13 +763,17 @@ fn drag_end3d_trigger_redraw(
     mut commands: Commands,
     query: Query<Entity, With<ShadowMarker>>,
     mut history: EventWriter<HistoryLogEvent>,
-    mut trace_log_writer: EventWriter<LogTrace>,
+    mut accumulated_movement: ResMut<AccumulatedMovementStore>,
+    children: Query<&Children>,
+    text_marker: Query<Entity, With<CoordinateTextMarker>>,
 ) {
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
 
     let dragged_parent = dragged_childof.parent();
     let control_parent = control_parents.get(dragged_parent).unwrap();
+
+    accumulated_movement.end_movement(&control_parent.0);
 
     redraw_writer.write(RedrawEvent::HighQuality);
     redraw_curves_writer.write(RedrawCurvesEvent);
@@ -665,9 +782,18 @@ fn drag_end3d_trigger_redraw(
         commands.get_entity(entity).unwrap().despawn();
     }
 
-    history.write(HistoryLogEvent::End(control_parent.0, None));
+    // Despawn text
+    for child in children.get(control_parent.0).unwrap() {
+        if let Ok(text_entity) = text_marker.get(*child) {
+            commands.entity(text_entity).despawn();
+        }
+    }
 
-    trace_log_writer.write(LogTrace::default());
+    let _ = commands.get_entity(control_parent.0).map(|mut e| {
+        e.remove::<TemporaryCurveSnappingBlocker>();
+    });
+
+    history.write(HistoryLogEvent::End(control_parent.0, None));
 }
 
 pub fn handle_translate_by_delta_event(
@@ -680,7 +806,11 @@ pub fn handle_translate_by_delta_event(
         if let Ok(children) = children.get(evt.entity) {
             for child in children {
                 if let Ok(control_parent) = control_parents.get(*child) {
-                    obligatory.update_position_drag_universal(control_parent, evt.delta);
+                    obligatory.update_position_drag_universal(
+                        control_parent,
+                        evt.delta,
+                        Entity::PLACEHOLDER,
+                    );
                 }
             }
         }
@@ -690,13 +820,13 @@ pub fn handle_translate_by_delta_event(
 #[allow(clippy::complexity)]
 pub fn drag_plane(
     trigger: Trigger<Pointer<Drag>>,
-    control_query: Query<(&Control, &ChildOf)>,
+    control_query: Query<(Entity, &Control, &ChildOf)>,
     camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
     mut params: ParamSet<(ObligatoryDragParams, Query<&GlobalTransform>)>,
 ) {
-    let (control, child_of) = control_query.get(trigger.target()).unwrap();
+    let (control_entity, control, child_of) = control_query.get(trigger.target()).unwrap();
 
     let parent = child_of.parent();
     let control_parent = control_parents.get_mut(parent).unwrap();
@@ -730,22 +860,24 @@ pub fn drag_plane(
         let axis = control.0;
         let translation = diff * axis;
 
-        params
-            .p0()
-            .update_position_drag_universal((parent, control_parent), translation);
+        params.p0().update_position_drag_universal(
+            (parent, control_parent),
+            translation,
+            control_entity,
+        );
     }
 }
 
 #[allow(clippy::complexity)]
 pub fn drag_plane3d(
     trigger: Trigger<Pointer3d<crate::picking3d::events::Drag>>,
-    control_query: Query<(&Control, &ChildOf)>,
+    control_query: Query<(Entity, &Control, &ChildOf)>,
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
     mut params: ObligatoryDragParams,
 ) {
     // NOTE: Make sure that the draw event is triggered only once. Otherwise this difference adding happens multiple times for the same event........
-    let (control, child_of) = control_query.get(trigger.target()).unwrap();
+    let (control_entity, control, child_of) = control_query.get(trigger.target()).unwrap();
 
     let parent = child_of.parent();
 
@@ -762,19 +894,19 @@ pub fn drag_plane3d(
     let axis = control.0;
     let translation = axis * diff;
 
-    params.update_position_drag_universal((parent, control_parent), translation);
+    params.update_position_drag_universal((parent, control_parent), translation, control_entity);
 }
 
 #[allow(clippy::complexity)]
 pub fn drag_controller(
     trigger: Trigger<Pointer<Drag>>,
-    control_query: Query<(&Control, &ChildOf)>,
+    control_query: Query<(Entity, &Control, &ChildOf)>,
     camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
     mut params: ParamSet<(ObligatoryDragParams, Query<&GlobalTransform>)>,
 ) {
-    let (control, child_of) = control_query.get(trigger.target()).unwrap();
+    let (control_entity, control, child_of) = control_query.get(trigger.target()).unwrap();
 
     let parent = child_of.parent();
     let control_parent = control_parents.get_mut(parent).unwrap();
@@ -809,22 +941,24 @@ pub fn drag_controller(
         let direction = (diff.dot(axis)) / (diff.length() * axis.length());
         let translation = axis * direction * diff.length();
 
-        params
-            .p0()
-            .update_position_drag_universal((parent, control_parent), translation);
+        params.p0().update_position_drag_universal(
+            (parent, control_parent),
+            translation,
+            control_entity,
+        );
     }
 }
 
 #[allow(clippy::complexity)]
 pub fn drag_controller3d(
     trigger: Trigger<Pointer3d<crate::picking3d::events::Drag>>,
-    control_query: Query<(&Control, &ChildOf)>,
+    control_query: Query<(Entity, &Control, &ChildOf)>,
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
     mut params: ObligatoryDragParams,
 ) {
     // NOTE: Make sure that the draw event is triggered only once. Otherwise this difference adding happens multiple times for the same event........
-    let (control, child_of) = control_query.get(trigger.target()).unwrap();
+    let (control_entity, control, child_of) = control_query.get(trigger.target()).unwrap();
 
     let parent = child_of.parent();
 
@@ -842,7 +976,7 @@ pub fn drag_controller3d(
     let direction = (axis.dot(diff)) / (axis.length() * diff.length());
     let translation = axis * diff.length() * direction;
 
-    params.update_position_drag_universal((parent, control_parent), translation);
+    params.update_position_drag_universal((parent, control_parent), translation, control_entity);
 }
 
 #[allow(clippy::complexity)]
@@ -975,7 +1109,6 @@ fn rotate_controller(
             control_rotation.last_vector = diff;
 
             let angle = atan2(last_diff.cross(diff).length(), last_diff.dot(diff));
-            info!(angle);
             let sign = (last_diff.cross(diff).dot(control_rotation.normal)).signum();
 
             let mut parent_transform_mut = changable_transforms.get_mut(control_parent.0).unwrap();
@@ -1078,6 +1211,7 @@ fn rotate_controller3d(
         };
 
         if state.curve_snapping == SnappingBehaviour::Snap {
+            // TODO: consider using euler angles for snapping
             for axis in control_storage.iter_arrows() {
                 if axis.with_rotation {
                     let cos_score = forward.normalize_or_zero().dot(axis.normalized);
@@ -1214,6 +1348,96 @@ fn update_plane_directions(
     }
 }
 
+#[cfg(not(feature = "vr_enable"))]
+fn update_texts(
+    mut transforms: Query<&mut Transform>,
+    root: Query<Entity, With<RootTransform>>,
+    texts: Query<(Entity, &ChildOf, &Children), With<CoordinateTextMarker>>,
+    mut text3d: Query<&mut Text3d>,
+    camera: Query<&GlobalTransform, With<MainCamera>>,
+    info: Res<RenderInformation>,
+) {
+    let root = root.single().unwrap();
+    let root_transform = *transforms.get(root).unwrap();
+    let camera_transform = camera.single().unwrap();
+    let scale = info.scale;
+
+    for (text_entity, &ChildOf(parent), children) in texts {
+        let start_transform = *transforms.get(parent).unwrap();
+
+        let camera_forward = root_transform
+            .compute_affine()
+            .inverse()
+            .transform_vector3(camera_transform.forward().normalize_or_zero());
+
+        {
+            let mut transform = transforms.get_mut(text_entity).unwrap();
+            transform.rotation = start_transform.rotation.inverse();
+        }
+
+        for child in children {
+            let mut transform = transforms.get_mut(*child).unwrap();
+            transform.translation = -camera_forward * 0.3 * info.scale + Vec3::Y * info.scale;
+            transform.look_to(camera_forward, Vec3::Y);
+            if let Ok(mut text3d) = text3d.get_mut(*child) {
+                *text3d = Text3d::new(format!(
+                    "({:.3}, {:.3}, {:.3})",
+                    start_transform.translation.x / scale,
+                    start_transform.translation.y / scale,
+                    start_transform.translation.z / scale
+                ));
+            }
+        }
+    }
+}
+
+#[cfg(feature = "vr_enable")]
+fn update_texts(
+    mut transforms: Query<&mut Transform>,
+    root: Query<Entity, With<RootTransform>>,
+    texts: Query<(Entity, &ChildOf, &Children), With<CoordinateTextMarker>>,
+    mut text3d: Query<&mut Text3d>,
+    camera: Query<&GlobalTransform, With<XrTrackedView>>,
+    info: Res<RenderInformation>,
+) {
+    let root = root.single().unwrap();
+    let root_transform = *transforms.get(root).unwrap();
+
+    let Ok(camera_transform) = camera.single() else {
+        return;
+    };
+    let scale = info.scale;
+
+    for (text_entity, &ChildOf(parent), children) in texts {
+        let start_transform = *transforms.get(parent).unwrap();
+        let direction = start_transform.translation - camera_transform.translation();
+
+        let camera_forward = root_transform
+            .compute_affine()
+            .inverse()
+            .transform_vector3(direction.normalize_or_zero());
+
+        {
+            let mut transform = transforms.get_mut(text_entity).unwrap();
+            transform.rotation = start_transform.rotation.inverse();
+        }
+
+        for child in children {
+            let mut transform = transforms.get_mut(*child).unwrap();
+            transform.translation = -camera_forward * 0.3 * info.scale + Vec3::Y * info.scale;
+            transform.look_to(camera_forward, Vec3::Y);
+            if let Ok(mut text3d) = text3d.get_mut(*child) {
+                *text3d = Text3d::new(format!(
+                    "({:.3}, {:.3}, {:.3})",
+                    start_transform.translation.x / scale,
+                    start_transform.translation.y / scale,
+                    start_transform.translation.z / scale
+                ));
+            }
+        }
+    }
+}
+
 pub struct TranslationController;
 
 impl Plugin for TranslationController {
@@ -1227,11 +1451,13 @@ impl Plugin for TranslationController {
                 update_snapped_points,
                 update_plane_directions,
                 handle_translate_by_delta_event,
+                update_texts,
             ),
         );
         app.init_resource::<ControlStorage>();
 
         app.init_resource::<TranslationControllerState>();
+        app.init_resource::<AccumulatedMovementStore>();
         app.add_event::<ToggleSnappingBehaviour>();
         app.add_event::<MovedEntityEvent>();
         app.add_event::<MoveEntityByDeltaEvent>();

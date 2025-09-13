@@ -3,7 +3,7 @@ pub mod slider;
 
 use crate::{
     MainCamera,
-    bezier_curve::bezier_curve_renderer::{CreateOrthoCameraEvent, DeleteModeEvent},
+    bezier_curve::render_info::{ChangeCoordinateMode, CoordinateMode, UpdateIsoDimEvent},
 };
 use bevy::{
     color::palettes::tailwind::GRAY_900, ecs::relationship::RelatedSpawnerCommands, prelude::*,
@@ -17,11 +17,7 @@ use struct_patch::Patch;
 
 use crate::{
     bezier_curve::{
-        bezier_curve_renderer::{CreateCurveEvent, EndModeEvent},
-        curvature_display_mode::{ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode},
-        render_info::{
-            ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UpdateBoxDimEvent,
-        },
+        render_info::{RenderInformation, UpdateBoxDimEvent},
         surface_click::SurfaceClickChangeset,
     },
     history::plugin::HistoryUndoEvent,
@@ -34,15 +30,36 @@ struct USlider;
 #[derive(Component)]
 struct VSlider;
 
-#[derive(Resource, Default, Patch)]
+#[derive(Resource, Patch)]
 #[patch(name = "UiStateChangeset", attribute(derive(Event, Clone, Default)))]
 pub struct UiState {
     u: f64,
     v: f64,
-    curvature_mode: CurvatureDisplayMode,
     u_box_count: u32,
     v_box_count: u32,
-    surface_mesh_mode: SurfaceMeshMode,
+    u_iso_count: u32,
+    v_iso_count: u32,
+    box_width: f32,
+    box_height: f32,
+    box_depth: f32,
+    coordinate_mode: CoordinateMode,
+}
+
+impl Default for UiState {
+    fn default() -> Self {
+        Self {
+            u: 0.5,
+            v: 0.5,
+            u_box_count: 0,
+            v_box_count: 0,
+            u_iso_count: 0,
+            v_iso_count: 0,
+            box_width: 0.25,
+            box_height: 0.1,
+            box_depth: 0.25,
+            coordinate_mode: CoordinateMode::default(),
+        }
+    }
 }
 
 fn spawn_background<'a>(
@@ -67,33 +84,7 @@ fn spawn_background<'a>(
     ))
 }
 
-fn spawn_lock_buttons(ui: &mut RelatedSpawnerCommands<'_, ChildOf>) {
-    ui.spawn((
-        Name::new("Button Background Lock"),
-        UiLayout::window()
-            .pos(Rl((25.0, 50.0)))
-            .size((Rw(40.0), Rh(90.0)))
-            .anchor(Anchor::Center)
-            .pack(),
-    ))
-    .with_children(|ui| {
-        ui.spawn(UiButton::new("Lock".to_owned(), 6, Rl(100.0)));
-    });
-
-    ui.spawn((
-        Name::new("Button Background Unlock"),
-        UiLayout::window()
-            .pos(Rl((75.0, 50.0)))
-            .size((Rw(40.0), Rh(90.0)))
-            .anchor(Anchor::Center)
-            .pack(),
-    ))
-    .with_children(|ui| {
-        ui.spawn(UiButton::new("Unlock".to_owned(), 6, Rl(100.0)));
-    });
-}
-
-fn spawn_uv_control(ui: &mut RelatedSpawnerCommands<'_, ChildOf>) {
+fn spawn_uv_control(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: &Res<UiState>) {
     ui.spawn((
         Name::new("U-Value"),
         UiLayout::window()
@@ -104,7 +95,7 @@ fn spawn_uv_control(ui: &mut RelatedSpawnerCommands<'_, ChildOf>) {
     ))
     .with_children(|ui| {
         let mut slider = UiSlider::new("U".to_owned(), 0.0, 1.0, Rl((40.0, 100.0)));
-        slider.set(0.5);
+        slider.set(ui_state.u as f32);
         slider.set_to_string_fn(|value| format!("{value:.3}"));
         ui.spawn((slider, USlider)).observe(
             |trigger: Trigger<SliderValueChangedEvent>,
@@ -129,7 +120,7 @@ fn spawn_uv_control(ui: &mut RelatedSpawnerCommands<'_, ChildOf>) {
     ))
     .with_children(|ui| {
         let mut slider = UiSlider::new("V".to_owned(), 0.0, 1.0, Rl((40.0, 100.0)));
-        slider.set(0.5);
+        slider.set(ui_state.v as f32);
         slider.set_to_string_fn(|value| format!("{value:.3}"));
         ui.spawn((slider, VSlider)).observe(
             |trigger: Trigger<SliderValueChangedEvent>,
@@ -145,32 +136,22 @@ fn spawn_uv_control(ui: &mut RelatedSpawnerCommands<'_, ChildOf>) {
     });
 }
 
-fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: ResMut<UiState>) {
-    ui.spawn((
-        Name::new("Layout First"),
-        UiLayout::window()
-            .pos(Rl(0.0))
-            .size((Rw(100.0), Rh(10.0)))
-            .anchor(Anchor::TopLeft)
-            .pack(),
-    ));
-    // .with_children(spawn_lock_buttons);
-
+fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<UiState>) {
     ui.spawn((
         Name::new("Layout Second"),
         UiLayout::window()
-            .pos(Rl((0.0, 10.0)))
-            .size((Rw(100.0), Rh(30.0)))
+            .pos(Rl((0.0, 0.0)))
+            .size((Rw(100.0), Rh(20.0)))
             .anchor(Anchor::TopLeft)
             .pack(),
     ))
-    .with_children(spawn_uv_control);
+    .with_children(|ui| spawn_uv_control(ui, &ui_state));
 
     ui.spawn((
         Name::new("Layout Third"),
         UiLayout::window()
-            .pos(Rl((0.0, 40.0)))
-            .size((Rw(100.0), Rh(15.0)))
+            .pos(Rl((0.0, 20.0)))
+            .size((Rw(100.0), Rh(10.0)))
             .anchor(Anchor::TopLeft)
             .pack(),
     ))
@@ -178,51 +159,35 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: ResMut
         ui.spawn(
             UiLayout::window()
                 .size(Rl((40.0, 100.0)))
-                .pos(Rl((5.0, 0.0)))
+                .pos(Rl((0.0, 0.0)))
                 .anchor(Anchor::TopLeft)
                 .pack(),
         )
         .with_children(|ui| {
             ui.spawn(UiButton::new(
-                format!("{}", &ui_state.curvature_mode),
-                4,
+                ui_state.coordinate_mode.to_string(),
+                3,
                 Rl(100.0),
             ))
             .observe(
                 |trigger: Trigger<ButtonClickedEvent>,
                  mut commands: Commands,
                  mut state: ResMut<UiState>,
-                 mut writer: EventWriter<ChangeCurvatureDisplayModeEvent>| {
-                    state.curvature_mode = state.curvature_mode.next();
-                    if let Ok(mut entity) = commands.get_entity(trigger.target()) {
-                        entity.trigger(ChangeTextEvent::new(format!("{}", state.curvature_mode)));
-                    }
-                    writer.write(ChangeCurvatureDisplayModeEvent(state.curvature_mode));
+                 mut writer: EventWriter<ChangeCoordinateMode>| {
+                    state.coordinate_mode = state.coordinate_mode.next();
+                    writer.write(ChangeCoordinateMode(state.coordinate_mode));
+                    commands
+                        .entity(trigger.target())
+                        .trigger(ChangeTextEvent::new(state.coordinate_mode.to_string()));
                 },
             );
-        });
-
-        ui.spawn(
-            UiLayout::window()
-                .size(Rl((40.0, 100.0)))
-                .pos(Rl((55.0, 0.0)))
-                .anchor(Anchor::TopLeft)
-                .pack(),
-        )
-        .with_children(|ui| {
-            ui.spawn(UiButton::new("Undo".to_owned(), 4, Rl(100.0)))
-                .observe(
-                    |_: Trigger<ButtonClickedEvent>, mut writer: EventWriter<HistoryUndoEvent>| {
-                        writer.write(HistoryUndoEvent);
-                    },
-                );
         });
     });
 
     ui.spawn((
-        Name::new("Layout Fourth"),
+        Name::new("Layout Iso Lines"),
         UiLayout::window()
-            .pos(Rl((0.0, 55.0)))
+            .pos(Rl((0.0, 30.0)))
             .size((Rw(100.0), Rh(20.0)))
             .anchor(Anchor::TopLeft)
             .pack(),
@@ -236,8 +201,66 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: ResMut
                 .pack(),
         )
         .with_children(|ui| {
+            let mut slider = UiSlider::new("U #Iso:".to_owned(), 0.0, 100.0, Rl((100.0, 100.0)));
+            slider.set(ui_state.u_iso_count as f32);
+            slider.set_to_string_fn(|value| format!("{}", value as u32));
+            ui.spawn(slider).observe(
+                |trigger: Trigger<SliderValueChangedEvent>,
+                 mut state: ResMut<UiState>,
+                 mut update_info: EventWriter<UpdateIsoDimEvent>| {
+                    state.u_iso_count = trigger.value as u32;
+                    update_info.write(UpdateIsoDimEvent {
+                        u_iso_count: Some(state.u_iso_count),
+                        ..Default::default()
+                    });
+                },
+            );
+        });
+
+        ui.spawn(
+            UiLayout::window()
+                .size(Rl((90.0, 40.0)))
+                .pos(Rl((5.0, 50.0)))
+                .anchor(Anchor::TopLeft)
+                .pack(),
+        )
+        .with_children(|ui| {
+            let mut slider = UiSlider::new("V #Iso:".to_owned(), 0.0, 100.0, Rl((100.0, 100.0)));
+            slider.set_to_string_fn(|value| format!("{}", value as u32));
+            slider.set(ui_state.v_iso_count as f32);
+            ui.spawn(slider).observe(
+                |trigger: Trigger<SliderValueChangedEvent>,
+                 mut state: ResMut<UiState>,
+                 mut update_info: EventWriter<UpdateIsoDimEvent>| {
+                    state.v_iso_count = trigger.value as u32;
+                    update_info.write(UpdateIsoDimEvent {
+                        v_iso_count: Some(state.v_iso_count),
+                        ..Default::default()
+                    });
+                },
+            );
+        });
+    });
+
+    ui.spawn((
+        Name::new("Layout Boxes"),
+        UiLayout::window()
+            .pos(Rl((0.0, 50.0)))
+            .size((Rw(100.0), Rh(50.0)))
+            .anchor(Anchor::TopLeft)
+            .pack(),
+    ))
+    .with_children(|ui| {
+        ui.spawn(
+            UiLayout::window()
+                .size(Rl((90.0, 20.0)))
+                .pos(Rl((5.0, 0.0)))
+                .anchor(Anchor::TopLeft)
+                .pack(),
+        )
+        .with_children(|ui| {
             let mut slider = UiSlider::new("U #Box:".to_owned(), 0.0, 100.0, Rl((100.0, 100.0)));
-            slider.set(0.0);
+            slider.set(ui_state.u_box_count as f32);
             slider.set_to_string_fn(|value| format!("{}", value as u32));
             ui.spawn(slider).observe(
                 |trigger: Trigger<SliderValueChangedEvent>,
@@ -254,15 +277,15 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: ResMut
 
         ui.spawn(
             UiLayout::window()
-                .size(Rl((90.0, 40.0)))
-                .pos(Rl((5.0, 50.0)))
+                .size(Rl((90.0, 20.0)))
+                .pos(Rl((5.0, 20.0)))
                 .anchor(Anchor::TopLeft)
                 .pack(),
         )
         .with_children(|ui| {
             let mut slider = UiSlider::new("V #Box:".to_owned(), 0.0, 100.0, Rl((100.0, 100.0)));
             slider.set_to_string_fn(|value| format!("{}", value as u32));
-            slider.set(0.0);
+            slider.set(ui_state.v_box_count as f32);
             ui.spawn(slider).observe(
                 |trigger: Trigger<SliderValueChangedEvent>,
                  mut state: ResMut<UiState>,
@@ -275,128 +298,84 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: ResMut
                 },
             );
         });
-    });
 
-    ui.spawn((
-        Name::new("Layout Fifth"),
-        UiLayout::window()
-            .pos(Rl((5.0, 70.0)))
-            .size((Rw(90.0), Rh(10.0)))
-            .anchor(Anchor::TopLeft)
-            .pack(),
-    ))
-    .with_children(|ui| {
-        ui.spawn(UiButton::new(
-            format!("MeshMode: {}", ui_state.surface_mesh_mode),
-            14,
-            Rl(100.0),
-        ))
-        .observe(
-            |trigger: Trigger<ButtonClickedEvent>,
-             mut commands: Commands,
-             mut state: ResMut<UiState>,
-             mut writer: EventWriter<ChangeSurfaceMeshMode>| {
-                state.surface_mesh_mode = state.surface_mesh_mode.next();
-                writer.write(ChangeSurfaceMeshMode(state.surface_mesh_mode));
-                if let Ok(mut entity) = commands.get_entity(trigger.target()) {
-                    entity.trigger(ChangeTextEvent::new(format!(
-                        "MeshMode: {}",
-                        state.surface_mesh_mode
-                    )));
-                }
-            },
-        );
-    });
-
-    ui.spawn((
-        Name::new("Layout Sixt"),
-        UiLayout::window()
-            .pos(Rl((5.0, 80.0)))
-            .size((Rw(90.0), Rh(10.0)))
-            .anchor(Anchor::TopLeft)
-            .pack(),
-    ))
-    .with_children(|ui| {
         ui.spawn(
             UiLayout::window()
-                .pos(Rl((0.0, 0.0)))
-                .size(Rl((45.0, 100.0)))
+                .size(Rl((90.0, 20.0)))
+                .pos(Rl((5.0, 40.0)))
                 .anchor(Anchor::TopLeft)
                 .pack(),
         )
         .with_children(|ui| {
-            ui.spawn(UiButton::new("Create".to_owned(), 6, Rl(100.0)))
-                .observe(
-                    |_: Trigger<ButtonClickedEvent>, mut writer: EventWriter<CreateCurveEvent>| {
-                        writer.write(CreateCurveEvent);
-                    },
-                );
+            let mut slider = UiSlider::new("Width Box:".to_owned(), 0.0, 2.0, Rl((100.0, 100.0)));
+            slider.set_to_string_fn(|value| format!("{value:.2}"));
+            slider.set(ui_state.box_width);
+            ui.spawn(slider).observe(
+                |trigger: Trigger<SliderValueChangedEvent>,
+                 mut state: ResMut<UiState>,
+                 mut update_info: EventWriter<UpdateBoxDimEvent>| {
+                    state.box_width = (trigger.value * 100.0).round() / 100.0;
+                    update_info.write(UpdateBoxDimEvent {
+                        box_dim: Some((state.box_width, state.box_height, state.box_depth)),
+                        ..Default::default()
+                    });
+                },
+            );
         });
 
         ui.spawn(
             UiLayout::window()
-                .pos(Rl((55.0, 0.0)))
-                .size(Rl((45.0, 100.0)))
+                .size(Rl((90.0, 20.0)))
+                .pos(Rl((5.0, 60.0)))
                 .anchor(Anchor::TopLeft)
                 .pack(),
         )
         .with_children(|ui| {
-            ui.spawn(UiButton::new("Confirm".to_owned(), 7, Rl(100.0)))
-                .observe(
-                    |_: Trigger<ButtonClickedEvent>, mut writer: EventWriter<EndModeEvent>| {
-                        writer.write(EndModeEvent);
-                    },
-                );
-        });
-    });
-
-    ui.spawn((
-        Name::new("Layout Seventh"),
-        UiLayout::window()
-            .pos(Rl((5.0, 90.0)))
-            .size((Rw(90.0), Rh(10.0)))
-            .anchor(Anchor::TopLeft)
-            .pack(),
-    ))
-    .with_children(|ui| {
-        ui.spawn(
-            UiLayout::window()
-                .pos(Rl((0.0, 0.0)))
-                .size(Rl((45.0, 100.0)))
-                .anchor(Anchor::TopLeft)
-                .pack(),
-        )
-        .with_children(|ui| {
-            ui.spawn(UiButton::new("Camera".to_owned(), 6, Rl(100.0)))
-                .observe(
-                    |_: Trigger<ButtonClickedEvent>,
-                     mut writer: EventWriter<CreateOrthoCameraEvent>| {
-                        writer.write(CreateOrthoCameraEvent);
-                    },
-                );
+            let mut slider = UiSlider::new("Height Box:".to_owned(), 0.0, 2.0, Rl((100.0, 100.0)));
+            slider.set_to_string_fn(|value| format!("{value:.2}"));
+            slider.set(ui_state.box_height);
+            ui.spawn(slider).observe(
+                |trigger: Trigger<SliderValueChangedEvent>,
+                 mut state: ResMut<UiState>,
+                 mut update_info: EventWriter<UpdateBoxDimEvent>| {
+                    state.box_height = (trigger.value * 100.0).round() / 100.0;
+                    update_info.write(UpdateBoxDimEvent {
+                        box_dim: Some((state.box_width, state.box_height, state.box_depth)),
+                        ..Default::default()
+                    });
+                },
+            );
         });
 
         ui.spawn(
             UiLayout::window()
-                .pos(Rl((55.0, 0.0)))
-                .size(Rl((45.0, 100.0)))
+                .size(Rl((90.0, 20.0)))
+                .pos(Rl((5.0, 80.0)))
                 .anchor(Anchor::TopLeft)
                 .pack(),
         )
         .with_children(|ui| {
-            ui.spawn(UiButton::new("Delete".to_owned(), 7, Rl(100.0)))
-                .observe(
-                    |_: Trigger<ButtonClickedEvent>, mut writer: EventWriter<DeleteModeEvent>| {
-                        writer.write(DeleteModeEvent);
-                    },
-                );
+            let mut slider = UiSlider::new("Depth Box:".to_owned(), 0.0, 2.0, Rl((100.0, 100.0)));
+            slider.set_to_string_fn(|value| format!("{value:.2}"));
+            slider.set(ui_state.box_depth);
+            ui.spawn(slider).observe(
+                |trigger: Trigger<SliderValueChangedEvent>,
+                 mut state: ResMut<UiState>,
+                 mut update_info: EventWriter<UpdateBoxDimEvent>| {
+                    state.box_depth = (trigger.value * 100.0).round() / 100.0;
+                    update_info.write(UpdateBoxDimEvent {
+                        box_dim: Some((state.box_width, state.box_height, state.box_depth)),
+                        ..Default::default()
+                    });
+                },
+            );
         });
     });
 }
 
 fn build_ui(
     mut commands: Commands,
-    ui_state: ResMut<UiState>,
+    ui_state: Res<UiState>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     scale_info: Res<RenderInformation>,
 ) {

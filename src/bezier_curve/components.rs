@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 
+use super::bezier_curve_renderer::generic_on_despawn_trigger;
+
 #[derive(States, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Hash, Debug)]
 pub enum ControlState {
     #[default]
@@ -11,6 +13,7 @@ pub enum ControlState {
 }
 
 #[derive(Component)]
+#[component(on_despawn = generic_on_despawn_trigger)]
 pub struct RenderPoint(pub usize, pub usize);
 
 // #[derive(Component)]
@@ -19,6 +22,9 @@ pub struct RenderPoint(pub usize, pub usize);
 
 #[derive(Component)]
 pub struct ResultSurface;
+
+#[derive(Component)]
+pub struct ResultLines;
 
 #[derive(Component)]
 pub struct CurveBox;

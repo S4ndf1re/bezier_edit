@@ -21,8 +21,9 @@ use super::ortho_camera::create_camera_on_click;
 #[cfg(feature = "vr_enable")]
 use super::ortho_camera::create_camera_on_click3d;
 use super::render_info::{
-    ChangeSurfaceMeshMode, RenderInformation, SurfaceMeshMode, UVEither, UpdateBoxDimEvent,
-    handle_box_dim_event, handle_change_surface_mode,
+    ChangeCoordinateMode, ChangeSurfaceMeshMode, CoordinateMode, RenderInformation,
+    SurfaceMeshMode, UVEither, UpdateBoxDimEvent, UpdateIsoDimEvent, handle_box_dim_event,
+    handle_change_coordinate_mode, handle_change_surface_mode, handle_iso_dim_event,
 };
 use super::surface_click::{
     SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
@@ -35,18 +36,25 @@ use crate::RootTransform;
 use crate::bezier_curve::EntityDeletedEvent;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{ControlPoints2D, derive_2d, eval_2d_bezier_curves};
+use crate::picking3d::events::{HoveredBy, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
-use crate::projection::{BoundingEntitiesManager, DisplayIn};
+use crate::projection::{
+    AddBoundingEntityEvent, BoundingEntitiesManager, DisplayIn, UpdateOrthoViews,
+    handle_add_bounding_entity_event,
+};
 use crate::translation_control::translation_controller::{
     CantSnapToEntities, EnableTranslationControl, MovedEntityEvent,
 };
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::util::update_material_on;
+use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::css::BLACK;
 use bevy::color::palettes::tailwind::*;
+use bevy::ecs::component::HookContext;
 use bevy::ecs::system::SystemParam;
+use bevy::ecs::world::{DeferredWorld, OnDespawn};
 use bevy::prelude::*;
 use bevy::render::mesh::PrimitiveTopology;
 use bevy::render::view::RenderLayers;
@@ -54,14 +62,30 @@ use num::ToPrimitive;
 
 pub type Resolution = (u32, u32);
 
-#[derive(Event)]
+#[derive(Event, Clone, Copy)]
 pub enum RedrawEvent {
     HighQuality,
     Fast,
 }
 
+#[derive(Event)]
+pub enum RedrawLinesEvent {
+    HighQuality,
+    Fast,
+}
+
+impl From<RedrawEvent> for RedrawLinesEvent {
+    fn from(value: RedrawEvent) -> Self {
+        match value {
+            RedrawEvent::HighQuality => Self::HighQuality,
+            RedrawEvent::Fast => Self::Fast,
+        }
+    }
+}
+
 #[derive(Component)]
 #[require(Transform)]
+#[component(on_despawn = generic_on_despawn_trigger)]
 pub struct Surface;
 
 #[derive(Event)]
@@ -84,6 +108,7 @@ impl Default for Bridge {
 
 #[derive(Component)]
 #[relationship(relationship_target = CompleteBridgeCenters)]
+#[component(on_despawn = generic_on_despawn_trigger)]
 struct CompleteBridgeCenter {
     #[relationship]
     pub complete_bridge: Entity,
@@ -120,6 +145,26 @@ pub struct DeleteModeEvent;
 
 #[derive(Event)]
 pub struct EndModeEvent;
+
+pub fn generic_on_despawn_trigger(mut world: DeferredWorld, context: HookContext) {
+    let mut writer = world.resource_mut::<Events<EntityDeletedEvent>>();
+    writer.send(EntityDeletedEvent(context.entity));
+}
+
+pub fn hover_3d(
+    trigger: Trigger<Pointer3d<crate::picking3d::events::MoveIn>>,
+    mut left_vibrate: EventWriter<VibrateLeftEvent>,
+    mut right_vibrate: EventWriter<VibrateRightEvent>,
+) {
+    match trigger.controler {
+        HoveredBy::Left => {
+            left_vibrate.write(VibrateLeftEvent::new(Vibration::default()));
+        }
+        HoveredBy::Right => {
+            right_vibrate.write(VibrateRightEvent::new(Vibration::default()));
+        }
+    }
+}
 
 fn handle_create_ortho_camera_event(
     mut reader: EventReader<CreateOrthoCameraEvent>,
@@ -203,9 +248,30 @@ fn draw_bridge_cylinder(
 #[allow(clippy::complexity)]
 fn update_lines(
     mut commands: Commands,
-    mut lines: Query<(&Bridge, Entity, &Children, &mut Transform), Without<BridgeMarker>>,
-    mut changeable: Query<(&mut Transform, &mut Mesh3d), (Without<Bridge>, With<BridgeMarker>)>,
-    transforms: Query<&Transform, (Without<BridgeMarker>, Without<Bridge>)>,
+    mut lines: Query<
+        (&Bridge, Entity, &Children, &mut Transform),
+        (Without<BridgeMarker>, Without<CompleteBridgeCenter>),
+    >,
+    mut changeable: Query<
+        (&mut Transform, &mut Mesh3d),
+        (
+            Without<Bridge>,
+            With<BridgeMarker>,
+            Without<CompleteBridgeCenter>,
+        ),
+    >,
+    mut bridge_centers: Query<
+        (&mut Transform, &CompleteBridgeCenter),
+        (Without<BridgeMarker>, Without<Bridge>),
+    >,
+    transforms: Query<
+        &Transform,
+        (
+            Without<BridgeMarker>,
+            Without<Bridge>,
+            Without<CompleteBridgeCenter>,
+        ),
+    >,
     mut meshes: ResMut<Assets<Mesh>>,
     info: Res<RenderInformation>,
 ) {
@@ -237,8 +303,25 @@ fn update_lines(
 
         *transform = Transform::from_translation(origin).looking_at(target, Vec3::Y);
     }
+
+    for (mut transform, center) in bridge_centers.iter_mut() {
+        if let Some(segment) = center.single_segment
+            && let Ok(line) = lines.get(segment)
+        {
+            let a = line.0.a;
+            let b = line.0.b;
+
+            let transform_a = transforms.get(a).unwrap().translation;
+            let transform_b = transforms.get(b).unwrap().translation;
+
+            let midpoint = transform_a * 0.5 + transform_b * 0.5;
+
+            transform.translation = midpoint;
+        }
+    }
 }
 
+// TODO: Reinstate this and fix up to use ObligatoryDragParams for dragging
 // fn drag_point(
 //     trigger: Trigger<Pointer<Drag>>,
 //     mut query: Query<&mut Transform, (With<RenderPoint>, Without<Camera3d>)>,
@@ -251,6 +334,19 @@ fn update_lines(
 //         + camera.up() * trigger.delta.y * -0.012;
 // }
 
+pub fn distribute_redraw_event(
+    mut redraw_event_reader: EventReader<RedrawEvent>,
+    mut redraw_boxes: EventWriter<RedrawBoxesEvent>,
+    mut redraw_iso_lines: EventWriter<RedrawLinesEvent>,
+    mut update_ortho_views: EventWriter<UpdateOrthoViews>,
+) {
+    for event in redraw_event_reader.read() {
+        redraw_boxes.write(RedrawBoxesEvent);
+        redraw_iso_lines.write(RedrawLinesEvent::from(*event));
+        update_ortho_views.write(UpdateOrthoViews);
+    }
+}
+
 #[allow(clippy::complexity)]
 fn generate_pointcloud(
     surface: Query<Entity, With<Surface>>,
@@ -262,9 +358,9 @@ fn generate_pointcloud(
     mut materials: ResMut<Assets<StandardMaterial>>,
     images: ResMut<Assets<Image>>,
     scale_info: Res<RenderInformation>,
-    mut redraw_boxes: EventWriter<RedrawBoxesEvent>,
 ) {
     let mut resolution: Resolution = scale_info.fast_resolution;
+    let mut event = RedrawEvent::Fast;
     if !events.is_empty() {
         // Consume and run redraw. No matter how many events where triggered
         #[allow(clippy::never_loop)]
@@ -273,6 +369,8 @@ fn generate_pointcloud(
                 RedrawEvent::HighQuality => resolution = scale_info.resolution,
                 RedrawEvent::Fast => resolution = scale_info.fast_resolution,
             }
+
+            event = *evt;
 
             break;
         }
@@ -316,60 +414,96 @@ fn generate_pointcloud(
                     Mesh3d(meshes.add(mesh)),
                     MeshMaterial3d(materials.add(mat)),
                     RenderLayers::from(DisplayIn::Normal),
+                    Visibility::Inherited,
                     ChildOf(surface),
                 ))
                 .observe(bezier_surface_picking);
         }
+    }
+}
+
+#[allow(clippy::complexity)]
+pub fn redraw_iso_lines(
+    surface: Query<Entity, With<Surface>>,
+    mut commands: Commands,
+    mut events: EventReader<RedrawLinesEvent>,
+    entities: Query<Entity, With<ResultLines>>,
+    scale_info: Res<RenderInformation>,
+    control_points: Query<(&Transform, &RenderPoint)>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let mut resolution: Resolution = scale_info.fast_resolution;
+    if !events.is_empty() {
+        // Consume and run redraw. No matter how many events where triggered
+        #[allow(clippy::never_loop)]
+        for evt in events.read() {
+            match evt {
+                RedrawLinesEvent::HighQuality => resolution = scale_info.resolution,
+                RedrawLinesEvent::Fast => resolution = scale_info.fast_resolution,
+            }
+
+            break;
+        }
+        events.clear()
     } else {
-        let w = resolution.0;
-        let h = resolution.1;
-
-        let mut meshes_lines = Vec::new();
-
-        for line in scale_info.to_line_uv() {
-            let verticies = match line {
-                UVEither::U(u) => (0..h)
-                    .map(|v| compute_point_by_params(&multi_curves, u, v as f64 / ((h - 1) as f64)))
-                    .map(|p| p.into())
-                    .collect::<Vec<Vec3>>(),
-                UVEither::V(v) => (0..w)
-                    .map(|u| compute_point_by_params(&multi_curves, u as f64 / ((w - 1) as f64), v))
-                    .map(|p| p.into())
-                    .collect::<Vec<Vec3>>(),
-            };
-
-            let mut mesh = Mesh::new(
-                PrimitiveTopology::LineStrip,
-                RenderAssetUsages::RENDER_WORLD,
-            );
-            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, verticies);
-            meshes_lines.push(mesh);
-        }
-
-        {
-            let surface = surface.single().unwrap();
-            commands
-                .spawn((
-                    Transform::default(),
-                    ResultSurface,
-                    Visibility::default(),
-                    ChildOf(surface),
-                ))
-                .with_children(|ui| {
-                    for mesh in meshes_lines {
-                        ui.spawn((
-                            Mesh3d(meshes.add(mesh)),
-                            MeshMaterial3d(materials.add(Color::BLACK)),
-                            Name::new("Iso Line"),
-                            Pickable::IGNORE,
-                            RenderLayers::from(DisplayIn::BothNormalAndOrtho),
-                        ));
-                    }
-                });
-        }
+        return;
     }
 
-    redraw_boxes.write(RedrawBoxesEvent);
+    // Despawn old, respawn new
+    for p in entities.iter() {
+        commands.entity(p).despawn();
+    }
+
+    let multi_curves = collect_control_points(control_points);
+
+    let w = resolution.0;
+    let h = resolution.1;
+
+    let mut meshes_lines = Vec::new();
+
+    for line in scale_info.to_line_uv() {
+        let verticies = match line {
+            UVEither::U(u) => (0..h)
+                .map(|v| compute_point_by_params(&multi_curves, u, v as f64 / ((h - 1) as f64)))
+                .map(|p| p.into())
+                .collect::<Vec<Vec3>>(),
+            UVEither::V(v) => (0..w)
+                .map(|u| compute_point_by_params(&multi_curves, u as f64 / ((w - 1) as f64), v))
+                .map(|p| p.into())
+                .collect::<Vec<Vec3>>(),
+        };
+
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::LineStrip,
+            RenderAssetUsages::RENDER_WORLD,
+        );
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, verticies);
+        meshes_lines.push(mesh);
+    }
+
+    {
+        let surface = surface.single().unwrap();
+        commands
+            .spawn((
+                Transform::default(),
+                ResultLines,
+                Visibility::default(),
+                ChildOf(surface),
+            ))
+            .with_children(|ui| {
+                for mesh in meshes_lines {
+                    ui.spawn((
+                        Mesh3d(meshes.add(mesh)),
+                        MeshMaterial3d(materials.add(Color::BLACK)),
+                        Name::new("Iso Line"),
+                        Pickable::IGNORE,
+                        RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                        Visibility::Inherited,
+                    ));
+                }
+            });
+    }
 }
 
 #[allow(clippy::complexity)]
@@ -391,12 +525,6 @@ pub fn redraw_boxes(
     // Despawn old, respawn new
     for p in boxes.iter() {
         commands.entity(p).despawn();
-    }
-
-    // Early return, because line mode hijacks the box count parameters (otherwise, no lines would
-    // be visible)
-    if scale_info.surface_mesh_mode == SurfaceMeshMode::Lines {
-        return;
     }
 
     let multi_curves = collect_control_points(control_points);
@@ -426,11 +554,16 @@ pub fn redraw_boxes(
             scale_info.box_dim.2 * scale_info.scale,
         );
 
+        let mut transform = Transform::from_translation(Vec3::from(point));
+        if scale_info.coordinate_mode == CoordinateMode::NUV {
+            transform.align(Vec3::NEG_Z, Vec3::from(v_diff), Vec3::X, Vec3::from(u_diff));
+            transform.look_to(Vec3::from(v_diff), Vec3::from(normal));
+        } else {
+            transform.look_to(Vec3::NEG_Z, Vec3::Y);
+        }
         commands.spawn((
             ChildOf(surface.single().unwrap()),
-            Transform::from_translation(Vec3::from(point))
-                // TODO: mode to align by xyz and nuv (nuv is this one below)
-                .looking_to(Vec3::from(u_diff), Vec3::from(normal)),
+            transform,
             Name::new("Box"),
             CurveBox,
             Mesh3d(meshes.add(mesh)),
@@ -448,13 +581,13 @@ pub fn redraw_boxes(
 #[derive(SystemParam)]
 pub struct SurfaceCreator<'w, 's> {
     commands: Commands<'w, 's>,
-    info: Res<'w, RenderInformation>,
+    pub info: Res<'w, RenderInformation>,
     materials: ResMut<'w, Assets<StandardMaterial>>,
     meshes: ResMut<'w, Assets<Mesh>>,
     root: Query<'w, 's, Entity, With<RootTransform>>,
     surface: Query<'w, 's, Entity, With<Surface>>,
-    bounding_entites: BoundingEntitiesManager<'w, 's>,
     event_writer: EventWriter<'w, RedrawEvent>,
+    add_bounding_entities: EventWriter<'w, AddBoundingEntityEvent>,
 }
 
 impl<'w, 's> SurfaceCreator<'w, 's> {
@@ -467,16 +600,17 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
         let root = self.root.single().unwrap();
 
         if let Ok(surface) = self.surface.single() {
+            info!("Deleting old surface");
             self.commands.entity(surface).despawn();
         }
 
+        info!("Creating new surface");
         let surface = self
             .commands
             .spawn((Surface, ChildOf(root), Visibility::Inherited))
             .id();
 
         let scale = self.info.scale;
-        let height = Vec3::new(0.0, self.info.height, 0.0);
         let material = self.materials.add(Color::from(GRAY_400));
         let material_hover = self.materials.add(Color::from(GRAY_600));
         let sphere = self
@@ -491,7 +625,7 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                 .spawn((
                     RenderPoint(p.0, p.1),
                     Name::new(format!("Render Point {} {}", p.0, p.1)),
-                    Transform::from_translation(p.2 * scale + height),
+                    Transform::from_translation(p.2),
                     Mesh3d(sphere.clone()),
                     MeshMaterial3d(material.clone()),
                     Picking3dInteractable::default(),
@@ -501,11 +635,18 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                 ))
                 .observe(update_material_on::<Pointer<Over>>(material_hover.clone()))
                 .observe(update_material_on::<Pointer<Out>>(material.clone()))
+                .observe(update_material_on::<
+                    Pointer3d<crate::picking3d::events::MoveIn>,
+                >(material_hover.clone()))
+                .observe(update_material_on::<
+                    Pointer3d<crate::picking3d::events::MoveIn>,
+                >(material.clone()))
+                .observe(hover_3d)
                 //.observe(drag_point)
                 .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
                 .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
                 .id();
-            self.bounding_entites.add_bounding_entity(id);
+            self.add_bounding_entities.write(AddBoundingEntityEvent(id));
             ids.push(id);
         }
 
@@ -559,8 +700,8 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
             {
                 let id = *ids.get(i + 1).expect("must be present");
 
-                let origin = p0.2 * scale + height;
-                let target = px.2 * scale + height;
+                let origin = p0.2;
+                let target = px.2;
                 let diff = target - origin;
 
                 let bridge_id = self
@@ -589,6 +730,8 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                     let complete_bridge = y_bridges[y];
 
                     let center = origin + diff * 0.5;
+                    let material = self.materials.add(Color::from(GREEN_800));
+                    let material_hover = self.materials.add(Color::from(GREEN_600));
 
                     let id = self
                         .commands
@@ -601,15 +744,22 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                             ChildOf(surface),
                             Visibility::Inherited,
                             Mesh3d(self.meshes.add(Sphere::new(0.1 * scale))),
-                            MeshMaterial3d(self.materials.add(Color::from(GREEN_800))),
+                            MeshMaterial3d(material.clone()),
                             Picking3dInteractable::default(),
                             CantSnapToEntities::All,
                         ))
                         .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
                         .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
+                        .observe(update_material_on::<
+                            Pointer3d<crate::picking3d::events::MoveIn>,
+                        >(material_hover.clone()))
+                        .observe(update_material_on::<
+                            Pointer3d<crate::picking3d::events::MoveIn>,
+                        >(material.clone()))
+                        .observe(hover_3d)
                         .observe(moved_complete_bridge)
                         .id();
-                    self.bounding_entites.add_bounding_entity(id);
+                    self.add_bounding_entities.write(AddBoundingEntityEvent(id));
                 }
             }
 
@@ -620,8 +770,8 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
             {
                 let id = *ids.get(i + w).expect("must be present");
 
-                let origin = p0.2 * scale + height;
-                let target = py.2 * scale + height;
+                let origin = p0.2;
+                let target = py.2;
                 let diff = target - origin;
 
                 let bridge_id = self
@@ -649,6 +799,10 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                 if is_y_mid {
                     let center = origin + diff * 0.5;
                     let complete_bridge = x_bridges[x];
+
+                    let material = self.materials.add(Color::from(GREEN_800));
+                    let material_hover = self.materials.add(Color::from(GREEN_600));
+
                     let id = self
                         .commands
                         .spawn((
@@ -660,15 +814,22 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                             ChildOf(surface),
                             Visibility::Inherited,
                             Mesh3d(self.meshes.add(Sphere::new(0.1 * scale))),
-                            MeshMaterial3d(self.materials.add(Color::from(GREEN_800))),
+                            MeshMaterial3d(material.clone()),
                             Picking3dInteractable::default(),
                             CantSnapToEntities::All,
                         ))
                         .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
                         .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
+                        .observe(update_material_on::<
+                            Pointer3d<crate::picking3d::events::MoveIn>,
+                        >(material_hover.clone()))
+                        .observe(update_material_on::<
+                            Pointer3d<crate::picking3d::events::MoveIn>,
+                        >(material.clone()))
+                        .observe(hover_3d)
                         .observe(moved_complete_bridge)
                         .id();
-                    self.bounding_entites.add_bounding_entity(id);
+                    self.add_bounding_entities.write(AddBoundingEntityEvent(id));
                 }
             }
 
@@ -689,7 +850,12 @@ pub fn generate_default_curve(mut surface_creator: SurfaceCreator) {
     let mut curr_y = min_y;
     for y in 0..h as i32 {
         for x in 0..w as i32 {
-            points.push((y as usize, x as usize, Vec3::new(curr_x, 0.0, curr_y)));
+            points.push((
+                y as usize,
+                x as usize,
+                Vec3::new(curr_x, 0.0, curr_y) * surface_creator.info.scale
+                    + surface_creator.info.height,
+            ));
             curr_x += 1.0;
         }
         curr_x = min_x;
@@ -788,10 +954,11 @@ impl Plugin for BezierRenderPlugin {
         app.add_systems(
             Update,
             (
-                generate_pointcloud,
+                (generate_pointcloud, distribute_redraw_event).run_if(on_event::<RedrawEvent>),
                 update_lines,
                 update_surface_click,
-                redraw_boxes,
+                redraw_boxes.after(generate_pointcloud),
+                redraw_iso_lines.after(generate_pointcloud),
                 render_curves,
             ),
         ); // , listen_to_mouse_left_button));
@@ -802,6 +969,7 @@ impl Plugin for BezierRenderPlugin {
                 handle_state_change_event,
                 handle_change_curvature,
                 handle_box_dim_event,
+                handle_iso_dim_event,
             ),
         );
 
@@ -809,6 +977,7 @@ impl Plugin for BezierRenderPlugin {
         app.add_systems(
             PostUpdate,
             (
+                handle_change_coordinate_mode.run_if(in_state(ControlState::Main)),
                 handle_change_surface_mode.run_if(in_state(ControlState::Main)),
                 handle_create_curve_event.run_if(in_state(ControlState::Main)),
                 handle_create_ortho_camera_event.run_if(in_state(ControlState::Main)),
@@ -849,8 +1018,16 @@ impl Plugin for BezierRenderPlugin {
         app.add_systems(
             PostUpdate,
             (
-                handle_degree_increase_event.run_if(on_event::<IncreaseDegreeEvent>),
-                handle_degree_reduction_event.run_if(on_event::<DecreaseDegreeEvent>),
+                handle_degree_increase_event
+                    .run_if(on_event::<IncreaseDegreeEvent>)
+                    // This must run after the add bounding entity, otherwise the transforms are
+                    // not set correctly
+                    .after(handle_add_bounding_entity_event),
+                handle_degree_reduction_event
+                    .run_if(on_event::<DecreaseDegreeEvent>)
+                    // This must run after the add bounding entity, otherwise the transforms are
+                    // not set correctly
+                    .after(handle_add_bounding_entity_event),
             ),
         );
 
@@ -865,8 +1042,11 @@ impl Plugin for BezierRenderPlugin {
         app.add_event::<SurfaceClickChangeset>();
         app.add_event::<ChangeCurvatureDisplayModeEvent>();
         app.add_event::<UpdateBoxDimEvent>();
+        app.add_event::<UpdateIsoDimEvent>();
         app.add_event::<RedrawBoxesEvent>();
+        app.add_event::<RedrawLinesEvent>();
         app.add_event::<ChangeSurfaceMeshMode>();
+        app.add_event::<ChangeCoordinateMode>();
         app.add_event::<RedrawCurvesEvent>();
         app.add_event::<CreateCurveEvent>();
         app.add_event::<CreatePlaneEvent>();

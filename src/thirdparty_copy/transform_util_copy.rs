@@ -40,7 +40,6 @@ pub fn handle_transform_events(
 
                     //position
                     for position in position_mutator.drain() {
-                        info!("Received translation Event");
                         root_transform.translation =
                             position.0 - root_transform.rotation.mul_vec3(view_translation);
                     }
@@ -56,7 +55,6 @@ pub fn handle_transform_events(
                         view_global_rotation.to_euler(bevy::math::EulerRot::YXZ);
                     let up = Vec3::Y;
                     for rotation in rotation_mutator.drain() {
-                        info!("Received rotation Event");
                         let (target_yaw, _pitch, _roll) =
                             rotation.0.normalize().to_euler(bevy::math::EulerRot::YXZ);
                         let diff_yaw = target_yaw - global_view_yaw;
@@ -68,7 +66,9 @@ pub fn handle_transform_events(
                     }
                 }
                 None => {
-                    error!("error getting first view, retrying");
+                    error!(
+                        "error getting first view, retrying to set translation. Maybe the vr view is not loaded yet"
+                    );
                     let mut events = vec![];
                     for event in position_mutator.drain() {
                         events.push(event.clone());

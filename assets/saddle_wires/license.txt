@@ -1,0 +1,11 @@
+Model Information:
+* title:	saddle wires
+* source:	https://sketchfab.com/3d-models/saddle-wires-6c9d0a7411f14dd1a02210e6cc19deae
+* author:	dansmath (https://sketchfab.com/dansmath)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "saddle wires" (https://sketchfab.com/3d-models/saddle-wires-6c9d0a7411f14dd1a02210e6cc19deae) by dansmath (https://sketchfab.com/dansmath) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

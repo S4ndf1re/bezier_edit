@@ -101,6 +101,7 @@ pub fn bezier_surface_picking(
                             evaluated.z as f32,
                         )
                         .looking_to(Into::<Vec3>::into(-1.0 * normal), Vec3::Y),
+                        Visibility::Inherited,
                     ))
                     .with_children(|parent| {
                         parent.spawn((
@@ -113,6 +114,7 @@ pub fn bezier_surface_picking(
                             MeshMaterial3d(material.clone()),
                             Mesh3d(normal_pointer.clone()),
                             SurfaceClickMesh,
+                            Visibility::Inherited,
                         ));
                     });
                 });
@@ -210,12 +212,14 @@ pub fn handle_state_change_event(
                 Mesh3d(sphere.clone()),
                 Transform::from_xyz(evaluated.x as f32, evaluated.y as f32, evaluated.z as f32)
                     .looking_to(Into::<Vec3>::into(-1.0 * normal), Vec3::Y),
+                Visibility::Inherited,
             ))
             .with_children(|parent| {
                 parent.spawn((
                     Transform::from_xyz(0.0, 0.0, -0.25 * scale),
                     MeshMaterial3d(material.clone()),
                     Mesh3d(normal_pointer.clone()),
+                    Visibility::Inherited,
                 ));
             });
         });

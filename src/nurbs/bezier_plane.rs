@@ -11,14 +11,14 @@ pub type ControlPoints2D = Vec<Vec<Point>>;
 
 fn transpose_control_points(points: &ControlPoints2D) -> ControlPoints2D {
     let m = points.len() - 1;
-    assert!(m > 1);
+    assert!(m >= 1);
 
     let n = points
         .first()
         .unwrap() // Ok, since assert! prevents empty lists
         .len()
         - 1;
-    assert!(n > 1);
+    assert!(n >= 1);
 
     let mut result = vec![vec![Point::default(); m + 1]; n + 1];
 
@@ -35,14 +35,14 @@ fn transpose_control_points(points: &ControlPoints2D) -> ControlPoints2D {
 /// First compute m+1 bezier curves of degree n. Use the resulting points to compute a single bezier curve of m+1 points
 pub fn eval_2d_bezier_curves(control_points: &ControlPoints2D, u: f64, v: f64) -> Point {
     let m = control_points.len() - 1;
-    assert!(m > 1);
+    assert!(m >= 1);
 
     let n = control_points
         .first()
         .unwrap() // Ok, since assert! prevents empty lists
         .len()
         - 1;
-    assert!(n > 1);
+    assert!(n >= 1);
 
     let mut new_control = vec![Point::new(0.0, 0.0, 0.0, None); m + 1];
 
@@ -63,14 +63,14 @@ pub fn eval_2d_bezier_curves(control_points: &ControlPoints2D, u: f64, v: f64) -
 
 pub fn derive_2d(control_points: &ControlPoints2D, u: f64, v: f64, r: usize) -> (Point, Point) {
     let m = control_points.len() - 1;
-    assert!(m > 1);
+    assert!(m >= 1);
 
     let n = control_points
         .first()
         .unwrap() // Ok, since assert! prevents empty lists
         .len()
         - 1;
-    assert!(n > 1);
+    assert!(n >= 1);
 
     // Compute the control points the same as for the eval2d function, but use derive_after_de_casteljau for derivative control points
     let mut new_control = vec![Point::new(0.0, 0.0, 0.0, None); m + 1];
@@ -120,14 +120,14 @@ pub struct SurfaceSplit {
 /// Split a surface into 4 parts. View `SurfaceSplit` for further information
 pub fn split_surface(control_points: &ControlPoints2D, u: f64, v: f64) -> SurfaceSplit {
     let m = control_points.len() - 1;
-    assert!(m > 1);
+    assert!(m >= 1);
 
     let n = control_points
         .first()
         .unwrap() // Ok, since assert! prevents empty lists
         .len()
         - 1;
-    assert!(n > 1);
+    assert!(n >= 1);
 
     let mut upper = Vec::with_capacity(m + 1);
     let mut lower = Vec::with_capacity(m + 1);
@@ -290,14 +290,14 @@ pub fn determine_u_v(
 
 pub fn decrease_degree_surface(control_points: &ControlPoints2D) -> ControlPoints2D {
     let m = control_points.len() - 1;
-    assert!(m > 1);
+    assert!(m >= 1);
 
     let n = control_points
         .first()
         .unwrap() // Ok, since assert! prevents empty lists
         .len()
         - 1;
-    assert!(n > 1);
+    assert!(n >= 1);
 
     let mut new_points = vec![Vec::new(); m + 1];
 
@@ -318,14 +318,14 @@ pub fn decrease_degree_surface(control_points: &ControlPoints2D) -> ControlPoint
 
 pub fn increase_degree_surface(control_points: &ControlPoints2D) -> ControlPoints2D {
     let m = control_points.len() - 1;
-    assert!(m > 1);
+    assert!(m >= 1);
 
     let n = control_points
         .first()
         .unwrap() // Ok, since assert! prevents empty lists
         .len()
         - 1;
-    assert!(n > 1);
+    assert!(n >= 1);
 
     // NOTE: This must be of size m+1 (original size), since the the correct sizes are determined
     // automatically

@@ -1,5 +1,4 @@
 use crate::bezier_curve::render_info::RenderInformation;
-use crate::click_decider::{AddLeftTrace, AddRightTrace};
 use crate::picking3d::events::{
     Click, Drag, DragEnd, DragStart, HoveredBy, MoveIn, MoveOut, Pointer3d,
 };
@@ -8,8 +7,8 @@ use crate::picking3d::pointer_state::Pointer3dState;
 use crate::vr_control::trigger::{ControllerSqueeze, ControllerTrigger};
 use crate::vr_control::{AimLeft, AimRight, GripLeft, GripRight};
 use bevy::color::palettes::css::POWDER_BLUE;
-use bevy::math::bounding::{Aabb3d, BoundingSphere, IntersectsVolume};
 use bevy::math::Vec3;
+use bevy::math::bounding::{Aabb3d, BoundingSphere, IntersectsVolume};
 use bevy::prelude::*;
 
 use super::picking_state::VectorState;
@@ -97,7 +96,9 @@ fn check_intersections(
 
         if test.intersects(&bb_sphere_left) {
             // event_writer.write(Intersection::Left(p.1));
-            if !state.contains_entity_and_controller(&p.1, &HoveredBy::Left) {
+            if !state.contains_entity_and_controller(&p.1, &HoveredBy::Left)
+                && state.ensure_inserted(p.1, HoveredBy::Left, p.0.translation())
+            {
                 commands.trigger_targets(
                     Pointer3d {
                         position: left_tracked.0.translation(),
@@ -108,12 +109,13 @@ fn check_intersections(
                     p.1,
                 );
             }
-            state.ensure_inserted(p.1, HoveredBy::Left, p.0.translation());
         }
 
         if test.intersects(&bb_sphere_right) {
             // event_writer.write(Intersection::Right(p.1));
-            if !state.contains_entity_and_controller(&p.1, &HoveredBy::Right) {
+            if !state.contains_entity_and_controller(&p.1, &HoveredBy::Right)
+                && state.ensure_inserted(p.1, HoveredBy::Right, p.0.translation())
+            {
                 commands.trigger_targets(
                     Pointer3d {
                         position: right_tracked.0.translation(),
@@ -124,7 +126,6 @@ fn check_intersections(
                     p.1,
                 );
             }
-            state.ensure_inserted(p.1, HoveredBy::Right, p.0.translation());
         }
     }
 
@@ -137,7 +138,11 @@ fn check_intersections(
             let collisions = mesh_ray_casting.cast_ray(
                 ray,
                 &MeshRayCastSettings {
-                    filter: &|entity| pickable.get(entity).is_ok(),
+                    filter: &|entity| {
+                        pickable
+                            .get(entity)
+                            .is_ok_and(|p| *p.3 == Picking3dInteractable::Default)
+                    },
                     ..Default::default()
                 }
                 .with_visibility(RayCastVisibility::Any)
@@ -148,7 +153,9 @@ fn check_intersections(
                 let (transform, _, _, _) = pickable
                     .get(collision.0)
                     .expect("This is already checked in the mesh_ray_casting filter option");
-                if !state.contains_entity_and_controller(&collision.0, &hovered_by) {
+                if !state.contains_entity_and_controller(&collision.0, &hovered_by)
+                    && state.ensure_inserted(collision.0, hovered_by, transform.translation())
+                {
                     commands.trigger_targets(
                         Pointer3d {
                             position: collision.1.point,
@@ -159,7 +166,6 @@ fn check_intersections(
                         collision.0,
                     );
                 }
-                state.ensure_inserted(collision.0, hovered_by, transform.translation());
             }
         }
     }
@@ -314,11 +320,10 @@ fn handle_input_grab(
     right_tracked: Single<(&GlobalTransform, Entity), With<GripRight>>,
     mut picking_state: ResMut<PickingState>,
     mut moved_marked_query: Query<(&GlobalTransform, &mut MoveMarker, Entity)>,
-    mut left_writer: EventWriter<AddLeftTrace>,
-    mut right_writer: EventWriter<AddRightTrace>,
     mut click_writer: EventWriter<Pointer3d<Click>>,
     info: Res<RenderInformation>,
 ) {
+    // TODO: Track controllers using prisma as additional mode
     for (state, hover_by) in [
         (trigger.left, HoveredBy::Left),
         (trigger.right, HoveredBy::Right),
@@ -327,21 +332,6 @@ fn handle_input_grab(
             HoveredBy::Left => *left_tracked,
             HoveredBy::Right => *right_tracked,
         };
-
-        match hover_by {
-            HoveredBy::Left => {
-                left_writer.write(AddLeftTrace {
-                    transform: tracked.0.compute_transform(),
-                    click_value: state as f64,
-                });
-            }
-            HoveredBy::Right => {
-                right_writer.write(AddRightTrace {
-                    transform: tracked.0.compute_transform(),
-                    click_value: state as f64,
-                });
-            }
-        }
 
         let current_state = state > 0.2;
 
@@ -455,7 +445,9 @@ fn handle_input_grab(
 
                     picking_state.set_dragging(true, &hover_by);
                 }
-            } else if picking_state.check_is_dragging(&hover_by) {
+            }
+
+            if picking_state.check_is_dragging(&hover_by) {
                 for (transform, mut marker, _) in moved_marked_query.iter_mut() {
                     if picking_state.contains_entity(&marker.entity, &hover_by) {
                         let entity_global_position = transform_query.get(marker.entity).unwrap();
@@ -623,7 +615,7 @@ pub fn show_aim(
     //     }
     // }
 
-    for (squeeze, aim_query, hovered_by) in [
+    for (_, aim_query, hovered_by) in [
         (squeeze.left, aim_query_left.single(), HoveredBy::Left),
         (squeeze.right, aim_query_right.single(), HoveredBy::Right),
     ] {
@@ -665,6 +657,7 @@ pub fn show_aim(
                         Mesh3d(mesh),
                         MeshMaterial3d(material),
                         AimLineRayMarker,
+                        Visibility::Inherited,
                     ));
                 });
         }
