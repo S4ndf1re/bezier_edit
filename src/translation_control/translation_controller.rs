@@ -1216,6 +1216,63 @@ fn rotate_start3d(
     }
 }
 
+/// Snap transform.forward() into a plane by rotating about `axis`,
+/// but only if the correction angle is less than `max_angle_deg`.
+pub fn snap_forward_to_plane(
+    transform: &mut Transform,
+    plane_normal: Vec3,
+    axis: Vec3,
+    max_angle_deg: f32,
+) {
+    let forward = transform.forward().as_vec3();
+
+    let proj = (forward - forward.dot(plane_normal) * plane_normal).normalize_or_zero();
+
+    let angle = if proj == Vec3::ZERO {
+        90.0_f32.to_radians()
+    } else {
+        forward.angle_between(proj)
+    };
+
+    if angle > max_angle_deg.to_radians() {
+        return;
+    }
+
+    let sign = forward.cross(proj).dot(axis).signum();
+    let delta = Quat::from_axis_angle(axis, sign * angle);
+
+    info!("Angle: {angle}, sign: {sign}, axis: {axis}");
+    transform.rotation = delta * transform.rotation;
+}
+
+/// Snap transform.up() into a plane by rotating about `axis`,
+/// but only if the correction angle is less than `max_angle_deg`.
+pub fn snap_up_to_plane(
+    transform: &mut Transform,
+    plane_normal: Vec3,
+    axis: Vec3,
+    max_angle_deg: f32,
+) {
+    let up = transform.up().as_vec3();
+
+    let proj = (up - up.dot(plane_normal) * plane_normal).normalize_or_zero();
+
+    let angle = if proj == Vec3::ZERO {
+        90.0_f32.to_radians()
+    } else {
+        up.angle_between(proj)
+    };
+
+    if angle > max_angle_deg.to_radians() {
+        return;
+    }
+
+    let sign = up.cross(proj).dot(axis).signum();
+    let delta = Quat::from_axis_angle(axis, sign * angle);
+
+    transform.rotation = delta * transform.rotation;
+}
+
 #[allow(clippy::complexity)]
 fn rotate_controller(
     trigger: Trigger<Pointer<Drag>>,
@@ -1266,35 +1323,32 @@ fn rotate_controller(
             let sign = (last_diff.cross(diff).dot(control_rotation.normal)).signum();
 
             let mut parent_transform_mut = changable_transforms.get_mut(control_parent.0).unwrap();
-            let (mut inverse, mut forward, mut up) = {
+            let mut inverse = {
                 parent_transform_mut.rotation =
                     Quat::from_axis_angle(control_rotation.normal, angle * sign)
                         * parent_transform_mut.rotation;
-                (
-                    parent_transform_mut.rotation.inverse(),
-                    parent_transform_mut.forward().as_vec3(),
-                    parent_transform_mut.up().as_vec3(),
-                )
+
+                parent_transform_mut.rotation.inverse()
             };
 
             if state.curve_snapping == SnappingBehaviour::Snap {
-                for axis in control_storage.iter_arrows() {
-                    if axis.with_rotation {
-                        let cos_score = forward.normalize_or_zero().dot(axis.normalized);
-                        if cos_score.abs() > 0.999 {
-                            let multiplier = cos_score.signum();
-                            forward = axis.normalized * multiplier;
-                        }
-
-                        let cos_score = up.normalize_or_zero().dot(axis.normalized);
-                        if cos_score.abs() > 0.999 {
-                            let multiplier = cos_score.signum();
-                            up = axis.normalized * multiplier;
-                        }
+                for plane in control_storage.iter_arrows() {
+                    if plane.with_rotation {
+                        snap_forward_to_plane(
+                            &mut parent_transform_mut,
+                            plane.normalized,
+                            control_rotation.normal,
+                            1.5,
+                        );
+                        snap_up_to_plane(
+                            &mut parent_transform_mut,
+                            plane.normalized,
+                            control_rotation.normal,
+                            1.5,
+                        );
                     }
                 }
 
-                parent_transform_mut.look_to(forward, up);
                 inverse = parent_transform_mut.rotation.inverse();
             }
 
@@ -1353,36 +1407,32 @@ fn rotate_controller3d(
         let sign = (last_diff.cross(diff).dot(control_rotation.normal)).signum();
 
         let mut parent_transform_mut = changeable_transforms.get_mut(control_parent.0).unwrap();
-        let (mut inverse, mut forward, mut up) = {
+        let mut inverse = {
             parent_transform_mut.rotation =
                 Quat::from_axis_angle(control_rotation.normal, angle * sign)
                     * parent_transform_mut.rotation;
-            (
-                parent_transform_mut.rotation.inverse(),
-                parent_transform_mut.forward().as_vec3(),
-                parent_transform_mut.up().as_vec3(),
-            )
+
+            parent_transform_mut.rotation.inverse()
         };
 
         if state.curve_snapping == SnappingBehaviour::Snap {
-            // TODO: consider using euler angles for snapping
-            for axis in control_storage.iter_arrows() {
-                if axis.with_rotation {
-                    let cos_score = forward.normalize_or_zero().dot(axis.normalized);
-                    if cos_score.abs() > 0.999 {
-                        let multiplier = cos_score.signum();
-                        forward = axis.normalized * multiplier;
-                    }
-
-                    let cos_score = up.normalize_or_zero().dot(axis.normalized);
-                    if cos_score.abs() > 0.999 {
-                        let multiplier = cos_score.signum();
-                        up = axis.normalized * multiplier;
-                    }
+            for plane in control_storage.iter_arrows() {
+                if plane.with_rotation {
+                    snap_forward_to_plane(
+                        &mut parent_transform_mut,
+                        plane.normalized,
+                        control_rotation.normal,
+                        1.5,
+                    );
+                    snap_up_to_plane(
+                        &mut parent_transform_mut,
+                        plane.normalized,
+                        control_rotation.normal,
+                        1.5,
+                    );
                 }
             }
 
-            parent_transform_mut.look_to(forward, up);
             inverse = parent_transform_mut.rotation.inverse();
         }
 
