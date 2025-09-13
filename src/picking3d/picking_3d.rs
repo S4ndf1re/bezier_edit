@@ -532,6 +532,7 @@ fn handle_input_grab(
                                 event: Drag {
                                     start_entity_position: marker.global_start,
                                     current_entity_position: marker.actual_position + delta,
+                                    real_current_entity_position: transform.translation(),
                                     delta,
                                     real_delta: transform.translation() - marker.current_position,
                                 },

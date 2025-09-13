@@ -1,5 +1,6 @@
 use crate::bezier_curve::bezier_curve_renderer::hover_3d;
 use crate::picking3d::events::HoveredBy;
+use crate::translation_control::translation_controller::SetPrismMode;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
 use crate::vr_control::{AimLeft, AimRight};
 #[cfg(feature = "vr_enable")]
@@ -23,7 +24,7 @@ use crate::{
         self, SnappingBehaviour, ToggleSnappingBehaviour, TranslationControllerState,
     },
 };
-use bevy::log::tracing::Instrument;
+use bevy::color::palettes::css::{BLACK, BLUE, LIGHT_BLUE};
 use bevy::{
     color::palettes::{css::WHITE, tailwind::RED_500},
     ecs::system::{SystemParam, lifetimeless::Read},
@@ -31,6 +32,7 @@ use bevy::{
     scene::SceneInstanceReady,
 };
 
+// TODO: add prisma as optionality
 #[derive(Resource, Default)]
 struct GltfAssets {
     magnet: Option<Handle<Gltf>>,
@@ -46,6 +48,7 @@ struct GltfAssets {
     mm_1: Option<Handle<Gltf>>,
     mm_5: Option<Handle<Gltf>>,
     mm_10: Option<Handle<Gltf>>,
+    prism: Option<Handle<Gltf>>,
 }
 
 #[derive(Component)]
@@ -77,6 +80,9 @@ struct PlusMode;
 
 #[derive(Component)]
 struct StepMode;
+
+#[derive(Component)]
+struct PrismMode;
 
 #[derive(Component)]
 struct VrMenuRoot;
@@ -219,7 +225,8 @@ fn spawn_plus(scene: Handle<Scene>, scale: f32) -> impl Bundle {
 fn spawn_text(scene: Handle<Scene>, scale: f32) -> impl Bundle {
     let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians())
         * Quat::from_axis_angle(Vec3::X, 180.0_f32.to_radians())
-        * Quat::from_axis_angle(Vec3::Y, 180.0_f32.to_radians());
+        * Quat::from_axis_angle(Vec3::Y, 180.0_f32.to_radians())
+        * Quat::from_axis_angle(Vec3::Z, 10.0_f32.to_radians());
 
     (
         Transform::from_xyz(0.0, 0.0, -0.2 * scale)
@@ -229,6 +236,22 @@ fn spawn_text(scene: Handle<Scene>, scale: f32) -> impl Bundle {
         SceneRoot(scene),
         Picking3dInteractable::default(),
         PlusMode,
+    )
+}
+
+fn spawn_prism(scene: Handle<Scene>, scale: f32) -> impl Bundle {
+    let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians())
+        * Quat::from_axis_angle(Vec3::X, 180.0_f32.to_radians())
+        * Quat::from_axis_angle(Vec3::Y, 180.0_f32.to_radians());
+
+    (
+        Transform::from_xyz(0.0, 0.0, -0.2 * scale)
+            .with_scale(Vec3::ONE * 0.0001 * scale)
+            .with_rotation(rotation),
+        Visibility::Inherited,
+        SceneRoot(scene),
+        Picking3dInteractable::default(),
+        PrismMode,
     )
 }
 
@@ -336,16 +359,23 @@ fn trigger_scene_spawn(
     trigger: Trigger<SceneInstanceReady>,
     mut commands: Commands,
     mut color_changer: ColorChangerChildren,
-    snapping_state: Res<TranslationControllerState>,
+    translation_state: Res<TranslationControllerState>,
     magnets: Query<&MagnetMode>,
+    prisms: Query<&PrismMode>,
     children: Query<&Children>,
 ) {
     color_changer.set_initial_color(trigger.target());
 
     if magnets.get(trigger.target()).is_ok()
-        && snapping_state.curve_snapping == SnappingBehaviour::NoSnap
+        && translation_state.curve_snapping == SnappingBehaviour::NoSnap
     {
         color_changer.change_color(trigger.target(), WHITE.into());
+    }
+
+    if prisms.get(trigger.target()).is_ok()
+        && translation_state.prism_mode == translation_controller::PrismMode::Prism
+    {
+        color_changer.change_color(trigger.target(), LIGHT_BLUE.into());
     }
 
     for child in children.iter_descendants(trigger.target()) {
@@ -371,11 +401,13 @@ pub struct MenuHandler<'w, 's> {
     minus: Query<'w, 's, Entity, With<MinusMode>>,
     plus: Query<'w, 's, Entity, With<PlusMode>>,
     steps: Query<'w, 's, Entity, With<StepMode>>,
+    prisms: Query<'w, 's, Entity, With<PrismMode>>,
     set_end_mode: EventWriter<'w, EndModeEvent>,
     set_delete_mode: EventWriter<'w, DeleteModeEvent>,
     set_create_curve_mode: EventWriter<'w, CreateCurveEvent>,
     set_create_camera_mode: EventWriter<'w, CreateOrthoCameraEvent>,
     toggle_snap_mode: EventWriter<'w, ToggleSnappingBehaviour>,
+    set_prism_mode: EventWriter<'w, SetPrismMode>,
     change_curvature_display_mode: EventWriter<'w, ChangeCurvatureDisplayModeEvent>,
     decrease_degree: EventWriter<'w, DecreaseDegreeEvent>,
     increase_degree: EventWriter<'w, IncreaseDegreeEvent>,
@@ -678,7 +710,7 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(hover_3d);
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
-        transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 180.0_f32.to_radians()));
+        transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 155.0_f32.to_radians()));
         let model = match self.translation_state.step_mode {
             translation_controller::StepMode::None => self
                 .gltf
@@ -735,6 +767,36 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_over)
             .observe(handle_hover_over3d)
             .observe(hover_3d);
+
+        let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
+        transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -135.0_f32.to_radians()));
+        let model = self
+            .gltf
+            .get(
+                self.models
+                    .prism
+                    .clone()
+                    .expect("must be loaded to run this system")
+                    .id(),
+            )
+            .unwrap();
+
+        self.commands
+            .spawn((
+                transform,
+                PrismMode,
+                children![spawn_prism(
+                    model.scenes[0].clone(),
+                    self.info.scale * scale,
+                )],
+                Visibility::Inherited,
+                ChildOf(root),
+            ))
+            .observe(handle_hover_out)
+            .observe(handle_hover_out3d)
+            .observe(handle_hover_over)
+            .observe(handle_hover_over3d)
+            .observe(hover_3d);
     }
 
     pub fn apply_menu_state(&mut self) {
@@ -763,6 +825,9 @@ impl<'w, 's> MenuHandler<'w, 's> {
                 self.increase_degree.write(IncreaseDegreeEvent);
             } else if self.steps.get(selected).is_ok() {
                 self.translation_state.step_mode = self.translation_state.step_mode.next();
+            } else if self.prisms.get(selected).is_ok() {
+                self.set_prism_mode
+                    .write(SetPrismMode(self.translation_state.prism_mode.next()));
             }
         }
     }
@@ -846,6 +911,7 @@ fn setup_models(server: ResMut<AssetServer>, mut models: ResMut<GltfAssets>) {
     let mm_1: Handle<Gltf> = server.load("1mm/scene.gltf");
     let mm_5: Handle<Gltf> = server.load("5mm/scene.gltf");
     let mm_10: Handle<Gltf> = server.load("10mm/scene.gltf");
+    let prism: Handle<Gltf> = server.load("diamond/scene.gltf");
 
     models.magnet = Some(magnet);
     models.trashcan = Some(trashcan);
@@ -861,6 +927,8 @@ fn setup_models(server: ResMut<AssetServer>, mut models: ResMut<GltfAssets>) {
     models.mm_1 = Some(mm_1);
     models.mm_5 = Some(mm_5);
     models.mm_10 = Some(mm_10);
+
+    models.prism = Some(prism);
 }
 
 fn are_models_loaded(
@@ -940,6 +1008,12 @@ fn are_models_loaded(
 
     if let Some(mm_10) = &models.mm_10
         && assets.get(mm_10.id()).is_none()
+    {
+        return false;
+    }
+
+    if let Some(prism) = &models.prism
+        && assets.get(prism.id()).is_none()
     {
         return false;
     }

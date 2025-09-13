@@ -117,14 +117,34 @@ impl StepMode {
     }
 }
 
+#[derive(Default, PartialEq, PartialOrd, Ord, Eq, Clone, Copy)]
+pub enum PrismMode {
+    #[default]
+    None,
+    Prism,
+}
+
+impl PrismMode {
+    pub fn next(self) -> Self {
+        match self {
+            Self::None => Self::Prism,
+            Self::Prism => Self::None,
+        }
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct TranslationControllerState {
     pub curve_snapping: SnappingBehaviour,
     pub step_mode: StepMode,
+    pub prism_mode: PrismMode,
 }
 
 #[derive(Event)]
 pub struct ToggleSnappingBehaviour;
+
+#[derive(Event)]
+pub struct SetPrismMode(pub PrismMode);
 
 #[derive(Component, Clone, Default)]
 pub enum CantSnapToCurve {
@@ -168,6 +188,15 @@ fn handle_toggle_snapping(
             SnappingBehaviour::NoSnap
         }
     };
+}
+
+fn handle_set_prism_mode(
+    mut reader: EventReader<SetPrismMode>,
+    mut state: ResMut<TranslationControllerState>,
+) {
+    for evt in reader.read() {
+        state.prism_mode = evt.0;
+    }
 }
 
 fn register_deletes(
@@ -957,6 +986,7 @@ pub fn drag_plane3d(
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
     mut params: ObligatoryDragParams,
+    state: Res<TranslationControllerState>,
 ) {
     // NOTE: Make sure that the draw event is triggered only once. Otherwise this difference adding happens multiple times for the same event........
     let (control_entity, control, child_of) = control_query.get(trigger.target()).unwrap();
@@ -965,7 +995,11 @@ pub fn drag_plane3d(
 
     let control_parent = control_parents.get_mut(parent).unwrap();
 
-    let diff = trigger.event.delta;
+    let diff = if state.prism_mode == PrismMode::Prism {
+        trigger.event.delta
+    } else {
+        trigger.event.real_delta
+    };
     let diff = root
         .single()
         .unwrap()
@@ -1032,6 +1066,7 @@ pub fn drag_sphere_controller3d(
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
     mut params: ObligatoryDragParams,
+    state: Res<TranslationControllerState>,
 ) {
     // NOTE: Make sure that the draw event is triggered only once. Otherwise this difference adding happens multiple times for the same event........
     let (control_entity, _, child_of) = control_query.get(trigger.target()).unwrap();
@@ -1040,7 +1075,11 @@ pub fn drag_sphere_controller3d(
 
     let control_parent = control_parents.get_mut(parent).unwrap();
 
-    let diff = trigger.event.delta;
+    let diff = if state.prism_mode == PrismMode::Prism {
+        trigger.event.delta
+    } else {
+        trigger.event.real_delta
+    };
     let diff = root
         .single()
         .unwrap()
@@ -1110,6 +1149,7 @@ pub fn drag_controller3d(
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
     mut params: ObligatoryDragParams,
+    state: Res<TranslationControllerState>,
 ) {
     // NOTE: Make sure that the draw event is triggered only once. Otherwise this difference adding happens multiple times for the same event........
     let (control_entity, control, child_of) = control_query.get(trigger.target()).unwrap();
@@ -1118,7 +1158,11 @@ pub fn drag_controller3d(
 
     let control_parent = control_parents.get_mut(parent).unwrap();
 
-    let diff = trigger.event.delta;
+    let diff = if state.prism_mode == PrismMode::Prism {
+        trigger.event.delta
+    } else {
+        trigger.event.real_delta
+    };
     let diff = root
         .single()
         .unwrap()
@@ -1379,7 +1423,11 @@ fn rotate_controller3d(
 
     let root = root.single().unwrap();
 
-    let origin = trigger.event().event.current_entity_position;
+    let origin = if state.prism_mode == PrismMode::Prism {
+        trigger.event().event.current_entity_position
+    } else {
+        trigger.event().event.real_current_entity_position
+    };
     let inverse = root.compute_affine().inverse();
     let new_origin = inverse.transform_point3(origin);
     let new_direction = -control_rotation.normal;
@@ -1651,6 +1699,7 @@ impl Plugin for TranslationController {
             (
                 register_deletes,
                 handle_toggle_snapping.run_if(on_event::<ToggleSnappingBehaviour>),
+                handle_set_prism_mode.run_if(on_event::<SetPrismMode>),
                 update_snapped_points,
                 update_plane_directions,
                 handle_translate_by_delta_event,
@@ -1664,5 +1713,6 @@ impl Plugin for TranslationController {
         app.add_event::<ToggleSnappingBehaviour>();
         app.add_event::<MovedEntityEvent>();
         app.add_event::<MoveEntityByDeltaEvent>();
+        app.add_event::<SetPrismMode>();
     }
 }
