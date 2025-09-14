@@ -22,6 +22,7 @@ fn transpose_control_points(points: &ControlPoints2D) -> ControlPoints2D {
 
     let mut result = vec![vec![Point::default(); m + 1]; n + 1];
 
+    #[allow(clippy::needless_range_loop)]
     for i in 0..=m {
         for j in 0..=n {
             result[j][i] = points[i][j];
@@ -86,7 +87,7 @@ pub fn derive_2d(control_points: &ControlPoints2D, u: f64, v: f64, r: usize) -> 
         .unwrap();
 
     // Do the same for the v vector. Notice however, that we have to invert column and row storage, and also swap parameters
-    let mut new_control = vec![Point::new(0.0, 0.0, 0.0, None); m + 1];
+    let mut new_control = vec![Point::new(0.0, 0.0, 0.0, None); n + 1];
 
     #[allow(clippy::needless_range_loop)]
     for i in 0..=n {

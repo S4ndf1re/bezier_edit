@@ -43,7 +43,7 @@ use crate::projection::{
 };
 use crate::translation_control::obligatory_drag_params::ObligatoryDragParams;
 use crate::translation_control::translation_controller::{
-    CantSnapToEntities, EnableTranslationControl, MovedEntityEvent,
+    CantSnapToEntities, EnableTranslationControl, MovedEntityEvent, SnappedPoint,
 };
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::util::update_material_on;
@@ -543,11 +543,22 @@ pub fn redraw_boxes(
         );
 
         let mut transform = Transform::from_translation(Vec3::from(point));
-        if scale_info.coordinate_mode == CoordinateMode::NUV {
-            transform.align(Vec3::NEG_Z, Vec3::from(v_diff), Vec3::X, Vec3::from(u_diff));
-            transform.look_to(Vec3::from(v_diff), Vec3::from(normal));
-        } else {
-            transform.look_to(Vec3::NEG_Z, Vec3::Y);
+        match scale_info.coordinate_mode {
+            CoordinateMode::XYZ => {
+                transform.look_to(Vec3::NEG_Z, Vec3::Y);
+            }
+            CoordinateMode::NUV => {
+                // TODO: Ask Kerstin how to conform to this. The edges are simple, if u == 0 or
+                // u == 1 or v == 0 or v == 1, one can set the exact u, v orientation. However this is not
+                // possible for in surface points
+                transform.look_to(Vec3::NEG_Z, Vec3::Y);
+            }
+            CoordinateMode::NU => {
+                transform.align(Vec3::NEG_Z, Vec3::from(v_diff), Vec3::Y, Vec3::from(normal));
+            }
+            CoordinateMode::NV => {
+                transform.align(Vec3::X, Vec3::from(u_diff), Vec3::Y, Vec3::from(normal));
+            }
         }
         commands.spawn((
             ChildOf(surface.single().unwrap()),
@@ -561,6 +572,27 @@ pub fn redraw_boxes(
                 color.2 as f32,
                 1.0,
             )))),
+            RenderLayers::from(DisplayIn::Normal),
+        ));
+
+        commands.spawn((
+            ChildOf(surface.single().unwrap()),
+            Transform::from_translation(Vec3::from(point))
+                .looking_to(Vec3::from(v_diff).normalize_or_zero(), Vec3::Y),
+            Name::new("Box"),
+            CurveBox,
+            Mesh3d(meshes.add(Cuboid::new(0.05, 0.05, 0.3))),
+            MeshMaterial3d(materials.add(Color::from(Srgba::new(0.0, 0.0, 1.0, 1.0)))),
+            RenderLayers::from(DisplayIn::Normal),
+        ));
+        commands.spawn((
+            ChildOf(surface.single().unwrap()),
+            Transform::from_translation(Vec3::from(point))
+                .looking_to(Vec3::from(u_diff).normalize_or_zero(), Vec3::Y),
+            Name::new("Box"),
+            CurveBox,
+            Mesh3d(meshes.add(Cuboid::new(0.05, 0.05, 0.3))),
+            MeshMaterial3d(materials.add(Color::from(Srgba::new(0.0, 1.0, 0.0, 1.0)))),
             RenderLayers::from(DisplayIn::Normal),
         ));
     }
@@ -858,6 +890,7 @@ fn moved_complete_bridge(
     centers: Query<&CompleteBridgeCenter>,
     complete_brigdes: Query<&CompleteBridge>,
     bridge_segments: Query<&Bridge>,
+    mut commands: Commands,
     mut transforms: Query<&mut Transform>,
 ) {
     let Ok(center) = centers.get(trigger.target()) else {
@@ -889,6 +922,11 @@ fn moved_complete_bridge(
         if let Ok(mut transform) = transforms.get_mut(*k) {
             transform.translation = v.translation;
         }
+
+        // This might drag points away from curves, meaning snapping must end here
+        let _ = commands.get_entity(*k).map(|mut e| {
+            e.remove::<SnappedPoint>();
+        });
     }
 
     // compute the new position of the sphere that defines the bridges movement

@@ -7,17 +7,22 @@ use super::{
     curvature_display_mode::CurvatureDisplayMode,
 };
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum CoordinateMode {
     #[default]
     XYZ,
     NUV,
+    NU,
+    NV,
 }
 
 impl CoordinateMode {
     pub fn next(self) -> Self {
         match self {
-            Self::XYZ => Self::NUV,
+            Self::XYZ => Self::NU,
+            Self::NU => Self::NV,
+            Self::NV => Self::NUV,
             Self::NUV => Self::XYZ,
         }
     }
@@ -28,6 +33,8 @@ impl Display for CoordinateMode {
         match self {
             CoordinateMode::XYZ => write!(f, "XYZ"),
             CoordinateMode::NUV => write!(f, "NUV"),
+            CoordinateMode::NU => write!(f, "NU"),
+            CoordinateMode::NV => write!(f, "NV"),
         }
     }
 }
