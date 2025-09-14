@@ -536,11 +536,35 @@ pub fn redraw_boxes(
             )
         };
 
-        let mesh = Cuboid::new(
+        let mesh = meshes.add(Cuboid::new(
             scale_info.box_dim.0 * scale_info.scale,
             scale_info.box_dim.1 * scale_info.scale,
             scale_info.box_dim.2 * scale_info.scale,
-        );
+        ));
+        let color = materials.add(Color::from(Srgba::new(
+            color.0 as f32,
+            color.1 as f32,
+            color.2 as f32,
+            1.0,
+        )));
+        let v_mesh = meshes.add(Cuboid::new(
+            0.05 * scale_info.scale,
+            0.05 * scale_info.scale,
+            scale_info.box_dim.2 * scale_info.scale + 0.1 * scale_info.scale,
+        ));
+        let v_color = materials.add(Color::from(Srgba::new(0.0, 0.0, 1.0, 1.0)));
+        let u_mesh = meshes.add(Cuboid::new(
+            0.05 * scale_info.scale,
+            0.05 * scale_info.scale,
+            scale_info.box_dim.0 * scale_info.scale + 0.1 * scale_info.scale,
+        ));
+        let u_color = materials.add(Color::from(Srgba::new(0.0, 1.0, 0.0, 1.0)));
+        let n_mesh = meshes.add(Cuboid::new(
+            0.05 * scale_info.scale,
+            0.05 * scale_info.scale,
+            scale_info.box_dim.1 * scale_info.scale + 0.1 * scale_info.scale,
+        ));
+        let n_color = materials.add(Color::from(Srgba::new(0.0, 1.0, 1.0, 1.0)));
 
         let mut transform = Transform::from_translation(Vec3::from(point));
         match scale_info.coordinate_mode {
@@ -565,13 +589,8 @@ pub fn redraw_boxes(
             transform,
             Name::new("Box"),
             CurveBox,
-            Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(materials.add(Color::from(Srgba::new(
-                color.0 as f32,
-                color.1 as f32,
-                color.2 as f32,
-                1.0,
-            )))),
+            Mesh3d(mesh.clone()),
+            MeshMaterial3d(color),
             RenderLayers::from(DisplayIn::Normal),
         ));
 
@@ -581,8 +600,8 @@ pub fn redraw_boxes(
                 .looking_to(Vec3::from(v_diff).normalize_or_zero(), Vec3::Y),
             Name::new("Box"),
             CurveBox,
-            Mesh3d(meshes.add(Cuboid::new(0.05, 0.05, 0.3))),
-            MeshMaterial3d(materials.add(Color::from(Srgba::new(0.0, 0.0, 1.0, 1.0)))),
+            Mesh3d(v_mesh.clone()),
+            MeshMaterial3d(v_color.clone()),
             RenderLayers::from(DisplayIn::Normal),
         ));
         commands.spawn((
@@ -591,8 +610,18 @@ pub fn redraw_boxes(
                 .looking_to(Vec3::from(u_diff).normalize_or_zero(), Vec3::Y),
             Name::new("Box"),
             CurveBox,
-            Mesh3d(meshes.add(Cuboid::new(0.05, 0.05, 0.3))),
-            MeshMaterial3d(materials.add(Color::from(Srgba::new(0.0, 1.0, 0.0, 1.0)))),
+            Mesh3d(u_mesh.clone()),
+            MeshMaterial3d(u_color.clone()),
+            RenderLayers::from(DisplayIn::Normal),
+        ));
+        commands.spawn((
+            ChildOf(surface.single().unwrap()),
+            Transform::from_translation(Vec3::from(point))
+                .looking_to(Vec3::from(normal).normalize_or_zero(), Vec3::from(v_diff)),
+            Name::new("Box"),
+            CurveBox,
+            Mesh3d(n_mesh.clone()),
+            MeshMaterial3d(n_color.clone()),
             RenderLayers::from(DisplayIn::Normal),
         ));
     }
