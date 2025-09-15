@@ -1,4 +1,4 @@
-use bevy::math::Vec3;
+use bevy::math::{Vec3, Vec4};
 use num::traits::clamp_min;
 use std::ops::{Add, Div, Mul, Sub};
 
@@ -93,6 +93,28 @@ impl From<Point> for Vec3 {
 impl From<Vec3> for Point {
     fn from(value: Vec3) -> Self {
         Point::new(value.x as f64, value.y as f64, value.z as f64, None)
+    }
+}
+
+impl From<Point> for Vec4 {
+    fn from(value: Point) -> Self {
+        Vec4::new(
+            value.x as f32,
+            value.y as f32,
+            value.z as f32,
+            value.w as f32,
+        )
+    }
+}
+
+impl From<Vec4> for Point {
+    fn from(value: Vec4) -> Self {
+        Point::new(
+            value.x as f64,
+            value.y as f64,
+            value.z as f64,
+            Some(value.w as f64),
+        )
     }
 }
 
