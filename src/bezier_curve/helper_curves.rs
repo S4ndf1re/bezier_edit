@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use super::bezier_curve_renderer::EndModeEvent;
+use super::bridges::BridgeSpawner;
 use super::{EntityDeletedEvent, components::ControlState, render_info::RenderInformation};
 use crate::MainCamera;
 use crate::nurbs::bezier::de_casteljau;
@@ -280,13 +281,16 @@ fn handle_click_on_curve_point(
 #[allow(clippy::complexity)]
 /// Commit a curve after the mode for the creation ends
 pub fn commit_curve(
-    mut commands: Commands,
     root: Query<(Entity, &Transform), (With<RootTransform>, Without<TemporaryCurve>)>,
     tmp_curves: Query<Entity, With<TemporaryCurve>>,
     children: Query<&Children>,
     mut tmp_points: Query<(Entity, &TemporaryCurvePoint), Without<RootTransform>>,
     mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
-    mut bounding_entities: EventWriter<AddBoundingEntityEvent>,
+    mut duplicate_set: ParamSet<(
+        (Commands, EventWriter<AddBoundingEntityEvent>),
+        BridgeSpawner,
+    )>,
+    transforms: Query<&Transform, (Without<RootTransform>, Without<TemporaryCurve>)>,
 ) {
     let root = root.single().unwrap();
 
@@ -300,16 +304,20 @@ pub fn commit_curve(
         }
 
         if contains_points {
-            let parent = commands
+            let parent = duplicate_set
+                .p0()
+                .0
                 .spawn((
                     ControlCurve,
                     RenderLayers::from(DisplayIn::BothNormalAndOrtho),
                     Name::new("Control Curve"),
                     Transform::default(),
+                    Visibility::Inherited,
                     ChildOf(root.0),
                 ))
                 .id();
 
+            let mut points = Vec::new();
             for child_point_entity in children
                 .get(curve)
                 .expect("This is checked by the flag contains_points")
@@ -318,9 +326,14 @@ pub fn commit_curve(
 
                 let idx = point.0;
 
-                bounding_entities.write(AddBoundingEntityEvent(*child_point_entity));
+                duplicate_set
+                    .p0()
+                    .1
+                    .write(AddBoundingEntityEvent(*child_point_entity));
 
-                commands
+                duplicate_set
+                    .p0()
+                    .0
                     .get_entity(entity)
                     .unwrap()
                     .remove::<TemporaryCurvePoint>()
@@ -333,10 +346,21 @@ pub fn commit_curve(
                     ))
                     .observe(handle_click_on_curve_point3d)
                     .observe(handle_click_on_curve_point);
+
+                points.push((idx, entity, transforms.get(entity).unwrap().translation));
+            }
+
+            if points.len() > 1 {
+                points.sort_by_key(|v| v.0);
+                let ids = points.iter().map(|p| p.1).collect::<Vec<_>>();
+                let points = points.into_iter().map(|p| (p.0, p.2)).collect::<Vec<_>>();
+                duplicate_set
+                    .p1()
+                    .spawn_bridges_1d(parent, points.len(), &points, &ids);
             }
         }
         // Despawn temporary curve, that was replaced by a final curve
-        commands.get_entity(curve).unwrap().despawn();
+        duplicate_set.p0().0.get_entity(curve).unwrap().despawn();
     }
 
     redraw_curves_writer.write(RedrawCurvesEvent);
@@ -486,7 +510,7 @@ pub fn render_curves(
     redraw_curves_writer.clear();
 
     let curves_collected = all_curves.collect();
-    let black = materials.add(StandardMaterial::from_color(BLACK));
+    let purple = materials.add(StandardMaterial::from_color(PURPLE_600));
 
     // after collecting, set meshes accordingly
     for (entity, points) in curves_collected {
@@ -562,7 +586,7 @@ pub fn render_curves(
                         related!(
                             Children[(
                                 Mesh3d(cylinder),
-                                MeshMaterial3d(black.clone()),
+                                MeshMaterial3d(purple.clone()),
                                 Transform::from_xyz(0.0, 0.0, -length / 2.0).with_rotation(
                                     Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians())
                                 ),

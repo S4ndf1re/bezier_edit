@@ -1,4 +1,5 @@
 pub mod bezier_curve_renderer;
+pub mod bridges;
 pub mod components;
 pub mod curvature_display_mode;
 pub mod degree_manipulation;
