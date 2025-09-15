@@ -1270,21 +1270,26 @@ pub fn snap_forward_to_plane(
 ) {
     let forward = transform.forward().as_vec3();
 
-    let proj = (forward - forward.dot(plane_normal) * plane_normal).normalize_or_zero();
+    // Project forward and plane_normal onto the plane orthogonal to axis
+    let f_on_plane = (forward - forward.dot(axis) * axis).normalize_or_zero();
+    let n_on_plane = (plane_normal - plane_normal.dot(axis) * axis).normalize_or_zero();
 
-    let angle = if proj == Vec3::ZERO {
-        90.0_f32.to_radians()
-    } else {
-        forward.angle_between(proj)
-    };
-
-    if angle > max_angle_deg.to_radians() {
+    if f_on_plane == Vec3::ZERO || n_on_plane == Vec3::ZERO {
         return;
     }
 
-    let sign = forward.cross(proj).dot(axis).signum();
-    let delta = Quat::from_axis_angle(axis, sign * angle);
+    let angle = f_on_plane.angle_between(n_on_plane);
 
+    // Sign of the rotation around the axis
+    let sign = f_on_plane.cross(n_on_plane).dot(axis).signum();
+    let signed_angle = sign * angle;
+
+    if signed_angle.abs() > max_angle_deg.to_radians() {
+        return;
+    }
+
+    // Apply rotation
+    let delta = Quat::from_axis_angle(axis, signed_angle);
     transform.rotation = delta * transform.rotation;
 }
 
@@ -1298,21 +1303,28 @@ pub fn snap_up_to_plane(
 ) {
     let up = transform.up().as_vec3();
 
-    let proj = (up - up.dot(plane_normal) * plane_normal).normalize_or_zero();
+    // Project forward and plane_normal onto the plane orthogonal to axis
+    let f_on_plane = (up - up.dot(axis) * axis).normalize_or_zero();
+    let n_on_plane = (plane_normal - plane_normal.dot(axis) * axis).normalize_or_zero();
 
-    let angle = if proj == Vec3::ZERO {
-        90.0_f32.to_radians()
-    } else {
-        up.angle_between(proj)
-    };
-
-    if angle > max_angle_deg.to_radians() {
+    if f_on_plane == Vec3::ZERO || n_on_plane == Vec3::ZERO {
         return;
     }
 
-    let sign = up.cross(proj).dot(axis).signum();
-    let delta = Quat::from_axis_angle(axis, sign * angle);
+    // Angle between them in the rotation plane
+    let angle = f_on_plane.angle_between(n_on_plane);
 
+    // Sign of the rotation around the axis
+    let sign = f_on_plane.cross(n_on_plane).dot(axis).signum();
+    let signed_angle = sign * angle;
+
+    // Clamp against maximum allowed correction
+    if signed_angle.abs() > max_angle_deg.to_radians() {
+        return;
+    }
+
+    // Apply rotation
+    let delta = Quat::from_axis_angle(axis, signed_angle);
     transform.rotation = delta * transform.rotation;
 }
 
@@ -1362,7 +1374,7 @@ fn rotate_controller(
             let last_diff = control_rotation.last_vector;
             control_rotation.last_vector = diff;
 
-            let angle = atan2(last_diff.cross(diff).length(), last_diff.dot(diff));
+            let angle = last_diff.angle_between(diff);
             let sign = (last_diff.cross(diff).dot(control_rotation.normal)).signum();
 
             let mut parent_transform_mut = changable_transforms.get_mut(control_parent.0).unwrap();
@@ -1375,10 +1387,21 @@ fn rotate_controller(
             };
 
             if state.curve_snapping == SnappingBehaviour::Snap {
-                // FIXME: This shit is still broken as hell....
                 for plane in control_storage.iter_arrows() {
                     if plane.with_rotation {
                         snap_forward_to_plane(
+                            &mut parent_transform_mut,
+                            plane.normalized,
+                            control_rotation.normal,
+                            2.0,
+                        );
+                        snap_forward_to_plane(
+                            &mut parent_transform_mut,
+                            -plane.normalized,
+                            control_rotation.normal,
+                            2.0,
+                        );
+                        snap_up_to_plane(
                             &mut parent_transform_mut,
                             plane.normalized,
                             control_rotation.normal,
@@ -1386,7 +1409,7 @@ fn rotate_controller(
                         );
                         snap_up_to_plane(
                             &mut parent_transform_mut,
-                            plane.normalized,
+                            -plane.normalized,
                             control_rotation.normal,
                             1.5,
                         );
@@ -1451,7 +1474,7 @@ fn rotate_controller3d(
         let last_diff = control_rotation.last_vector;
         control_rotation.last_vector = diff;
 
-        let angle = atan2(last_diff.cross(diff).length(), last_diff.dot(diff));
+        let angle = last_diff.angle_between(diff);
         let sign = (last_diff.cross(diff).dot(control_rotation.normal)).signum();
 
         let mut parent_transform_mut = changeable_transforms.get_mut(control_parent.0).unwrap();
