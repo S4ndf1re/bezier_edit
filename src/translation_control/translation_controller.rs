@@ -1375,6 +1375,7 @@ fn rotate_controller(
             };
 
             if state.curve_snapping == SnappingBehaviour::Snap {
+                // FIXME: This shit is still broken as hell....
                 for plane in control_storage.iter_arrows() {
                     if plane.with_rotation {
                         snap_forward_to_plane(
