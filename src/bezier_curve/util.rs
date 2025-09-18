@@ -123,24 +123,24 @@ pub fn create_mesh_from_control_points(
 
     let handle = images.add(image);
 
-    let mut indizes: Vec<u32> = vec![];
+    let mut indices: Vec<u32> = vec![];
     for u in 0..(w - 1) {
         for v in 0..(h - 1) {
             // Compute indizes using simple 2d => 1d conversion
-            indizes.push(u * w + v);
-            indizes.push(u * w + v + 1);
-            indizes.push((u + 1) * w + v + 1);
+            indices.push(u * w + v);
+            indices.push(u * w + v + 1);
+            indices.push((u + 1) * w + v + 1);
 
-            indizes.push(u * w + v);
-            indizes.push((u + 1) * w + v + 1);
-            indizes.push((u + 1) * w + v);
+            indices.push(u * w + v);
+            indices.push((u + 1) * w + v + 1);
+            indices.push((u + 1) * w + v);
         }
     }
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::all());
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, computed_points);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-    mesh.insert_indices(Indices::U32(indizes));
+    mesh.insert_indices(Indices::U32(indices));
 
     (mesh, handle)
 }
