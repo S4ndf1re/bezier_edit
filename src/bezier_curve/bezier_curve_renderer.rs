@@ -35,6 +35,7 @@ use super::util::{
 };
 use crate::bezier_curve::EntityDeletedEvent;
 use crate::bezier_curve::bridges::{BridgeConnector, CompleteBridge};
+use crate::custom_shapes::parallelogram::Parallelogram2d;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{ControlPoints2D, derive_2d, eval_2d_bezier_curves};
 use crate::picking3d::events::{HoveredBy, Pointer3d};
@@ -59,7 +60,7 @@ use bevy::ecs::component::HookContext;
 use bevy::ecs::system::SystemParam;
 use bevy::ecs::world::{DeferredWorld, OnDespawn};
 use bevy::prelude::*;
-use bevy::render::mesh::PrimitiveTopology;
+use bevy::render::mesh::{PrimitiveTopology, VertexAttributeValues};
 use bevy::render::view::RenderLayers;
 use num::ToPrimitive;
 
@@ -402,11 +403,6 @@ pub fn redraw_boxes(
             )
         };
 
-        let mesh = meshes.add(Cuboid::new(
-            scale_info.box_dim.0 * scale_info.scale,
-            scale_info.box_dim.1 * scale_info.scale,
-            scale_info.box_dim.2 * scale_info.scale,
-        ));
         let color = materials.add(Color::from(Srgba::new(
             color.0 as f32,
             color.1 as f32,
@@ -433,23 +429,79 @@ pub fn redraw_boxes(
         let n_color = materials.add(Color::from(Srgba::new(0.0, 1.0, 1.0, 1.0)));
 
         let mut transform = Transform::from_translation(Vec3::from(point));
-        match scale_info.coordinate_mode {
+        let mesh = match scale_info.coordinate_mode {
             CoordinateMode::XYZ => {
                 transform.look_to(Vec3::NEG_Z, Vec3::Y);
+                meshes.add(Cuboid::new(
+                    scale_info.box_dim.0 * scale_info.scale,
+                    scale_info.box_dim.1 * scale_info.scale,
+                    scale_info.box_dim.2 * scale_info.scale,
+                ))
             }
             CoordinateMode::NUV => {
                 // TODO: Ask Kerstin how to conform to this. The edges are simple, if u == 0 or
                 // u == 1 or v == 0 or v == 1, one can set the exact u, v orientation. However this is not
                 // possible for in surface points
-                transform.look_to(Vec3::NEG_Z, Vec3::Y);
+                let mut mesh = Extrusion::new(
+                    Parallelogram2d::new(
+                        Vec3::from(u_diff).angle_between(Vec3::from(v_diff)),
+                        scale_info.box_dim.2 * scale_info.scale,
+                        scale_info.box_dim.0 * scale_info.scale,
+                    ),
+                    scale_info.box_dim.1 * scale_info.scale,
+                )
+                .mesh()
+                .build();
+
+                let quat = Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians());
+                {
+                    let positions = mesh
+                        .attribute_mut(Mesh::ATTRIBUTE_POSITION)
+                        .expect("Otherwise, mesh is broken");
+                    if let VertexAttributeValues::Float32x3(inner) = positions {
+                        for pos in inner {
+                            let vec = Vec3::new(pos[0], pos[1], pos[2]);
+                            let vec = quat.mul_vec3(vec);
+                            pos[0] = vec.x;
+                            pos[1] = vec.y;
+                            pos[2] = vec.z;
+                        }
+                    }
+                }
+
+                let normals = mesh
+                    .attribute_mut(Mesh::ATTRIBUTE_NORMAL)
+                    .expect("Otherwise, mesh is broken");
+                if let VertexAttributeValues::Float32x3(inner) = normals {
+                    for norm in inner {
+                        let vec = Vec3::new(norm[0], norm[1], norm[2]);
+                        let vec = quat.mul_vec3(vec);
+                        norm[0] = vec.x;
+                        norm[1] = vec.y;
+                        norm[2] = vec.z;
+                    }
+                }
+
+                transform.align(Vec3::NEG_Z, Vec3::from(u_diff), Vec3::Y, Vec3::from(normal));
+                meshes.add(mesh)
             }
             CoordinateMode::NU => {
                 transform.align(Vec3::NEG_Z, Vec3::from(v_diff), Vec3::Y, Vec3::from(normal));
+                meshes.add(Cuboid::new(
+                    scale_info.box_dim.0 * scale_info.scale,
+                    scale_info.box_dim.1 * scale_info.scale,
+                    scale_info.box_dim.2 * scale_info.scale,
+                ))
             }
             CoordinateMode::NV => {
                 transform.align(Vec3::X, Vec3::from(u_diff), Vec3::Y, Vec3::from(normal));
+                meshes.add(Cuboid::new(
+                    scale_info.box_dim.0 * scale_info.scale,
+                    scale_info.box_dim.1 * scale_info.scale,
+                    scale_info.box_dim.2 * scale_info.scale,
+                ))
             }
-        }
+        };
         commands.spawn((
             ChildOf(surface.single().unwrap()),
             transform,

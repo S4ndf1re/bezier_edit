@@ -2,6 +2,7 @@
 
 mod advanced_orbit_controls;
 mod bezier_curve;
+pub mod custom_shapes;
 mod history;
 pub mod linked_entities;
 mod nurbs;
