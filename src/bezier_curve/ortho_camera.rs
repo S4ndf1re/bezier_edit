@@ -65,10 +65,27 @@ pub fn create_camera_on_click3d(
                     camera_transform.forward().normalize_or_zero() * distance * 2.0
                         + camera_transform.translation();
                 let transform = Transform::from_translation(pos_of_surface)
-                    .looking_at(-camera_transform.forward().as_vec3(), Vec3::Y);
+                    .looking_at(camera_transform.back().as_vec3(), Vec3::Y);
 
                 writer.write(EnableOrthoCamera::new(transform));
                 created_cam = true;
+            } else {
+                // The user is standing in a way that the origin plane is behind the view
+                let ray = Ray3d::new(camera_transform.translation(), camera_transform.back());
+                let plane = InfinitePlane3d::new(camera_transform.forward());
+                if let Some(dist) = ray.intersect_plane(Vec3::ZERO, plane) {
+                    let point_of_intersection = ray.get_point(dist);
+                    let diff = camera_transform.translation() - point_of_intersection;
+                    let distance = diff.length();
+                    let pos_of_surface =
+                        camera_transform.forward().normalize_or_zero() * distance * 2.0
+                            + camera_transform.translation();
+                    let transform = Transform::from_translation(pos_of_surface)
+                        .looking_at(camera_transform.back().as_vec3(), Vec3::Y);
+
+                    writer.write(EnableOrthoCamera::new(transform));
+                    created_cam = true;
+                }
             }
         }
     }
