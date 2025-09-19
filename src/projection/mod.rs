@@ -364,7 +364,6 @@ fn update_ortho_camera_viewports(
     >,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut gizmos: Gizmos,
     info: Res<RenderInformation>,
     bounding_entities: Res<OrthoSurfaceRelevantEntities>,
 ) {
@@ -391,32 +390,11 @@ fn update_ortho_camera_viewports(
                                 surface_transform.translation.into(),
                             )
                     {
-                        let point: Vec3 = plane.f(&[u, v]).into();
-                        gizmos.ray(
-                            root.transform_point(transform.translation),
-                            root.transform_point(point - transform.translation),
-                            Color::from(RED_800),
-                        );
-
-                        gizmos.sphere(
-                            Isometry3d::from_translation(root.transform_point(point)),
-                            0.1,
-                            RED_800,
-                        );
-
                         max_distance.0 = max_distance.0.max((origin_x - u).abs());
                         max_distance.1 = max_distance.1.max((origin_y - v).abs());
                     }
                 }
             }
-
-            let tmp_size = Vec2::new(max_distance.0 as f32, max_distance.1 as f32);
-
-            gizmos.rect(
-                root.mul_transform(*surface_transform).to_isometry(),
-                tmp_size * 2.0,
-                RED_800,
-            );
         }
 
         let mut max_distance = Vec2::new(max_distance.0 as f32, max_distance.1 as f32);
