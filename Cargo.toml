@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.16.0", default-features = true, features = [
+objc2 = { version = "0.5.2", features = ["relax-sign-encoding"] }
+bevy = { version = "0.16.1", default-features = true, features = [
   "serialize",
   "jpeg",
 ] }
