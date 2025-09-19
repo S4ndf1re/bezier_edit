@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-objc2 = { version = "0.5.2", features = ["relax-sign-encoding"] }
+winit = "0.30.12"
 bevy = { version = "0.16.1", default-features = true, features = [
   "serialize",
   "jpeg",
