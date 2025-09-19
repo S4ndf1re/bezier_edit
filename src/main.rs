@@ -19,8 +19,20 @@ pub mod vr_menu;
 use crate::advanced_orbit_controls::AdvancedOrbitControls;
 use crate::thirdparty_copy::transform_util_copy::{SnapToPosition, SnapToRotation};
 use crate::translation_control::control_storage::ControlStorage;
+use bevy::app::PluginGroupBuilder;
 use bevy::color::palettes::tailwind::GRAY_700;
 use bevy::prelude::*;
+use bevy::render::RenderPlugin;
+use bevy::window::PresentMode;
+use bevy_mod_openxr::features::handtracking::HandTrackingPlugin;
+use bevy_mod_openxr::features::passthrough::OxrPassthroughPlugin;
+use bevy_mod_openxr::init::OxrInitPlugin;
+use bevy_mod_openxr::poll_events::OxrEventsPlugin;
+use bevy_mod_openxr::reference_space::OxrReferenceSpacePlugin;
+use bevy_mod_openxr::render::OxrRenderPlugin;
+use bevy_mod_openxr::{action_binding, action_set_attaching, action_set_syncing, features, spaces};
+use bevy_mod_xr::camera::XrCameraPlugin;
+use bevy_mod_xr::session::XrSessionPlugin;
 use bevy_xr_utils::xr_utils_actions::{XRUtilsActionSystemSet, XRUtilsActionsPlugin};
 use bezier_curve::bezier_curve_renderer::*;
 use history::plugin::HistoryPlugin;
@@ -126,16 +138,55 @@ fn create_app() -> App {
 }
 
 #[cfg(feature = "vr_enable")]
+fn custom_add_xr_plugins<G: PluginGroup>(plugins: G) -> PluginGroupBuilder {
+    let mut oxr_plugin = OxrInitPlugin::default();
+
+    plugins
+        .build()
+        .disable::<RenderPlugin>()
+        // .disable::<PipelinedRenderingPlugin>()
+        .add_before::<RenderPlugin>(XrSessionPlugin { auto_handle: true })
+        .add_before::<RenderPlugin>(oxr_plugin)
+        .add(OxrEventsPlugin)
+        .add(OxrReferenceSpacePlugin::default())
+        .add(OxrRenderPlugin::default())
+        .add(OxrPassthroughPlugin)
+        .add(HandTrackingPlugin::default())
+        .add(XrCameraPlugin)
+        .add(action_set_attaching::OxrActionAttachingPlugin)
+        .add(action_binding::OxrActionBindingPlugin)
+        .add(action_set_syncing::OxrActionSyncingPlugin)
+        .add(features::overlay::OxrOverlayPlugin)
+        .add(spaces::OxrSpatialPlugin)
+        .add(spaces::OxrSpacePatchingPlugin)
+        // .add(XrActionPlugin)
+        // we should probably handle the exiting ourselfs so that we can correctly end the
+        // session and instance
+        .set(WindowPlugin {
+            primary_window: Some(Window {
+                transparent: true,
+                present_mode: PresentMode::AutoNoVsync,
+                // title: self.app_info.name.clone(),
+                ..default()
+            }),
+            // #[cfg(target_os = "android")]
+            // exit_condition: bevy::window::ExitCondition::DontExit,
+            #[cfg(target_os = "android")]
+            close_when_requested: true,
+            ..default()
+        })
+}
+
+#[cfg(feature = "vr_enable")]
 fn create_app() -> App {
     use crate::vr_control::VrControlPlugin;
     use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
-    use bevy_mod_openxr::add_xr_plugins;
     use bevy_mod_openxr::resources::OxrSessionConfig;
     use bevy_mod_openxr::types::EnvironmentBlendMode;
 
     info!("Creating VR App");
     let mut app = App::new();
-    app.add_plugins(add_xr_plugins(
+    app.add_plugins(custom_add_xr_plugins(
         DefaultPlugins.build().disable::<PipelinedRenderingPlugin>(),
     ))
     .insert_resource(OxrSessionConfig {
