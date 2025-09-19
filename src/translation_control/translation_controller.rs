@@ -1493,11 +1493,23 @@ fn rotate_controller3d(
                         &mut parent_transform_mut,
                         plane.normalized,
                         control_rotation.normal,
-                        1.5,
+                        2.0,
+                    );
+                    snap_forward_to_plane(
+                        &mut parent_transform_mut,
+                        -plane.normalized,
+                        control_rotation.normal,
+                        2.0,
                     );
                     snap_up_to_plane(
                         &mut parent_transform_mut,
                         plane.normalized,
+                        control_rotation.normal,
+                        1.5,
+                    );
+                    snap_up_to_plane(
+                        &mut parent_transform_mut,
+                        -plane.normalized,
                         control_rotation.normal,
                         1.5,
                     );
