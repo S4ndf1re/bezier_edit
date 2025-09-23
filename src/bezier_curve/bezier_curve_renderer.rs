@@ -30,8 +30,8 @@ use super::surface_click::{
     SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
 };
 use super::util::{
-    collect_control_points, compute_point_by_params, create_mesh_from_control_points,
-    curvature_to_color,
+    SurfaceRenderMode, collect_control_points, compute_point_by_params,
+    create_mesh_from_control_points, curvature_to_color,
 };
 use crate::bezier_curve::EntityDeletedEvent;
 use crate::bezier_curve::bridges::{BridgeConnector, CompleteBridge};
@@ -215,7 +215,6 @@ fn generate_pointcloud(
     scale_info: Res<RenderInformation>,
 ) {
     let mut resolution: Resolution = scale_info.fast_resolution;
-    let mut event = RedrawEvent::Fast;
     if !events.is_empty() {
         // Consume and run redraw. No matter how many events where triggered
         #[allow(clippy::never_loop)]
@@ -224,8 +223,6 @@ fn generate_pointcloud(
                 RedrawEvent::HighQuality => resolution = scale_info.resolution,
                 RedrawEvent::Fast => resolution = scale_info.fast_resolution,
             }
-
-            event = *evt;
 
             break;
         }
@@ -250,6 +247,7 @@ fn generate_pointcloud(
             &scale_info.curvature_mode,
             images,
             scale_info.scale as f64,
+            SurfaceRenderMode::Surface,
         );
 
         let mat = StandardMaterial {
@@ -644,9 +642,14 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
 }
 
 pub fn generate_default_curve(mut surface_creator: SurfaceCreator) {
-    let (w, h): (usize, usize) = (6, 6);
-    let min_x = -w.to_f32().unwrap() / 2.0 + if w % 2 == 0 { 0.5 } else { 0.0 };
-    let min_y = -h.to_f32().unwrap() / 2.0 + if h % 2 == 0 { 0.5 } else { 0.0 };
+    let (w, h): (usize, usize) = (2, 2);
+    let surface_width = 5.0;
+    let surface_height = 5.0;
+    let step_x = surface_width / (w as f32 - 1.0);
+    let step_y = surface_height / (h as f32 - 1.0);
+
+    let min_x = -surface_width / 2.0;
+    let min_y = -surface_height / 2.0;
 
     let mut points = vec![];
     let mut curr_x = min_x;
@@ -659,10 +662,10 @@ pub fn generate_default_curve(mut surface_creator: SurfaceCreator) {
                 Vec3::new(curr_x, 0.0, curr_y) * surface_creator.get_scale()
                     + surface_creator.get_height(),
             ));
-            curr_x += 1.0;
+            curr_x += step_x;
         }
         curr_x = min_x;
-        curr_y += 1.0;
+        curr_y += step_y;
     }
 
     surface_creator.create_surface_from_points(points, w, h);

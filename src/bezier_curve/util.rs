@@ -63,12 +63,19 @@ pub fn compute_points(
     }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
+pub enum SurfaceRenderMode {
+    Triangles,
+    Surface,
+}
+
 pub fn create_mesh_from_control_points(
     control_points: &ControlPoints2D,
     resolution: Resolution,
     curvature_mode: &CurvatureDisplayMode,
     mut images: ResMut<Assets<Image>>,
     scale: f64,
+    render_mode: SurfaceRenderMode,
 ) -> (Mesh, Handle<Image>) {
     let w = resolution.0;
     let h = resolution.1;
@@ -127,16 +134,46 @@ pub fn create_mesh_from_control_points(
     for u in 0..(w - 1) {
         for v in 0..(h - 1) {
             // Compute indizes using simple 2d => 1d conversion
-            indices.push(u * w + v);
-            indices.push(u * w + v + 1);
-            indices.push((u + 1) * w + v + 1);
+            match render_mode {
+                SurfaceRenderMode::Triangles => {
+                    indices.push(u * w + v);
+                    indices.push(u * w + v + 1);
 
-            indices.push(u * w + v);
-            indices.push((u + 1) * w + v + 1);
-            indices.push((u + 1) * w + v);
+                    indices.push(u * w + v + 1);
+                    indices.push((u + 1) * w + v + 1);
+
+                    indices.push((u + 1) * w + v + 1);
+                    indices.push(u * w + v);
+
+                    indices.push(u * w + v);
+                    indices.push((u + 1) * w + v + 1);
+
+                    indices.push((u + 1) * w + v + 1);
+                    indices.push((u + 1) * w + v);
+
+                    indices.push((u + 1) * w + v);
+                    indices.push(u * w + v);
+                }
+                SurfaceRenderMode::Surface => {
+                    indices.push(u * w + v);
+                    indices.push(u * w + v + 1);
+                    indices.push((u + 1) * w + v + 1);
+
+                    indices.push(u * w + v);
+                    indices.push((u + 1) * w + v + 1);
+                    indices.push((u + 1) * w + v);
+                }
+            }
         }
     }
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::all());
+    let mut mesh = match render_mode {
+        SurfaceRenderMode::Triangles => {
+            Mesh::new(PrimitiveTopology::LineList, RenderAssetUsages::all())
+        }
+        SurfaceRenderMode::Surface => {
+            Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::all())
+        }
+    };
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, computed_points);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);

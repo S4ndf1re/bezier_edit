@@ -146,8 +146,8 @@ impl Default for RenderInformation {
         Self {
             scale: 1.0,
             height: 0.0,
-            resolution: (300, 300),
-            fast_resolution: (50, 50),
+            resolution: (100, 100),
+            fast_resolution: (25, 25),
             curvature_mode: CurvatureDisplayMode::None,
             u_iso_count: 0,
             v_iso_count: 0,
