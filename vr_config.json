@@ -1,21 +1,25 @@
 {
-  "interaction_profile": "/interaction_profiles/oculus/touch_controller",
-  "left": {
-    "aim": "/user/hand/left/input/aim/pose",
-    "grip": "/user/hand/left/input/grip/pose",
-    "trigger": "/user/hand/left/input/trigger/value",
-    "squeeze": "/user/hand/left/input/squeeze/value",
-    "thumbstick_x": "/user/hand/left/input/thumbstick/x",
-    "thumbstick_y": "/user/hand/left/input/thumbstick/y",
-    "output": "/user/hand/left/output/haptic"
-  },
-  "right": {
-    "aim": "/user/hand/right/input/aim/pose",
-    "grip": "/user/hand/right/input/grip/pose",
-    "trigger": "/user/hand/right/input/trigger/value",
-    "squeeze": "/user/hand/right/input/squeeze/value",
-    "thumbstick_x": "/user/hand/right/input/thumbstick/x",
-    "thumbstick_y": "/user/hand/right/input/thumbstick/y",
-    "output": "/user/hand/right/output/haptic"
-  }
+  "profiles": [
+    {
+      "interaction_profile": "/interaction_profiles/oculus/touch_controller",
+      "left": {
+        "aim": "/user/hand/left/input/aim/pose",
+        "grip": "/user/hand/left/input/grip/pose",
+        "trigger": "/user/hand/left/input/trigger/value",
+        "squeeze": "/user/hand/left/input/squeeze/value",
+        "thumbstick_x": "/user/hand/left/input/thumbstick/x",
+        "thumbstick_y": "/user/hand/left/input/thumbstick/y",
+        "output": "/user/hand/left/output/haptic"
+      },
+      "right": {
+        "aim": "/user/hand/right/input/aim/pose",
+        "grip": "/user/hand/right/input/grip/pose",
+        "trigger": "/user/hand/right/input/trigger/value",
+        "squeeze": "/user/hand/right/input/squeeze/value",
+        "thumbstick_x": "/user/hand/right/input/thumbstick/x",
+        "thumbstick_y": "/user/hand/right/input/thumbstick/y",
+        "output": "/user/hand/right/output/haptic"
+      }
+    }
+  ]
 }

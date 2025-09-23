@@ -12,7 +12,7 @@ use bevy_mod_openxr::{
     resources::OxrInstance,
     session::OxrSession,
 };
-use bevy_mod_xr::session::{session_available, XrSessionCreated, XrTracker};
+use bevy_mod_xr::session::{XrSessionCreated, XrTracker, session_available};
 use bevy_xr_utils::tracking_utils::{TrackingUtilitiesPlugin, XrTrackedView};
 use config::Config;
 use openxr::{Haptic, Posef};
@@ -73,53 +73,55 @@ fn suggest_action_bindings(
     mut bindings: EventWriter<OxrSuggestActionBinding>,
     config: Res<Config>,
 ) {
-    let interaction_profile = config.interaction_profile.clone();
+    for profile in &config.profiles {
+        let interaction_profile = profile.interaction_profile.clone();
 
-    for (action, config) in [&actions.left, &actions.right]
-        .iter()
-        .zip([&config.left, &config.right].iter())
-    {
-        bindings.write(OxrSuggestActionBinding {
-            action: action.aim.as_raw(),
-            interaction_profile: interaction_profile.clone().into(),
-            bindings: vec![config.aim.clone().into()],
-        });
+        for (action, config) in [&actions.left, &actions.right]
+            .iter()
+            .zip([&profile.left, &profile.right].iter())
+        {
+            bindings.write(OxrSuggestActionBinding {
+                action: action.aim.as_raw(),
+                interaction_profile: interaction_profile.clone().into(),
+                bindings: vec![config.aim.clone().into()],
+            });
 
-        bindings.write(OxrSuggestActionBinding {
-            action: action.grip.as_raw(),
-            interaction_profile: interaction_profile.clone().into(),
-            bindings: vec![config.grip.clone().into()],
-        });
+            bindings.write(OxrSuggestActionBinding {
+                action: action.grip.as_raw(),
+                interaction_profile: interaction_profile.clone().into(),
+                bindings: vec![config.grip.clone().into()],
+            });
 
-        bindings.write(OxrSuggestActionBinding {
-            action: action.trigger.as_raw(),
-            interaction_profile: interaction_profile.clone().into(),
-            bindings: vec![config.trigger.clone().into()],
-        });
+            bindings.write(OxrSuggestActionBinding {
+                action: action.trigger.as_raw(),
+                interaction_profile: interaction_profile.clone().into(),
+                bindings: vec![config.trigger.clone().into()],
+            });
 
-        bindings.write(OxrSuggestActionBinding {
-            action: action.squeeze.as_raw(),
-            interaction_profile: interaction_profile.clone().into(),
-            bindings: vec![config.squeeze.clone().into()],
-        });
+            bindings.write(OxrSuggestActionBinding {
+                action: action.squeeze.as_raw(),
+                interaction_profile: interaction_profile.clone().into(),
+                bindings: vec![config.squeeze.clone().into()],
+            });
 
-        bindings.write(OxrSuggestActionBinding {
-            action: action.thumbstick_x.as_raw(),
-            interaction_profile: interaction_profile.clone().into(),
-            bindings: vec![config.thumbstick_x.clone().into()],
-        });
+            bindings.write(OxrSuggestActionBinding {
+                action: action.thumbstick_x.as_raw(),
+                interaction_profile: interaction_profile.clone().into(),
+                bindings: vec![config.thumbstick_x.clone().into()],
+            });
 
-        bindings.write(OxrSuggestActionBinding {
-            action: action.thumbstick_y.as_raw(),
-            interaction_profile: interaction_profile.clone().into(),
-            bindings: vec![config.thumbstick_y.clone().into()],
-        });
+            bindings.write(OxrSuggestActionBinding {
+                action: action.thumbstick_y.as_raw(),
+                interaction_profile: interaction_profile.clone().into(),
+                bindings: vec![config.thumbstick_y.clone().into()],
+            });
 
-        bindings.write(OxrSuggestActionBinding {
-            action: action.output.as_raw(),
-            interaction_profile: interaction_profile.clone().into(),
-            bindings: vec![config.output.clone().into()],
-        });
+            bindings.write(OxrSuggestActionBinding {
+                action: action.output.as_raw(),
+                interaction_profile: interaction_profile.clone().into(),
+                bindings: vec![config.output.clone().into()],
+            });
+        }
     }
 }
 fn create_actions(instance: Res<OxrInstance>, mut cmds: Commands) {
