@@ -12,6 +12,7 @@ use super::helper_curves::{
     CreateCurveState, RedrawCurvesEvent, add_point, commit_curve, commit_plane,
     enter_create_curve_mode, render_curves,
 };
+use super::test_mode::EvaluationPlugin;
 use super::{components::*, handle_generic_deleted_event};
 
 #[cfg(feature = "vr_enable")]
@@ -30,14 +31,15 @@ use super::surface_click::{
     SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
 };
 use super::util::{
-    SurfaceRenderMode, collect_control_points, compute_point_by_params,
-    create_mesh_from_control_points, curvature_to_color,
+    SurfaceRenderMode, compute_point_by_params, create_mesh_from_control_points, curvature_to_color,
 };
 use crate::bezier_curve::EntityDeletedEvent;
 use crate::bezier_curve::bridges::{BridgeConnector, CompleteBridge};
 use crate::custom_shapes::parallelogram::Parallelogram2d;
 use crate::history::plugin::HistoryUndoEvent;
-use crate::nurbs::bezier_plane::{ControlPoints2D, derive_2d, eval_2d_bezier_curves};
+use crate::nurbs::bezier_plane::{
+    ControlPoints2D, ToControlPoints2D, derive_2d, eval_2d_bezier_curves,
+};
 use crate::picking3d::events::{HoveredBy, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::projection::{
@@ -236,13 +238,12 @@ fn generate_pointcloud(
         commands.entity(p).despawn();
     }
 
-    let multi_curves = collect_control_points(control_points);
     if scale_info.surface_mesh_mode == SurfaceMeshMode::Mesh {
         let mut color = Color::from(GRAY_500);
         color.set_alpha(0.3);
 
         let (mesh, image_handle) = create_mesh_from_control_points(
-            &multi_curves,
+            &control_points,
             resolution,
             &scale_info.curvature_mode,
             images,
@@ -308,8 +309,6 @@ pub fn redraw_iso_lines(
         commands.entity(p).despawn();
     }
 
-    let multi_curves = collect_control_points(control_points);
-
     let w = resolution.0;
     let h = resolution.1;
 
@@ -318,11 +317,11 @@ pub fn redraw_iso_lines(
     for line in scale_info.to_line_uv() {
         let verticies = match line {
             UVEither::U(u) => (0..h)
-                .map(|v| compute_point_by_params(&multi_curves, u, v as f64 / ((h - 1) as f64)))
+                .map(|v| compute_point_by_params(&control_points, u, v as f64 / ((h - 1) as f64)))
                 .map(|p| p.into())
                 .collect::<Vec<Vec3>>(),
             UVEither::V(v) => (0..w)
-                .map(|u| compute_point_by_params(&multi_curves, u as f64 / ((w - 1) as f64), v))
+                .map(|u| compute_point_by_params(&control_points, u as f64 / ((w - 1) as f64), v))
                 .map(|p| p.into())
                 .collect::<Vec<Vec3>>(),
         };
@@ -380,7 +379,7 @@ pub fn redraw_boxes(
         commands.entity(p).despawn();
     }
 
-    let multi_curves = collect_control_points(control_points);
+    let multi_curves = control_points.to_control_points();
     for (u, v) in scale_info.to_uv_sample() {
         let point = eval_2d_bezier_curves(&multi_curves, u, v);
         let (u_diff, v_diff) = derive_2d(&multi_curves, u, v, 1);
@@ -630,6 +629,7 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
             .p1()
             .spawn_bridges_2d(surface, w, h, &points, &ids);
 
+        info!("Created Surface, triggering redraw event");
         self.event_writer.write(RedrawEvent::HighQuality);
     }
 
@@ -641,7 +641,18 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
     }
 }
 
-pub fn generate_default_curve(mut surface_creator: SurfaceCreator) {
+#[derive(Event)]
+pub struct ResetDefaultCurveEvent;
+
+pub fn generate_default_curve(
+    mut reader: EventReader<ResetDefaultCurveEvent>,
+    mut surface_creator: SurfaceCreator,
+) {
+    if reader.is_empty() {
+        return;
+    }
+    reader.clear();
+
     let (w, h): (usize, usize) = (2, 2);
     let surface_width = 5.0;
     let surface_height = 5.0;
@@ -669,6 +680,10 @@ pub fn generate_default_curve(mut surface_creator: SurfaceCreator) {
     }
 
     surface_creator.create_surface_from_points(points, w, h);
+}
+
+fn startup(mut writer: EventWriter<ResetDefaultCurveEvent>) {
+    writer.write(ResetDefaultCurveEvent);
 }
 
 fn handle_keyboard(
@@ -703,9 +718,15 @@ pub struct BezierRenderPlugin;
 
 impl Plugin for BezierRenderPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, generate_default_curve);
+        app.add_systems(Startup, startup);
         // app.add_systems(PreUpdate, (handle_keyboard, solve_constraints));
-        app.add_systems(PreUpdate, handle_keyboard);
+        app.add_systems(
+            PreUpdate,
+            (
+                handle_keyboard,
+                generate_default_curve.run_if(on_event::<ResetDefaultCurveEvent>),
+            ),
+        );
         app.add_systems(
             Update,
             (
@@ -811,6 +832,9 @@ impl Plugin for BezierRenderPlugin {
         app.add_event::<EntityDeletedEvent>();
         app.add_event::<IncreaseDegreeEvent>();
         app.add_event::<DecreaseDegreeEvent>();
+        app.add_event::<ResetDefaultCurveEvent>();
         app.init_state::<ControlState>();
+
+        app.add_plugins(EvaluationPlugin);
     }
 }

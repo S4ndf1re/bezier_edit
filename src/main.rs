@@ -9,7 +9,6 @@ mod nurbs;
 pub mod picking3d;
 pub mod projection;
 pub mod solver;
-pub mod test_mode;
 mod thirdparty_copy;
 mod translation_control;
 mod ui;

@@ -7,13 +7,14 @@ use super::{bezier_curve_renderer::RedrawEvent, render_info::RenderInformation};
 #[derive(Event)]
 pub struct ChangeCurvatureDisplayModeEvent(pub CurvatureDisplayMode);
 
-#[derive(Clone, Copy, Ord, Eq, PartialEq, PartialOrd, Default)]
+#[derive(Clone, Copy, PartialEq, Default)]
 pub enum CurvatureDisplayMode {
     #[default]
     None,
     U,
     V,
     Both,
+    CustomColor(Color),
 }
 
 impl CurvatureDisplayMode {
@@ -23,6 +24,7 @@ impl CurvatureDisplayMode {
             Self::U => Self::V,
             Self::V => Self::Both,
             Self::Both => Self::None,
+            Self::CustomColor(c) => Self::CustomColor(c),
         }
     }
 }
@@ -34,6 +36,7 @@ impl Display for CurvatureDisplayMode {
             CurvatureDisplayMode::U => write!(f, "U"),
             CurvatureDisplayMode::V => write!(f, "V"),
             CurvatureDisplayMode::Both => write!(f, "Both"),
+            CurvatureDisplayMode::CustomColor(c) => write!(f, "Custom({:?})", c),
         }
     }
 }

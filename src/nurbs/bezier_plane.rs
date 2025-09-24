@@ -9,6 +9,11 @@ use super::bounding_box_3d::BoundingBox3D;
 
 pub type ControlPoints2D = Vec<Vec<Point>>;
 
+pub trait ToControlPoints2D {
+    /// Convert &self to control points
+    fn to_control_points(self) -> ControlPoints2D;
+}
+
 fn transpose_control_points(points: &ControlPoints2D) -> ControlPoints2D {
     let m = points.len() - 1;
     assert!(m >= 1);
