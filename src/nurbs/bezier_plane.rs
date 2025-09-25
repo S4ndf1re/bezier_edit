@@ -14,7 +14,7 @@ pub trait ToControlPoints2D {
     fn to_control_points(self) -> ControlPoints2D;
 }
 
-fn transpose_control_points(points: &ControlPoints2D) -> ControlPoints2D {
+pub fn transpose_control_points(points: &ControlPoints2D) -> ControlPoints2D {
     let m = points.len() - 1;
     assert!(m >= 1);
 
