@@ -65,6 +65,7 @@ use bevy::prelude::*;
 use bevy::render::mesh::{PrimitiveTopology, VertexAttributeValues};
 use bevy::render::view::RenderLayers;
 use num::ToPrimitive;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 pub type Resolution = (u32, u32);
 
@@ -317,10 +318,12 @@ pub fn redraw_iso_lines(
     for line in scale_info.to_line_uv() {
         let verticies = match line {
             UVEither::U(u) => (0..h)
+                .into_par_iter()
                 .map(|v| compute_point_by_params(&control_points, u, v as f64 / ((h - 1) as f64)))
                 .map(|p| p.into())
                 .collect::<Vec<Vec3>>(),
             UVEither::V(v) => (0..w)
+                .into_par_iter()
                 .map(|u| compute_point_by_params(&control_points, u as f64 / ((w - 1) as f64), v))
                 .map(|p| p.into())
                 .collect::<Vec<Vec3>>(),
