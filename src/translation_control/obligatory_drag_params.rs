@@ -141,6 +141,10 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         t.translation
     }
 
+    /// Snapping to a projected entity. Once this function is called, SnappedPoint::ToProjection is
+    /// added to the moved entity. Other than the SnappedPoint::ToCurve component, this is a softer
+    /// constraint, that does not move the point when the snapped point is moved
+    ///
     fn snap_to_projection(
         &mut self,
         control_parent: (Entity, &ControlParent),
@@ -162,7 +166,11 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         t.translation
     }
 
-    fn snap_to_curve(
+    /// Try snapping to a curve when distance to the nearest curve is less than 0.5 * scale
+    /// Once snapped, The SnappedPoint::ToCurve component is inserted to the moved entity.
+    /// This marker component allows for moving the snapped to curve, and simultaneously move the
+    /// snapped entity with it.
+    fn try_snap_to_curve(
         &mut self,
         control_parent: (Entity, &ControlParent),
         t: Transform,
@@ -259,7 +267,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         {
             self.snap_to_projection(control_parent, translation, closest_move_direction)
         } else {
-            self.snap_to_curve(
+            self.try_snap_to_curve(
                 control_parent,
                 t,
                 translation,
@@ -375,7 +383,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     if let Some(accumulated_diff) =
                         self.accumulated_movement.current_diff(&control_parent.1.0)
                     {
-                        self.snap_to_curve(
+                        self.try_snap_to_curve(
                             control_parent,
                             t,
                             accumulated_diff,
