@@ -20,9 +20,12 @@ use crate::{
         util::{SurfaceRenderMode, create_mesh_from_control_points},
     },
     nurbs::{
-        bezier_plane::{ControlPoints2D, ToControlPoints2D, eval_2d_bezier_curves},
+        bezier_plane::{
+            ControlPoints2D, ToControlPoints2D, eval_2d_bezier_curves, transpose_control_points,
+        },
         point::Point,
     },
+    translation_control::proximity_detector::Snappable,
 };
 
 use super::{bezier_curve_renderer::ResetDefaultCurveEvent, components::RenderPoint};
@@ -278,6 +281,9 @@ impl Drop for Evaluation {
 #[derive(Component)]
 pub struct EvaluationSurfaceComponent;
 
+#[derive(Component)]
+pub struct EvaluationPointComponent;
+
 #[derive(Event)]
 pub struct NextEvaluationEvent;
 
@@ -287,6 +293,7 @@ fn handle_next_eval_event(
     mut evaluation: ResMut<Evaluation>,
     mut commands: Commands,
     evaluation_surfaces: Query<Entity, With<EvaluationSurfaceComponent>>,
+    evaluation_points: Query<Entity, With<EvaluationPointComponent>>,
     root: Query<Entity, With<RootTransform>>,
     images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -328,6 +335,10 @@ fn handle_next_eval_event(
         for surface in evaluation_surfaces {
             let _ = commands.get_entity(surface).map(|mut e| e.despawn());
         }
+
+        for point_entity in evaluation_points {
+            let _ = commands.get_entity(point_entity).map(|mut e| e.despawn());
+        }
     }
 
     if let Some(points) = next_surface {
@@ -358,6 +369,36 @@ fn handle_next_eval_event(
             MeshMaterial3d(materials.add(mat)),
             EvaluationSurfaceComponent,
         ));
+
+        let points = points.to_control_points();
+        let edge_1 = points.first();
+        let edge_3 = points.last();
+        let transposed_points = transpose_control_points(&points);
+        let edge_2 = transposed_points.last();
+        let edge_4 = transposed_points.first();
+
+        let small_sphere = meshes.add(Sphere::new(0.05 * info.scale));
+        let light_red = materials.add(StandardMaterial::from_color(Srgba::new(
+            230.0 / 255.0,
+            121.0 / 255.0,
+            135.0 / 255.0,
+            1.0,
+        )));
+
+        for edge in [edge_1, edge_2, edge_3, edge_4] {
+            if let Some(edge) = edge {
+                for point in edge {
+                    commands.spawn((
+                        ChildOf(root),
+                        Transform::from_translation(Vec3::from(*point)),
+                        Mesh3d(small_sphere.clone()),
+                        MeshMaterial3d(light_red.clone()),
+                        EvaluationPointComponent,
+                        Snappable,
+                    ));
+                }
+            }
+        }
     }
 }
 
