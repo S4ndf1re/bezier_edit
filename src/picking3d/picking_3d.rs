@@ -383,7 +383,6 @@ fn handle_input_grab(
     info: Res<RenderInformation>,
     time: Res<Time>,
 ) {
-    // TODO: Track controllers using prisma as additional mode
     for (state, hover_by) in [
         (trigger.left, HoveredBy::Left),
         (trigger.right, HoveredBy::Right),
@@ -536,6 +535,7 @@ fn handle_input_grab(
                     if picking_state.contains_entity(&marker.entity, &hover_by) {
                         let entity_global_position = transform_query.get(marker.entity).unwrap();
 
+                        // PRISM: Use prism precision movement
                         let (delta, new_timer) = prism_function(
                             transform.translation() - marker.current_position,
                             transform.translation() - marker.actual_position,
@@ -552,7 +552,10 @@ fn handle_input_grab(
                                     start_entity_position: marker.global_start,
                                     current_entity_position: marker.actual_position + delta,
                                     real_current_entity_position: transform.translation(),
+                                    // PRISM: use the prism delta
                                     delta,
+                                    // PRISM: but use the actual delta here, in case it is needed
+                                    // elsewhere
                                     real_delta: transform.translation() - marker.current_position,
                                 },
                                 position: entity_global_position.translation(),
