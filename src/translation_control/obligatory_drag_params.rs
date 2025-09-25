@@ -29,6 +29,10 @@ use super::{
     },
 };
 
+/// Snappable, so that a entity may be snapped upon
+#[derive(Component)]
+pub struct Snappable;
+
 #[allow(clippy::complexity)]
 #[derive(SystemParam)]
 pub struct ObligatoryDragParams<'w, 's> {
@@ -371,6 +375,10 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                             .unwrap()
                         + closest_move_direction;
                     t.translation
+                } else if false {
+                    // TODO: add snapping to any entity that contains the Snappable Marker
+                    // Component
+                    todo!()
                 } else {
                     // Remove snapped component
                     let entity = self.snapped.get(control_parent.1.0).unwrap().0;

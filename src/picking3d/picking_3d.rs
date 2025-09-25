@@ -429,15 +429,18 @@ fn handle_input_grab(
                     continue;
                 }
                 let entity_global_position = entity_global_position.unwrap();
-                commands.trigger_targets(
-                    Pointer3d {
-                        controler: hover_by,
-                        hit_entity: tracked.1,
-                        event: DragEnd,
-                        position: entity_global_position.translation(),
-                    },
-                    *entity,
-                );
+
+                if moved_marked_query.get(*entity).is_ok() {
+                    commands.trigger_targets(
+                        Pointer3d {
+                            controler: hover_by,
+                            hit_entity: tracked.1,
+                            event: DragEnd,
+                            position: entity_global_position.translation(),
+                        },
+                        *entity,
+                    );
+                }
             }
             picking_state.set_dragging(false, &hover_by);
 
@@ -469,6 +472,9 @@ fn handle_input_grab(
                 }
 
                 if should_start_dragging {
+                    let mut smallest_distance = f32::MAX;
+                    let mut smallest_distance_vec = None;
+                    let mut smallest_entity = None;
                     for entity in picking_state.iter(&hover_by) {
                         let transform = transform_query.get(*entity).unwrap();
                         let translation = match picking_state.get_start_transform(entity) {
@@ -481,6 +487,19 @@ fn handle_input_grab(
                         let dist = tracked.0.rotation().inverse().mul_vec3(dist);
                         let dist = dist / tracked.0.scale();
 
+                        if dist.length() < smallest_distance {
+                            smallest_distance = dist.length();
+                            smallest_distance_vec = Some(dist);
+                            smallest_entity = Some(*entity);
+                        }
+                    }
+
+                    // Only start dragging for a single entity
+                    if let Some(entity) = smallest_entity
+                        && let Some(dist) = smallest_distance_vec
+                    {
+                        let transform = transform_query.get(entity).unwrap();
+
                         // TODO: Figure out if Transform::default feels better here. This would
                         // mean that it is not allowed to rotate the wrist. this will then not
                         // change any translations.
@@ -489,7 +508,7 @@ fn handle_input_grab(
                             Transform::from_translation(dist),
                             Visibility::default(),
                             MoveMarker {
-                                entity: *entity,
+                                entity,
                                 global_start: transform.translation(),
                                 current_position: tracked.0.transform_point(dist),
                                 actual_position: transform.translation(),
@@ -504,7 +523,7 @@ fn handle_input_grab(
                                 event: DragStart,
                                 position: transform.translation(),
                             },
-                            *entity,
+                            entity,
                         );
                     }
 
