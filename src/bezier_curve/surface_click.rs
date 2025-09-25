@@ -1,18 +1,17 @@
 use bevy::{color::palettes::tailwind::RED_400, prelude::*};
+use rand::seq::IndexedRandom;
 use struct_patch::Patch;
 
 use crate::{
     RootTransform,
     nurbs::{
-        bezier_plane::{derive_2d, determine_u_v, eval_2d_bezier_curves},
+        bezier_plane::{ToControlPoints2D, derive_2d, determine_u_v, eval_2d_bezier_curves},
         point::Point,
     },
     ui::UiStateChangeset,
 };
 
-use super::{
-    components::RenderPoint, render_info::RenderInformation, util::collect_control_points,
-};
+use super::{components::RenderPoint, render_info::RenderInformation};
 
 #[derive(Component, Patch)]
 #[patch(
@@ -48,7 +47,7 @@ pub fn bezier_surface_picking(
         });
     }
 
-    let control_points = collect_control_points(control_points);
+    let control_points = control_points.to_control_points();
 
     let material = materials.add(Color::from(RED_400));
     let sphere = meshes.add(Sphere::new(0.07 * scale).mesh().ico(5).unwrap());
@@ -146,7 +145,7 @@ pub fn update_surface_click(
     scale_res: Res<RenderInformation>,
 ) {
     let scale = scale_res.scale;
-    let points = collect_control_points(set.p1());
+    let points = set.p1().to_control_points();
 
     for (surface, mut transform, children) in set.p0() {
         let point = eval_2d_bezier_curves(&points, surface.u, surface.v);
@@ -200,7 +199,10 @@ pub fn handle_state_change_event(
 
         let mut root = commands.get_entity(root.single().unwrap()).unwrap();
 
-        let control_points = collect_control_points(control_points);
+        let control_points = control_points.to_control_points();
+        if control_points.is_empty() {
+            return;
+        }
         let evaluated = eval_2d_bezier_curves(&control_points, surface_click.u, surface_click.v);
         let (u_diff, v_diff) = derive_2d(&control_points, surface_click.u, surface_click.v, 1);
         let normal = u_diff.cross(&v_diff);

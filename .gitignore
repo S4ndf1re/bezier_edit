@@ -2,3 +2,4 @@
 /.idea
 ./dir-locals.el
 .DS_Store
+evaluation/

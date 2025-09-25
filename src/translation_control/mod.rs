@@ -1,6 +1,7 @@
 pub mod accumulated;
 pub mod control_storage;
 pub mod obligatory_drag_params;
+pub mod proximity_detector;
 pub mod translation_controller;
 
 use bevy::prelude::*;

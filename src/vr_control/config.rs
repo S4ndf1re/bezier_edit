@@ -1,5 +1,5 @@
 use std::{
-    fs::{read_to_string, File},
+    fs::{File, read_to_string},
     io::Write,
 };
 
@@ -17,35 +17,42 @@ pub struct ControllerConfig {
     pub output: String,
 }
 
-#[derive(Serialize, Deserialize, Resource)]
-pub struct Config {
+#[derive(Serialize, Deserialize)]
+pub struct InteractionProfile {
     pub interaction_profile: String,
     pub left: ControllerConfig,
     pub right: ControllerConfig,
 }
 
+#[derive(Serialize, Deserialize, Resource)]
+pub struct Config {
+    pub profiles: Vec<InteractionProfile>,
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
-            interaction_profile: "/interaction_profiles/oculus/touch_controller".to_owned(),
-            left: ControllerConfig {
-                aim: "/user/hand/left/input/aim/pose".to_owned(),
-                grip: "/user/hand/left/input/grip/pose".to_owned(),
-                trigger: "/user/hand/left/input/trigger/value".to_owned(),
-                squeeze: "/user/hand/left/input/squeeze/value".to_owned(),
-                thumbstick_x: "/user/hand/left/input/thumbstick/x".to_owned(),
-                thumbstick_y: "/user/hand/left/input/thumbstick/y".to_owned(),
-                output: "/user/hand/left/output/haptic".to_owned(),
-            },
-            right: ControllerConfig {
-                aim: "/user/hand/right/input/aim/pose".to_owned(),
-                grip: "/user/hand/right/input/grip/pose".to_owned(),
-                trigger: "/user/hand/right/input/trigger/value".to_owned(),
-                squeeze: "/user/hand/right/input/squeeze/value".to_owned(),
-                thumbstick_x: "/user/hand/right/input/thumbstick/x".to_owned(),
-                thumbstick_y: "/user/hand/right/input/thumbstick/y".to_owned(),
-                output: "/user/hand/right/output/haptic".to_owned(),
-            },
+            profiles: vec![InteractionProfile {
+                interaction_profile: "/interaction_profiles/oculus/touch_controller".to_owned(),
+                left: ControllerConfig {
+                    aim: "/user/hand/left/input/aim/pose".to_owned(),
+                    grip: "/user/hand/left/input/grip/pose".to_owned(),
+                    trigger: "/user/hand/left/input/trigger/value".to_owned(),
+                    squeeze: "/user/hand/left/input/squeeze/value".to_owned(),
+                    thumbstick_x: "/user/hand/left/input/thumbstick/x".to_owned(),
+                    thumbstick_y: "/user/hand/left/input/thumbstick/y".to_owned(),
+                    output: "/user/hand/left/output/haptic".to_owned(),
+                },
+                right: ControllerConfig {
+                    aim: "/user/hand/right/input/aim/pose".to_owned(),
+                    grip: "/user/hand/right/input/grip/pose".to_owned(),
+                    trigger: "/user/hand/right/input/trigger/value".to_owned(),
+                    squeeze: "/user/hand/right/input/squeeze/value".to_owned(),
+                    thumbstick_x: "/user/hand/right/input/thumbstick/x".to_owned(),
+                    thumbstick_y: "/user/hand/right/input/thumbstick/y".to_owned(),
+                    output: "/user/hand/right/output/haptic".to_owned(),
+                },
+            }],
         }
     }
 }

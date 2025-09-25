@@ -1,4 +1,5 @@
 use crate::bezier_curve::bezier_curve_renderer::hover_3d;
+use crate::bezier_curve::test_mode::NextEvaluationEvent;
 use crate::picking3d::events::HoveredBy;
 use crate::translation_control::translation_controller::SetPrismMode;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
@@ -83,6 +84,9 @@ struct StepMode;
 
 #[derive(Component)]
 struct PrismMode;
+
+#[derive(Component)]
+struct EvaluationMode;
 
 #[derive(Component)]
 struct VrMenuRoot;
@@ -402,6 +406,7 @@ pub struct MenuHandler<'w, 's> {
     plus: Query<'w, 's, Entity, With<PlusMode>>,
     steps: Query<'w, 's, Entity, With<StepMode>>,
     prisms: Query<'w, 's, Entity, With<PrismMode>>,
+    evaluations: Query<'w, 's, Entity, With<EvaluationMode>>,
     set_end_mode: EventWriter<'w, EndModeEvent>,
     set_delete_mode: EventWriter<'w, DeleteModeEvent>,
     set_create_curve_mode: EventWriter<'w, CreateCurveEvent>,
@@ -413,9 +418,12 @@ pub struct MenuHandler<'w, 's> {
     increase_degree: EventWriter<'w, IncreaseDegreeEvent>,
     control_state: Res<'w, State<ControlState>>,
     translation_state: ResMut<'w, TranslationControllerState>,
+    next_evaluation: EventWriter<'w, NextEvaluationEvent>,
     models: Res<'w, GltfAssets>,
     gltf: Res<'w, Assets<Gltf>>,
     mesh_mode_writer: EventWriter<'w, ChangeSurfaceMeshMode>,
+    meshes: ResMut<'w, Assets<Mesh>>,
+    materials: ResMut<'w, Assets<StandardMaterial>>,
 }
 
 impl<'w, 's> MenuHandler<'w, 's> {
@@ -797,6 +805,26 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_over)
             .observe(handle_hover_over3d)
             .observe(hover_3d);
+
+        // Spawn center to start evaluation
+        self.commands
+            .spawn((
+                transform,
+                EvaluationMode,
+                Visibility::Inherited,
+                ChildOf(root),
+                Mesh3d(self.meshes.add(Sphere::new(0.01 * self.info.scale))),
+                MeshMaterial3d(
+                    self.materials
+                        .add(StandardMaterial::from_color(Color::from(BLACK))),
+                ),
+                Picking3dInteractable::default(),
+            ))
+            .observe(handle_hover_out)
+            .observe(handle_hover_out3d)
+            .observe(handle_hover_over)
+            .observe(handle_hover_over3d)
+            .observe(hover_3d);
     }
 
     pub fn apply_menu_state(&mut self) {
@@ -828,6 +856,8 @@ impl<'w, 's> MenuHandler<'w, 's> {
             } else if self.prisms.get(selected).is_ok() {
                 self.set_prism_mode
                     .write(SetPrismMode(self.translation_state.prism_mode.next()));
+            } else if self.evaluations.get(selected).is_ok() {
+                self.next_evaluation.write(NextEvaluationEvent);
             }
         }
     }

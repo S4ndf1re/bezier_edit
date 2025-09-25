@@ -135,3 +135,9 @@ impl From<(f64, f64, f64)> for Point {
         Point::new(x, y, z, None)
     }
 }
+
+impl From<Point> for (f64, f64, f64) {
+    fn from(value: Point) -> Self {
+        (value.x, value.y, value.z)
+    }
+}

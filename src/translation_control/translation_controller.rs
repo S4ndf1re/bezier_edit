@@ -46,7 +46,7 @@ pub struct MoveEntityByDeltaEvent {
 #[derive(Component, Clone, Copy)]
 pub enum SnappedPoint {
     ToCurve { u: f64, curve: Entity },
-    ToProjection,
+    ToEntity,
 }
 
 #[derive(Component)]

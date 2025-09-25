@@ -383,7 +383,6 @@ fn handle_input_grab(
     info: Res<RenderInformation>,
     time: Res<Time>,
 ) {
-    // TODO: Track controllers using prisma as additional mode
     for (state, hover_by) in [
         (trigger.left, HoveredBy::Left),
         (trigger.right, HoveredBy::Right),
@@ -429,15 +428,18 @@ fn handle_input_grab(
                     continue;
                 }
                 let entity_global_position = entity_global_position.unwrap();
-                commands.trigger_targets(
-                    Pointer3d {
-                        controler: hover_by,
-                        hit_entity: tracked.1,
-                        event: DragEnd,
-                        position: entity_global_position.translation(),
-                    },
-                    *entity,
-                );
+
+                if moved_marked_query.get(*entity).is_ok() {
+                    commands.trigger_targets(
+                        Pointer3d {
+                            controler: hover_by,
+                            hit_entity: tracked.1,
+                            event: DragEnd,
+                            position: entity_global_position.translation(),
+                        },
+                        *entity,
+                    );
+                }
             }
             picking_state.set_dragging(false, &hover_by);
 
@@ -469,6 +471,9 @@ fn handle_input_grab(
                 }
 
                 if should_start_dragging {
+                    let mut smallest_distance = f32::MAX;
+                    let mut smallest_distance_vec = None;
+                    let mut smallest_entity = None;
                     for entity in picking_state.iter(&hover_by) {
                         let transform = transform_query.get(*entity).unwrap();
                         let translation = match picking_state.get_start_transform(entity) {
@@ -481,6 +486,19 @@ fn handle_input_grab(
                         let dist = tracked.0.rotation().inverse().mul_vec3(dist);
                         let dist = dist / tracked.0.scale();
 
+                        if dist.length() < smallest_distance {
+                            smallest_distance = dist.length();
+                            smallest_distance_vec = Some(dist);
+                            smallest_entity = Some(*entity);
+                        }
+                    }
+
+                    // Only start dragging for a single entity
+                    if let Some(entity) = smallest_entity
+                        && let Some(dist) = smallest_distance_vec
+                    {
+                        let transform = transform_query.get(entity).unwrap();
+
                         // TODO: Figure out if Transform::default feels better here. This would
                         // mean that it is not allowed to rotate the wrist. this will then not
                         // change any translations.
@@ -489,7 +507,7 @@ fn handle_input_grab(
                             Transform::from_translation(dist),
                             Visibility::default(),
                             MoveMarker {
-                                entity: *entity,
+                                entity,
                                 global_start: transform.translation(),
                                 current_position: tracked.0.transform_point(dist),
                                 actual_position: transform.translation(),
@@ -504,7 +522,7 @@ fn handle_input_grab(
                                 event: DragStart,
                                 position: transform.translation(),
                             },
-                            *entity,
+                            entity,
                         );
                     }
 
@@ -517,6 +535,7 @@ fn handle_input_grab(
                     if picking_state.contains_entity(&marker.entity, &hover_by) {
                         let entity_global_position = transform_query.get(marker.entity).unwrap();
 
+                        // PRISM: Use prism precision movement
                         let (delta, new_timer) = prism_function(
                             transform.translation() - marker.current_position,
                             transform.translation() - marker.actual_position,
@@ -533,7 +552,10 @@ fn handle_input_grab(
                                     start_entity_position: marker.global_start,
                                     current_entity_position: marker.actual_position + delta,
                                     real_current_entity_position: transform.translation(),
+                                    // PRISM: use the prism delta
                                     delta,
+                                    // PRISM: but use the actual delta here, in case it is needed
+                                    // elsewhere
                                     real_delta: transform.translation() - marker.current_position,
                                 },
                                 position: entity_global_position.translation(),

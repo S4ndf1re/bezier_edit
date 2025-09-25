@@ -1,10 +1,10 @@
 use bevy::{ecs::change_detection, prelude::*};
 
-use crate::nurbs::bezier_plane::{decrease_degree_surface, increase_degree_surface};
-
-use super::{
-    bezier_curve_renderer::SurfaceCreator, components::RenderPoint, util::collect_control_points,
+use crate::nurbs::bezier_plane::{
+    ToControlPoints2D, decrease_degree_surface, increase_degree_surface,
 };
+
+use super::{bezier_curve_renderer::SurfaceCreator, components::RenderPoint};
 
 #[derive(Event)]
 pub struct DecreaseDegreeEvent;
@@ -18,7 +18,7 @@ pub fn handle_degree_increase_event(
     mut surface_creation: SurfaceCreator,
 ) {
     let mut change_curve = false;
-    let mut points = collect_control_points(control_points);
+    let mut points = control_points.to_control_points();
 
     for _ in reader.read() {
         points = increase_degree_surface(&points);
@@ -47,7 +47,7 @@ pub fn handle_degree_reduction_event(
     mut surface_creation: SurfaceCreator,
 ) {
     let mut change_curve = false;
-    let mut points = collect_control_points(control_points);
+    let mut points = control_points.to_control_points();
 
     for _ in reader.read() {
         points = decrease_degree_surface(&points);

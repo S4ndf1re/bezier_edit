@@ -23,6 +23,7 @@ use bevy::{
     prelude::*,
 };
 use bevy_lunex::UiLayoutRoot;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 #[derive(Component)]
 #[require(Transform)]
@@ -514,25 +515,25 @@ pub fn render_curves(
 
     // after collecting, set meshes accordingly
     for (entity, points) in curves_collected {
+        let points = (0..=100)
+            .into_par_iter()
+            .map(|u| {
+                Vec3::from(
+                    *de_casteljau(&points, (u as f64) / 100.0)
+                        .last()
+                        .unwrap()
+                        .last()
+                        .unwrap(),
+                )
+            })
+            .collect::<Vec<_>>();
+
         if points.len() >= 2 {
             if let Ok(segments) = curve_segments.get(entity) {
                 for segment in &segments.0 {
                     if let Ok(segment_params) = curve_segment.get(*segment) {
-                        let point = Vec3::from(
-                            *de_casteljau(&points, (segment_params.u as f64) / 100.0)
-                                .last()
-                                .unwrap()
-                                .last()
-                                .unwrap(),
-                        );
-
-                        let next_point = Vec3::from(
-                            *de_casteljau(&points, ((segment_params.u + 1) as f64) / 100.0)
-                                .last()
-                                .unwrap()
-                                .last()
-                                .unwrap(),
-                        );
+                        let point = points[segment_params.u];
+                        let next_point = points[segment_params.u + 1];
 
                         if let Ok(mut transform) = transforms.get_mut(*segment) {
                             *transform =
@@ -558,21 +559,8 @@ pub fn render_curves(
                 }
             } else {
                 for u in 0..100 {
-                    let point = Vec3::from(
-                        *de_casteljau(&points, (u as f64) / 100.0)
-                            .last()
-                            .unwrap()
-                            .last()
-                            .unwrap(),
-                    );
-
-                    let next_point = Vec3::from(
-                        *de_casteljau(&points, ((u + 1) as f64) / 100.0)
-                            .last()
-                            .unwrap()
-                            .last()
-                            .unwrap(),
-                    );
+                    let point = points[u];
+                    let next_point = points[u + 1];
 
                     let diff = next_point - point;
                     let length = diff.length();
