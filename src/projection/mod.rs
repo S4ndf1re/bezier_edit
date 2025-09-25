@@ -534,7 +534,7 @@ impl<'w, 's> ProjectedSnappingDetector<'w, 's> {
         &self,
         snappable_entity: Entity,
         next_move_delta: Vec3,
-        cant_snap_to_entities: Option<CantSnapToEntities>,
+        cant_snap_to_entities: &Option<CantSnapToEntities>,
     ) -> Option<Vec3> {
         let mut min_uv_distance = Vec::new();
 
