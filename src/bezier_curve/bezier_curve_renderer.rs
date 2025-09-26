@@ -604,7 +604,7 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                         Transform::from_translation(p.2),
                         Mesh3d(sphere.clone()),
                         MeshMaterial3d(material.clone()),
-                        Picking3dInteractable::default(),
+                        Picking3dInteractable::NoDrag,
                         RenderLayers::from(DisplayIn::BothNormalAndOrtho),
                         Visibility::Inherited,
                         ChildOf(surface),

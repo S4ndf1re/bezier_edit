@@ -7,7 +7,7 @@ use std::{
 
 use bevy::{color::palettes::css::BLACK, prelude::*};
 use bevy::{ecs::resource::Resource, math::Vec3};
-use chrono::Utc;
+use chrono::{Datelike, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::path::Path;
@@ -246,7 +246,14 @@ impl Evaluation {
         std::fs::create_dir_all(path.as_path())?;
 
         let timestamp = Utc::now();
-        path.push(format!("{timestamp}.json"));
+        path.push(format!(
+            "{}_{}_{}_{}_{}.json",
+            timestamp.year(),
+            timestamp.month(),
+            timestamp.day(),
+            timestamp.hour(),
+            timestamp.minute()
+        ));
 
         let mut file = File::create(path)?;
         let content = serde_json::to_string(&self)?;
@@ -322,7 +329,6 @@ fn handle_next_eval_event(
             for (vec, RenderPoint(y, x)) in control_points {
                 points.push((*y, *x, vec.translation).into());
             }
-            info!("Adding reference surface");
             evaluation.add_reference_surface(points);
         }
 

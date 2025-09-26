@@ -809,11 +809,11 @@ impl<'w, 's> MenuHandler<'w, 's> {
         // Spawn center to start evaluation
         self.commands
             .spawn((
-                transform,
+                Transform::from_xyz(0.0, -0.08 * scale, 0.0),
                 EvaluationMode,
                 Visibility::Inherited,
                 ChildOf(root),
-                Mesh3d(self.meshes.add(Sphere::new(0.01 * self.info.scale))),
+                Mesh3d(self.meshes.add(Sphere::new(0.05 * self.info.scale))),
                 MeshMaterial3d(
                     self.materials
                         .add(StandardMaterial::from_color(Color::from(BLACK))),

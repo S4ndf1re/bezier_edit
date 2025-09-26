@@ -39,6 +39,7 @@ pub enum Picking3dInteractable {
     #[default]
     Default,
     Ignore,
+    NoDrag,
 }
 
 #[derive(Component)]
@@ -192,7 +193,7 @@ fn check_intersections(
                     filter: &|entity| {
                         pickable
                             .get(entity)
-                            .is_ok_and(|p| *p.3 == Picking3dInteractable::Default)
+                            .is_ok_and(|p| *p.3 != Picking3dInteractable::Ignore)
                     },
                     ..Default::default()
                 }
@@ -296,7 +297,7 @@ fn test_all_hovered(
                     filter: &|entity| {
                         pickable
                             .get(entity)
-                            .is_ok_and(|p| *p.3 == Picking3dInteractable::Default)
+                            .is_ok_and(|p| *p.3 != Picking3dInteractable::Ignore)
                     },
                     ..Default::default()
                 }
@@ -326,7 +327,7 @@ fn test_all_hovered(
                     filter: &|entity| {
                         pickable
                             .get(entity)
-                            .is_ok_and(|p| *p.3 == Picking3dInteractable::Default)
+                            .is_ok_and(|p| *p.3 != Picking3dInteractable::Ignore)
                     },
                     ..Default::default()
                 }
@@ -380,6 +381,7 @@ fn handle_input_grab(
     mut picking_state: ResMut<PickingState>,
     mut moved_marked_query: Query<(&GlobalTransform, &mut MoveMarker, Entity)>,
     mut click_writer: EventWriter<Pointer3d<Click>>,
+    interactability: Query<&Picking3dInteractable>,
     info: Res<RenderInformation>,
     time: Res<Time>,
 ) {
@@ -422,14 +424,14 @@ fn handle_input_grab(
             && picking_state.check_is_dragging(&hover_by)
         {
             // End Drag here, new state is false, old one was true for >n ticks
-            for entity in picking_state.iter(&hover_by) {
-                let entity_global_position = transform_query.get(*entity);
-                if entity_global_position.is_err() {
-                    continue;
-                }
-                let entity_global_position = entity_global_position.unwrap();
+            for (_, marker, entity) in &moved_marked_query {
+                if picking_state.contains_entity(&marker.entity, &hover_by) {
+                    let entity_global_position = transform_query.get(entity);
+                    if entity_global_position.is_err() {
+                        continue;
+                    }
+                    let entity_global_position = entity_global_position.unwrap();
 
-                if moved_marked_query.get(*entity).is_ok() {
                     commands.trigger_targets(
                         Pointer3d {
                             controler: hover_by,
@@ -437,10 +439,11 @@ fn handle_input_grab(
                             event: DragEnd,
                             position: entity_global_position.translation(),
                         },
-                        *entity,
+                        marker.entity,
                     );
                 }
             }
+
             picking_state.set_dragging(false, &hover_by);
 
             for (_, _, entity) in moved_marked_query.iter() {
@@ -475,6 +478,13 @@ fn handle_input_grab(
                     let mut smallest_distance_vec = None;
                     let mut smallest_entity = None;
                     for entity in picking_state.iter(&hover_by) {
+                        let picking_interactable = interactability
+                            .get(*entity)
+                            .expect("Only interactable entities may land within picking_state");
+                        if *picking_interactable == Picking3dInteractable::NoDrag {
+                            continue;
+                        }
+
                         let transform = transform_query.get(*entity).unwrap();
                         let translation = match picking_state.get_start_transform(entity) {
                             Some(vec) => vec,
