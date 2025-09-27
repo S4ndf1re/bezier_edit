@@ -580,11 +580,9 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
             let root = self.root.single().unwrap();
 
             if let Ok(surface) = self.surface.single() {
-                info!("Deleting old surface");
                 commands.entity(surface).despawn();
             }
 
-            info!("Creating new surface");
             let surface = commands
                 .spawn((Surface, ChildOf(root), Visibility::Inherited))
                 .id();
@@ -632,7 +630,6 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
             .p1()
             .spawn_bridges_2d(surface, w, h, &points, &ids);
 
-        info!("Created Surface, triggering redraw event");
         self.event_writer.write(RedrawEvent::HighQuality);
     }
 
