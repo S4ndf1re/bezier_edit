@@ -11,6 +11,7 @@ use bevy_lunex::{Rl, UiColor, UiDepth, UiLayout, UiMeshPlane3d, prelude::*};
 use crate::{
     MainCamera,
     picking3d::{self, events::Pointer3d, picking_3d::Picking3dInteractable},
+    translation_control::translation_controller::{PrismMode, TranslationControllerState},
 };
 
 #[derive(Event)]
@@ -94,7 +95,7 @@ fn slider_drag(
         };
 
         let axis = root.single().unwrap().right().as_vec3();
-        let direction = (diff.dot(axis)) / (diff.length() * axis.length());
+        let direction = diff.normalize_or_zero().dot(axis.normalize_or_zero());
 
         let delta_x = direction * diff.length() * slider.span();
         let old_value = slider.get();
@@ -124,6 +125,7 @@ fn slider_drag(
     }
 }
 
+#[allow(clippy::complexity)]
 fn slider_drag3d(
     trigger: Trigger<Pointer3d<picking3d::events::Drag>>,
     mut slider: Query<(&mut UiSlider, &Children)>,
@@ -132,11 +134,20 @@ fn slider_drag3d(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut text3d: Query<&mut Text3d>,
     root: Query<&GlobalTransform, With<UiLayoutRoot>>,
+    translation_control: Res<TranslationControllerState>,
 ) {
     if let Ok((mut slider, children)) = slider.get_mut(trigger.target()) {
-        let diff = trigger.event.delta;
+        let diff = match translation_control.prism_mode {
+            PrismMode::None => trigger.event.real_delta,
+            PrismMode::Prism => trigger.event.delta,
+        };
         let axis = root.single().unwrap().right().as_vec3();
-        let direction = (diff.dot(axis)) / (diff.length() * axis.length());
+
+        if diff.length() < f32::EPSILON {
+            return;
+        }
+
+        let direction = diff.normalize_or_zero().dot(axis.normalize_or_zero());
 
         let delta_x = direction * diff.length() * slider.span();
         let old_value = slider.get();

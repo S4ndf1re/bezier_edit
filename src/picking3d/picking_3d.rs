@@ -449,135 +449,136 @@ fn handle_input_grab(
             for (_, _, entity) in moved_marked_query.iter() {
                 commands.get_entity(entity).unwrap().despawn();
             }
-        } else if current_state && pointer_state.is_grabbing(&hover_by) {
+        } else if current_state
+            && pointer_state.is_grabbing(&hover_by)
+            && !picking_state.check_is_dragging(&hover_by)
+        {
             // Check if dragging starts and send continous drag events
-            if !picking_state.check_is_dragging(&hover_by) {
-                let mut should_start_dragging = false;
-                let forward = tracked.0.forward().as_vec3();
+            let mut should_start_dragging = false;
+            let forward = tracked.0.forward().as_vec3();
 
-                for entity in picking_state.iter(&hover_by) {
-                    if let Ok(transform) = transform_query.get(*entity)
-                        && let Some(store) =
-                            picking_state.get_vector_store_for_entity(&hover_by, entity)
-                    {
-                        let to_target = transform.translation() - tracked.0.translation();
+            for entity in picking_state.iter(&hover_by) {
+                if let Ok(transform) = transform_query.get(*entity)
+                    && let Some(store) =
+                        picking_state.get_vector_store_for_entity(&hover_by, entity)
+                {
+                    let to_target = transform.translation() - tracked.0.translation();
 
-                        let alpha_diff = store.get_delta_alpha(to_target);
-                        let beta_diff = store.get_delta_beta(to_target, forward);
-                        let origin_diff = store.get_delta_origin(tracked.0.translation());
+                    let alpha_diff = store.get_delta_alpha(to_target);
+                    let beta_diff = store.get_delta_beta(to_target, forward);
+                    let origin_diff = store.get_delta_origin(tracked.0.translation());
 
-                        if alpha_diff > 0.05 || beta_diff > 0.05 || origin_diff > 0.05 * info.scale
-                        {
-                            should_start_dragging = true;
-                        }
+                    if alpha_diff > 0.05 || beta_diff > 0.05 || origin_diff > 0.05 * info.scale {
+                        should_start_dragging = true;
                     }
-                }
-
-                if should_start_dragging {
-                    let mut smallest_distance = f32::MAX;
-                    let mut smallest_distance_vec = None;
-                    let mut smallest_entity = None;
-                    for entity in picking_state.iter(&hover_by) {
-                        let picking_interactable = interactability
-                            .get(*entity)
-                            .expect("Only interactable entities may land within picking_state");
-                        if *picking_interactable == Picking3dInteractable::NoDrag {
-                            continue;
-                        }
-
-                        let transform = transform_query.get(*entity).unwrap();
-                        let translation = match picking_state.get_start_transform(entity) {
-                            Some(vec) => vec,
-                            None => transform.translation(),
-                        };
-                        let dist = translation - tracked.0.translation();
-
-                        // The controller may be rotated. In order to properly spawn the child, use the inverse rotation.
-                        let dist = tracked.0.rotation().inverse().mul_vec3(dist);
-                        let dist = dist / tracked.0.scale();
-
-                        if dist.length() < smallest_distance {
-                            smallest_distance = dist.length();
-                            smallest_distance_vec = Some(dist);
-                            smallest_entity = Some(*entity);
-                        }
-                    }
-
-                    // Only start dragging for a single entity
-                    if let Some(entity) = smallest_entity
-                        && let Some(dist) = smallest_distance_vec
-                    {
-                        let transform = transform_query.get(entity).unwrap();
-
-                        // TODO: Figure out if Transform::default feels better here. This would
-                        // mean that it is not allowed to rotate the wrist. this will then not
-                        // change any translations.
-                        commands.spawn((
-                            ChildOf(tracked.1),
-                            Transform::from_translation(dist),
-                            Visibility::default(),
-                            MoveMarker {
-                                entity,
-                                global_start: transform.translation(),
-                                current_position: tracked.0.transform_point(dist),
-                                actual_position: transform.translation(),
-                                timer: None,
-                            },
-                        ));
-
-                        commands.trigger_targets(
-                            Pointer3d {
-                                controler: hover_by,
-                                hit_entity: tracked.1,
-                                event: DragStart,
-                                position: transform.translation(),
-                            },
-                            entity,
-                        );
-                    }
-
-                    picking_state.set_dragging(true, &hover_by);
                 }
             }
 
-            if picking_state.check_is_dragging(&hover_by) {
-                for (transform, mut marker, _) in moved_marked_query.iter_mut() {
-                    if picking_state.contains_entity(&marker.entity, &hover_by) {
-                        let entity_global_position = transform_query.get(marker.entity).unwrap();
-
-                        // PRISM: Use prism precision movement
-                        let (delta, new_timer) = prism_function(
-                            transform.translation() - marker.current_position,
-                            transform.translation() - marker.actual_position,
-                            &time,
-                            marker.timer.clone(),
-                        );
-
-                        // Dispatch Drag event on entity. Use old state for positional calculation
-                        commands.trigger_targets(
-                            Pointer3d {
-                                controler: hover_by,
-                                hit_entity: tracked.1,
-                                event: Drag {
-                                    start_entity_position: marker.global_start,
-                                    current_entity_position: marker.actual_position + delta,
-                                    real_current_entity_position: transform.translation(),
-                                    // PRISM: use the prism delta
-                                    delta,
-                                    // PRISM: but use the actual delta here, in case it is needed
-                                    // elsewhere
-                                    real_delta: transform.translation() - marker.current_position,
-                                },
-                                position: entity_global_position.translation(),
-                            },
-                            marker.entity,
-                        );
-
-                        // Update marker to new state
-                        marker.current_position = transform.translation();
-                        marker.actual_position += delta;
-                        marker.timer = new_timer;
+            if should_start_dragging {
+                let mut smallest_distance = f32::MAX;
+                let mut smallest_distance_vec = None;
+                let mut smallest_entity = None;
+                for entity in picking_state.iter(&hover_by) {
+                    let picking_interactable = interactability
+                        .get(*entity)
+                        .expect("Only interactable entities may land within picking_state");
+                    if *picking_interactable == Picking3dInteractable::NoDrag {
+                        continue;
                     }
+
+                    let transform = transform_query.get(*entity).unwrap();
+                    let translation = match picking_state.get_start_transform(entity) {
+                        Some(vec) => vec,
+                        None => transform.translation(),
+                    };
+                    let dist = translation - tracked.0.translation();
+
+                    // The controller may be rotated. In order to properly spawn the child, use the inverse rotation.
+                    let dist = tracked.0.rotation().inverse().mul_vec3(dist);
+                    let dist = dist / tracked.0.scale();
+
+                    if dist.length() < smallest_distance {
+                        smallest_distance = dist.length();
+                        smallest_distance_vec = Some(dist);
+                        smallest_entity = Some(*entity);
+                    }
+                }
+
+                // Only start dragging for a single entity
+                if let Some(entity) = smallest_entity
+                    && let Some(dist) = smallest_distance_vec
+                {
+                    let transform = transform_query.get(entity).unwrap();
+
+                    // TODO: Figure out if Transform::default feels better here. This would
+                    // mean that it is not allowed to rotate the wrist. this will then not
+                    // change any translations.
+                    commands.spawn((
+                        ChildOf(tracked.1),
+                        Transform::from_translation(dist),
+                        Visibility::default(),
+                        MoveMarker {
+                            entity,
+                            global_start: transform.translation(),
+                            current_position: tracked.0.transform_point(dist),
+                            actual_position: transform.translation(),
+                            timer: None,
+                        },
+                    ));
+
+                    commands.trigger_targets(
+                        Pointer3d {
+                            controler: hover_by,
+                            hit_entity: tracked.1,
+                            event: DragStart,
+                            position: transform.translation(),
+                        },
+                        entity,
+                    );
+                }
+
+                picking_state.set_dragging(true, &hover_by);
+            }
+        } else if current_state
+            && pointer_state.is_grabbing(&hover_by)
+            && picking_state.check_is_dragging(&hover_by)
+        {
+            for (transform, mut marker, _) in moved_marked_query.iter_mut() {
+                if picking_state.contains_entity(&marker.entity, &hover_by) {
+                    let entity_global_position = transform_query.get(marker.entity).unwrap();
+
+                    // PRISM: Use prism precision movement
+                    let (delta, new_timer) = prism_function(
+                        transform.translation() - marker.current_position,
+                        transform.translation() - marker.actual_position,
+                        &time,
+                        marker.timer.clone(),
+                    );
+
+                    // Dispatch Drag event on entity. Use old state for positional calculation
+                    commands.trigger_targets(
+                        Pointer3d {
+                            controler: hover_by,
+                            hit_entity: tracked.1,
+                            event: Drag {
+                                start_entity_position: marker.global_start,
+                                current_entity_position: marker.actual_position + delta,
+                                real_current_entity_position: transform.translation(),
+                                // PRISM: use the prism delta
+                                delta,
+                                // PRISM: but use the actual delta here, in case it is needed
+                                // elsewhere
+                                real_delta: transform.translation() - marker.current_position,
+                            },
+                            position: entity_global_position.translation(),
+                        },
+                        marker.entity,
+                    );
+
+                    // Update marker to new state
+                    marker.current_position = transform.translation();
+                    marker.actual_position += delta;
+                    marker.timer = new_timer;
                 }
             }
         } else if !current_state

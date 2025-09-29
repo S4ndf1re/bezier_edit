@@ -1,5 +1,3 @@
-#![feature(let_chains)]
-
 mod advanced_orbit_controls;
 mod bezier_curve;
 pub mod custom_shapes;
