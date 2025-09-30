@@ -1,8 +1,10 @@
 use crate::bezier_curve::bezier_curve_renderer::hover_3d;
-use crate::bezier_curve::test_mode::NextEvaluationEvent;
+use crate::bezier_curve::test_mode::{NextEvaluationEvent, handle_next_eval_event};
 use crate::picking3d::events::HoveredBy;
 use crate::picking3d::picking_3d;
-use crate::translation_control::translation_controller::SetPrismMode;
+use crate::translation_control::translation_controller::{
+    SetPrismMode, handle_set_prism_mode, handle_toggle_snapping,
+};
 use crate::vr_control::trigger::ControllerTrigger;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
 use crate::vr_control::{AimLeft, AimRight};
@@ -34,24 +36,47 @@ use bevy::{
     prelude::*,
     scene::SceneInstanceReady,
 };
+use bevy_asset_loader::asset_collection::AssetCollection;
+use bevy_asset_loader::loading_state::config::ConfigureLoadingState;
+use bevy_asset_loader::loading_state::{LoadingState, LoadingStateAppExt};
 
-// TODO: add prisma as optionality
-#[derive(Resource, Default)]
+#[derive(Clone, Eq, PartialEq, PartialOrd, Ord, Hash, Debug, Default, States)]
+pub enum AssetLoadingState {
+    #[default]
+    Loading,
+    Loaded,
+}
+
+#[derive(AssetCollection, Resource)]
 struct GltfAssets {
-    magnet: Option<Handle<Gltf>>,
-    trashcan: Option<Handle<Gltf>>,
-    curve: Option<Handle<Gltf>>,
-    camera: Option<Handle<Gltf>>,
-    blocks: Option<Handle<Gltf>>,
-    pencil: Option<Handle<Gltf>>,
-    checkmark: Option<Handle<Gltf>>,
-    minus: Option<Handle<Gltf>>,
-    plus: Option<Handle<Gltf>>,
-    mm_0: Option<Handle<Gltf>>,
-    mm_1: Option<Handle<Gltf>>,
-    mm_5: Option<Handle<Gltf>>,
-    mm_10: Option<Handle<Gltf>>,
-    prism: Option<Handle<Gltf>>,
+    #[asset(path = "magnet/scene.gltf")]
+    magnet: Handle<Gltf>,
+    #[asset(path = "garbage_can__trashcan__bin/scene.gltf")]
+    trashcan: Handle<Gltf>,
+    #[asset(path = "saddle_wires/scene.gltf")]
+    curve: Handle<Gltf>,
+    #[asset(path = "polaroid_camera/scene.gltf")]
+    camera: Handle<Gltf>,
+    #[asset(path = "box_mode/scene.gltf")]
+    blocks: Handle<Gltf>,
+    #[asset(path = "pencil/scene.gltf")]
+    pencil: Handle<Gltf>,
+    #[asset(path = "checkmark/scene.gltf")]
+    checkmark: Handle<Gltf>,
+    #[asset(path = "minus/scene.gltf")]
+    minus: Handle<Gltf>,
+    #[asset(path = "plus/scene.gltf")]
+    plus: Handle<Gltf>,
+    #[asset(path = "0mm/scene.gltf")]
+    mm_0: Handle<Gltf>,
+    #[asset(path = "1mm/scene.gltf")]
+    mm_1: Handle<Gltf>,
+    #[asset(path = "5mm/scene.gltf")]
+    mm_5: Handle<Gltf>,
+    #[asset(path = "10mm/scene.gltf")]
+    mm_10: Handle<Gltf>,
+    #[asset(path = "diamond/scene.gltf")]
+    prism: Handle<Gltf>,
 }
 
 #[derive(Component)]
@@ -235,42 +260,10 @@ fn spawn_text(
     models: &Res<GltfAssets>,
 ) -> impl Bundle {
     let model = match *step_mode {
-        translation_controller::StepMode::None => gltf
-            .get(
-                models
-                    .mm_0
-                    .clone()
-                    .expect("must be loaded to run this system")
-                    .id(),
-            )
-            .unwrap(),
-        translation_controller::StepMode::MM1 => gltf
-            .get(
-                models
-                    .mm_1
-                    .clone()
-                    .expect("must be loaded to run this system")
-                    .id(),
-            )
-            .unwrap(),
-        translation_controller::StepMode::MM5 => gltf
-            .get(
-                models
-                    .mm_5
-                    .clone()
-                    .expect("must be loaded to run this system")
-                    .id(),
-            )
-            .unwrap(),
-        translation_controller::StepMode::MM10 => gltf
-            .get(
-                models
-                    .mm_10
-                    .clone()
-                    .expect("must be loaded to run this system")
-                    .id(),
-            )
-            .unwrap(),
+        translation_controller::StepMode::None => gltf.get(models.mm_0.clone().id()).unwrap(),
+        translation_controller::StepMode::MM1 => gltf.get(models.mm_1.clone().id()).unwrap(),
+        translation_controller::StepMode::MM5 => gltf.get(models.mm_5.clone().id()).unwrap(),
+        translation_controller::StepMode::MM10 => gltf.get(models.mm_10.clone().id()).unwrap(),
     };
     let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians())
         * Quat::from_axis_angle(Vec3::X, 180.0_f32.to_radians())
@@ -434,6 +427,15 @@ fn trigger_scene_spawn(
     }
 }
 
+#[derive(Event)]
+struct RedrawMenuEvent(Transform);
+
+fn handle_redraw_menu_event(mut menu: MenuHandler, mut reader: EventReader<RedrawMenuEvent>) {
+    for event in reader.read() {
+        menu.spawn_at_position_and_orientation(event.0);
+    }
+}
+
 #[derive(SystemParam)]
 pub struct MenuHandler<'w, 's> {
     commands: Commands<'w, 's>,
@@ -473,16 +475,7 @@ impl<'w, 's> MenuHandler<'w, 's> {
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 15.0_f32.to_radians()));
-        let model = self
-            .gltf
-            .get(
-                self.models
-                    .magnet
-                    .clone()
-                    .expect("must be loaded to run this system")
-                    .id(),
-            )
-            .unwrap();
+        let model = self.gltf.get(self.models.magnet.clone().id()).unwrap();
 
         self.commands
             .spawn((
@@ -503,32 +496,23 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(
                 move |_: Trigger<Pointer3d<picking3d::events::Click>>,
                       mut toggle_snap_mode: EventWriter<ToggleSnappingBehaviour>,
-                      mut menu: MenuHandler| {
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     toggle_snap_mode.write(ToggleSnappingBehaviour);
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             )
             .observe(
                 move |_: Trigger<Pointer<Click>>,
                       mut toggle_snap_mode: EventWriter<ToggleSnappingBehaviour>,
-                      mut menu: MenuHandler| {
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     toggle_snap_mode.write(ToggleSnappingBehaviour);
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             );
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -15.0_f32.to_radians()));
-        let model = self
-            .gltf
-            .get(
-                self.models
-                    .trashcan
-                    .clone()
-                    .expect("must be loaded to run this system")
-                    .id(),
-            )
-            .unwrap();
+        let model = self.gltf.get(self.models.trashcan.clone().id()).unwrap();
 
         self.commands
             .spawn((
@@ -549,32 +533,23 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(
                 move |_: Trigger<Pointer3d<picking3d::events::Click>>,
                       mut set_delete_mode: EventWriter<DeleteModeEvent>,
-                      mut menu: MenuHandler| {
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     set_delete_mode.write(DeleteModeEvent);
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             )
             .observe(
                 move |_: Trigger<Pointer<Click>>,
                       mut set_delete_mode: EventWriter<DeleteModeEvent>,
-                      mut menu: MenuHandler| {
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     set_delete_mode.write(DeleteModeEvent);
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             );
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 45.0_f32.to_radians()));
-        let model = self
-            .gltf
-            .get(
-                self.models
-                    .curve
-                    .clone()
-                    .expect("must be loaded to run this system")
-                    .id(),
-            )
-            .unwrap();
+        let model = self.gltf.get(self.models.curve.clone().id()).unwrap();
 
         self.commands
             .spawn((
@@ -598,10 +573,10 @@ impl<'w, 's> MenuHandler<'w, 's> {
                     ChangeCurvatureDisplayModeEvent,
                 >,
                       info: Res<RenderInformation>,
-                      mut menu: MenuHandler| {
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     change_curvature_display_mode
                         .write(ChangeCurvatureDisplayModeEvent(info.curvature_mode.next()));
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             )
             .observe(
@@ -610,25 +585,16 @@ impl<'w, 's> MenuHandler<'w, 's> {
                     ChangeCurvatureDisplayModeEvent,
                 >,
                       info: Res<RenderInformation>,
-                      mut menu: MenuHandler| {
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     change_curvature_display_mode
                         .write(ChangeCurvatureDisplayModeEvent(info.curvature_mode.next()));
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             );
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -45.0_f32.to_radians()));
-        let model = self
-            .gltf
-            .get(
-                self.models
-                    .camera
-                    .clone()
-                    .expect("must be loaded to run this system")
-                    .id(),
-            )
-            .unwrap();
+        let model = self.gltf.get(self.models.camera.clone().id()).unwrap();
 
         self.commands
             .spawn((
@@ -649,33 +615,24 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(
                 move |_: Trigger<Pointer3d<picking3d::events::Click>>,
                       mut set_create_camera_mode: EventWriter<CreateOrthoCameraEvent>,
-                      mut menu: MenuHandler| {
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     set_create_camera_mode.write(CreateOrthoCameraEvent);
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             )
             .observe(
                 move |_: Trigger<Pointer<Click>>,
                       mut set_create_camera_mode: EventWriter<CreateOrthoCameraEvent>,
-                      mut menu: MenuHandler| {
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     set_create_camera_mode.write(CreateOrthoCameraEvent);
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             );
 
         if *self.control_state == ControlState::CreateCurve {
             let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
             transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 75.0_f32.to_radians()));
-            let model = self
-                .gltf
-                .get(
-                    self.models
-                        .checkmark
-                        .clone()
-                        .expect("must be loaded to run this system")
-                        .id(),
-                )
-                .unwrap();
+            let model = self.gltf.get(self.models.checkmark.clone().id()).unwrap();
 
             self.commands
                 .spawn((
@@ -696,32 +653,23 @@ impl<'w, 's> MenuHandler<'w, 's> {
                 .observe(
                     move |_: Trigger<Pointer3d<picking3d::events::Click>>,
                           mut set_end_mode: EventWriter<EndModeEvent>,
-                          mut menu: MenuHandler| {
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                         set_end_mode.write(EndModeEvent);
-                        menu.spawn_at_position_and_orientation(top_level_transform);
+                        respawn_menu.write(RedrawMenuEvent(top_level_transform));
                     },
                 )
                 .observe(
                     move |_: Trigger<Pointer<Click>>,
                           mut set_end_mode: EventWriter<EndModeEvent>,
-                          mut menu: MenuHandler| {
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                         set_end_mode.write(EndModeEvent);
-                        menu.spawn_at_position_and_orientation(top_level_transform);
+                        respawn_menu.write(RedrawMenuEvent(top_level_transform));
                     },
                 );
         } else {
             let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
             transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 75.0_f32.to_radians()));
-            let model = self
-                .gltf
-                .get(
-                    self.models
-                        .pencil
-                        .clone()
-                        .expect("must be loaded to run this system")
-                        .id(),
-                )
-                .unwrap();
+            let model = self.gltf.get(self.models.pencil.clone().id()).unwrap();
 
             self.commands
                 .spawn((
@@ -742,33 +690,24 @@ impl<'w, 's> MenuHandler<'w, 's> {
                 .observe(
                     move |_: Trigger<Pointer3d<picking3d::events::Click>>,
                           mut set_create_curve_mode: EventWriter<CreateCurveEvent>,
-                          mut menu: MenuHandler| {
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                         set_create_curve_mode.write(CreateCurveEvent);
-                        menu.spawn_at_position_and_orientation(top_level_transform);
+                        respawn_menu.write(RedrawMenuEvent(top_level_transform));
                     },
                 )
                 .observe(
                     move |_: Trigger<Pointer<Click>>,
                           mut set_create_curve_mode: EventWriter<CreateCurveEvent>,
-                          mut menu: MenuHandler| {
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                         set_create_curve_mode.write(CreateCurveEvent);
-                        menu.spawn_at_position_and_orientation(top_level_transform);
+                        respawn_menu.write(RedrawMenuEvent(top_level_transform));
                     },
                 );
         }
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -75.0_f32.to_radians()));
-        let model = self
-            .gltf
-            .get(
-                self.models
-                    .blocks
-                    .clone()
-                    .expect("must be loaded to run this system")
-                    .id(),
-            )
-            .unwrap();
+        let model = self.gltf.get(self.models.blocks.clone().id()).unwrap();
 
         self.commands
             .spawn((
@@ -790,33 +729,24 @@ impl<'w, 's> MenuHandler<'w, 's> {
                 move |_: Trigger<Pointer3d<picking3d::events::Click>>,
                       mut mesh_mode_writer: EventWriter<ChangeSurfaceMeshMode>,
                       info: Res<RenderInformation>,
-                      mut menu: MenuHandler| {
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     mesh_mode_writer.write(ChangeSurfaceMeshMode(info.surface_mesh_mode.next()));
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             )
             .observe(
                 move |_: Trigger<Pointer<Click>>,
                       mut mesh_mode_writer: EventWriter<ChangeSurfaceMeshMode>,
                       info: Res<RenderInformation>,
-                      mut menu: MenuHandler| {
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     mesh_mode_writer.write(ChangeSurfaceMeshMode(info.surface_mesh_mode.next()));
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             );
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 105.0_f32.to_radians()));
-        let model = self
-            .gltf
-            .get(
-                self.models
-                    .minus
-                    .clone()
-                    .expect("must be loaded to run this system")
-                    .id(),
-            )
-            .unwrap();
+        let model = self.gltf.get(self.models.minus.clone().id()).unwrap();
 
         self.commands
             .spawn((
@@ -837,32 +767,23 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(
                 move |_: Trigger<Pointer3d<picking3d::events::Click>>,
                       mut decrease_degree: EventWriter<DecreaseDegreeEvent>,
-                      mut menu: MenuHandler| {
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     decrease_degree.write(DecreaseDegreeEvent);
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             )
             .observe(
                 move |_: Trigger<Pointer<Click>>,
                       mut decrease_degree: EventWriter<DecreaseDegreeEvent>,
-                      mut menu: MenuHandler| {
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     decrease_degree.write(DecreaseDegreeEvent);
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             );
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -105.0_f32.to_radians()));
-        let model = self
-            .gltf
-            .get(
-                self.models
-                    .plus
-                    .clone()
-                    .expect("must be loaded to run this system")
-                    .id(),
-            )
-            .unwrap();
+        let model = self.gltf.get(self.models.plus.clone().id()).unwrap();
 
         self.commands
             .spawn((
@@ -880,17 +801,17 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(
                 move |_: Trigger<Pointer3d<picking3d::events::Click>>,
                       mut increase_degree: EventWriter<IncreaseDegreeEvent>,
-                      mut menu: MenuHandler| {
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     increase_degree.write(IncreaseDegreeEvent);
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             )
             .observe(
                 move |_: Trigger<Pointer<Click>>,
                       mut increase_degree: EventWriter<IncreaseDegreeEvent>,
-                      mut menu: MenuHandler| {
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     increase_degree.write(IncreaseDegreeEvent);
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             );
 
@@ -916,30 +837,27 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_over3d)
             .observe(hover_3d)
             .observe(
-                move |_: Trigger<Pointer3d<picking3d::events::Click>>, mut menu: MenuHandler| {
-                    menu.translation_state.step_mode = menu.translation_state.step_mode.next();
+                move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                      mut translation_state: ResMut<TranslationControllerState>,
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                    translation_state.step_mode = translation_state.step_mode.next();
 
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             )
-            .observe(move |_: Trigger<Pointer<Click>>, mut menu: MenuHandler| {
-                menu.translation_state.step_mode = menu.translation_state.step_mode.next();
+            .observe(
+                move |_: Trigger<Pointer<Click>>,
+                      mut translation_state: ResMut<TranslationControllerState>,
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                    translation_state.step_mode = translation_state.step_mode.next();
 
-                menu.spawn_at_position_and_orientation(top_level_transform);
-            });
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
+                },
+            );
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -135.0_f32.to_radians()));
-        let model = self
-            .gltf
-            .get(
-                self.models
-                    .prism
-                    .clone()
-                    .expect("must be loaded to run this system")
-                    .id(),
-            )
-            .unwrap();
+        let model = self.gltf.get(self.models.prism.clone().id()).unwrap();
 
         self.commands
             .spawn((
@@ -960,17 +878,19 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(
                 move |_: Trigger<Pointer3d<picking3d::events::Click>>,
                       mut writer: EventWriter<SetPrismMode>,
-                      mut menu: MenuHandler| {
-                    writer.write(SetPrismMode(menu.translation_state.prism_mode.next()));
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                      translation_state: Res<TranslationControllerState>,
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                    writer.write(SetPrismMode(translation_state.prism_mode.next()));
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             )
             .observe(
                 move |_: Trigger<Pointer<Click>>,
                       mut writer: EventWriter<SetPrismMode>,
-                      mut menu: MenuHandler| {
-                    writer.write(SetPrismMode(menu.translation_state.prism_mode.next()));
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                      translation_state: Res<TranslationControllerState>,
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                    writer.write(SetPrismMode(translation_state.prism_mode.next()));
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             );
 
@@ -996,17 +916,17 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(
                 move |_: Trigger<Pointer3d<picking3d::events::Click>>,
                       mut eval_writer: EventWriter<NextEvaluationEvent>,
-                      mut menu: MenuHandler| {
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     eval_writer.write(NextEvaluationEvent);
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             )
             .observe(
                 move |_: Trigger<Pointer<Click>>,
                       mut eval_writer: EventWriter<NextEvaluationEvent>,
-                      mut menu: MenuHandler| {
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     eval_writer.write(NextEvaluationEvent);
-                    menu.spawn_at_position_and_orientation(top_level_transform);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             );
     }
@@ -1075,142 +995,33 @@ fn spawn_despawn_model_into_scene(
     }
 }
 
-fn setup_models(server: ResMut<AssetServer>, mut models: ResMut<GltfAssets>) {
-    let magnet: Handle<Gltf> = server.load("magnet/scene.gltf");
-    let trashcan: Handle<Gltf> = server.load("garbage_can__trashcan__bin/scene.gltf");
-    let curve: Handle<Gltf> = server.load("saddle_wires/scene.gltf");
-    let camera: Handle<Gltf> = server.load("polaroid_camera/scene.gltf");
-    let blocks: Handle<Gltf> = server.load("box_mode/scene.gltf");
-    let pencil: Handle<Gltf> = server.load("pencil/scene.gltf");
-    let checkmark: Handle<Gltf> = server.load("checkmark/scene.gltf");
-    let minus: Handle<Gltf> = server.load("minus/scene.gltf");
-    let plus: Handle<Gltf> = server.load("plus/scene.gltf");
-    let mm_0: Handle<Gltf> = server.load("0mm/scene.gltf");
-    let mm_1: Handle<Gltf> = server.load("1mm/scene.gltf");
-    let mm_5: Handle<Gltf> = server.load("5mm/scene.gltf");
-    let mm_10: Handle<Gltf> = server.load("10mm/scene.gltf");
-    let prism: Handle<Gltf> = server.load("diamond/scene.gltf");
-
-    models.magnet = Some(magnet);
-    models.trashcan = Some(trashcan);
-    models.curve = Some(curve);
-    models.camera = Some(camera);
-    models.blocks = Some(blocks);
-    models.pencil = Some(pencil);
-    models.checkmark = Some(checkmark);
-    models.minus = Some(minus);
-    models.plus = Some(plus);
-
-    models.mm_0 = Some(mm_0);
-    models.mm_1 = Some(mm_1);
-    models.mm_5 = Some(mm_5);
-    models.mm_10 = Some(mm_10);
-
-    models.prism = Some(prism);
-}
-
-fn are_models_loaded(
-    models: Res<GltfAssets>,
-    assets: Res<Assets<Gltf>>,
-    mut loaded: Local<bool>,
-) -> bool {
-    if *loaded {
-        return *loaded;
-    }
-
-    if let Some(magnet) = &models.magnet
-        && assets.get(magnet.id()).is_none()
-    {
-        return false;
-    }
-
-    if let Some(trashcan) = &models.trashcan
-        && assets.get(trashcan.id()).is_none()
-    {
-        return false;
-    }
-
-    if let Some(curve) = &models.curve
-        && assets.get(curve.id()).is_none()
-    {
-        return false;
-    }
-
-    if let Some(camera) = &models.camera
-        && assets.get(camera.id()).is_none()
-    {
-        return false;
-    }
-
-    if let Some(blocks) = &models.blocks
-        && assets.get(blocks.id()).is_none()
-    {
-        return false;
-    }
-
-    if let Some(pencil) = &models.pencil
-        && assets.get(pencil.id()).is_none()
-    {
-        return false;
-    }
-
-    if let Some(checkmark) = &models.checkmark
-        && assets.get(checkmark.id()).is_none()
-    {
-        return false;
-    }
-
-    if let Some(minus) = &models.minus
-        && assets.get(minus.id()).is_none()
-    {
-        return false;
-    }
-
-    if let Some(plus) = &models.plus
-        && assets.get(plus.id()).is_none()
-    {
-        return false;
-    }
-
-    if let Some(mm_0) = &models.mm_0
-        && assets.get(mm_0.id()).is_none()
-    {
-        return false;
-    }
-
-    if let Some(mm_5) = &models.mm_5
-        && assets.get(mm_5.id()).is_none()
-    {
-        return false;
-    }
-
-    if let Some(mm_10) = &models.mm_10
-        && assets.get(mm_10.id()).is_none()
-    {
-        return false;
-    }
-
-    if let Some(prism) = &models.prism
-        && assets.get(prism.id()).is_none()
-    {
-        return false;
-    }
-
-    *loaded = true;
-    *loaded
-}
-
 pub struct VrMenuPlugin;
 
 impl Plugin for VrMenuPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_models);
         app.add_systems(
             PostUpdate,
-            spawn_despawn_model_into_scene.run_if(are_models_loaded),
+            spawn_despawn_model_into_scene.run_if(in_state(AssetLoadingState::Loaded)),
+        );
+
+        app.add_systems(
+            PostUpdate,
+            handle_redraw_menu_event
+                .run_if(in_state(AssetLoadingState::Loaded))
+                .after(handle_toggle_snapping)
+                .after(handle_set_prism_mode)
+                .after(handle_next_eval_event),
         );
         app.init_resource::<VrMenuState>();
-        app.init_resource::<GltfAssets>();
         app.add_observer(trigger_scene_spawn);
+
+        app.add_event::<RedrawMenuEvent>();
+
+        app.init_state::<AssetLoadingState>();
+        app.add_loading_state(
+            LoadingState::new(AssetLoadingState::Loading)
+                .continue_to_state(AssetLoadingState::Loaded)
+                .load_collection::<GltfAssets>(),
+        );
     }
 }

@@ -97,7 +97,7 @@ pub enum SnappingBehaviour {
     Snap,
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, Debug)]
 pub enum StepMode {
     #[default]
     None,
@@ -168,7 +168,7 @@ pub enum CantSnapToEntities {
 #[derive(Component)]
 pub struct TemporaryCurveSnappingBlocker;
 
-fn handle_toggle_snapping(
+pub fn handle_toggle_snapping(
     mut reader: EventReader<ToggleSnappingBehaviour>,
     mut state: ResMut<TranslationControllerState>,
     mut commands: Commands,
@@ -190,7 +190,7 @@ fn handle_toggle_snapping(
     };
 }
 
-fn handle_set_prism_mode(
+pub fn handle_set_prism_mode(
     mut reader: EventReader<SetPrismMode>,
     mut state: ResMut<TranslationControllerState>,
 ) {

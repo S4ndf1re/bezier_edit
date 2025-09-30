@@ -30,6 +30,8 @@ use super::{
     },
 };
 
+const SNAPPING_DIST: f32 = 0.07;
+
 #[allow(clippy::complexity)]
 #[derive(SystemParam)]
 pub struct ObligatoryDragParams<'w, 's> {
@@ -67,6 +69,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
     ) -> Vec3 {
         let mut p0 = self.transform_set.p0();
         let mut t = p0.get_mut(control_parent.1.0).unwrap();
+        info!("Step mode is: {:?}", self.state.step_mode);
         t.translation = match self.state.step_mode {
             StepMode::MM1 => {
                 if self
@@ -186,7 +189,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         );
 
         if let Some((curve, u, p, dist, points)) = &shortest
-            && *dist < 0.05 * self.info.scale as f64
+            && *dist < SNAPPING_DIST as f64 * self.info.scale as f64
             && !is_temporarily_blocked
         {
             let mut p0 = self.transform_set.p0();
@@ -267,7 +270,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             control_parent.1.0,
             translation,
             &cant_snap_to_entities,
-        ) && closest_move_direction.length() < 0.05 * self.info.scale
+        ) && closest_move_direction.length() < SNAPPING_DIST * self.info.scale
         {
             self.snap_to_projection(control_parent, translation, closest_move_direction)
         } else if let Some(closest_move_direction) =
@@ -276,7 +279,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                 translation,
                 &cant_snap_to_entities,
             )
-            && closest_move_direction.length() < 0.05 * self.info.scale
+            && closest_move_direction.length() < SNAPPING_DIST * self.info.scale
         {
             self.snap_to_projection(control_parent, translation, closest_move_direction)
         } else {
@@ -319,7 +322,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     .p1()
                     .collect_shortest(point, &cant_snap_to_curve.unwrap_or_default());
                 if let Some((curve, u, p, dist, _)) = shortest
-                    && dist < 0.05 * self.info.scale as f64
+                    && dist < SNAPPING_DIST as f64 * self.info.scale as f64
                 {
                     if is_snapped_arrow {
                         let mut snap = self.snapped.get_mut(control_parent.1.0).unwrap().1;
@@ -351,7 +354,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                             translation,
                             &cant_snap_to_entities,
                         )
-                        && closest_move_direction.length() < 0.05 * self.info.scale
+                        && closest_move_direction.length() < SNAPPING_DIST * self.info.scale
                     {
                         let _ = self.commands.get_entity(entity).map(|mut e| {
                             e.remove::<TemporaryCurveSnappingBlocker>();
@@ -363,7 +366,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                             translation,
                             &cant_snap_to_entities,
                         )
-                        && closest_move_direction.length() < 0.05 * self.info.scale
+                        && closest_move_direction.length() < SNAPPING_DIST * self.info.scale
                     {
                         let _ = self.commands.get_entity(entity).map(|mut e| {
                             e.remove::<TemporaryCurveSnappingBlocker>();
@@ -385,7 +388,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                             .unwrap(),
                         &cant_snap_to_entities,
                     )
-                    && closest_move_direction.length() < 0.05 * self.info.scale
+                    && closest_move_direction.length() < SNAPPING_DIST * self.info.scale
                 {
                     let mut p0 = self.transform_set.p0();
                     let mut t = p0.get_mut(control_parent.1.0).unwrap();
@@ -404,7 +407,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                             .unwrap(),
                         &cant_snap_to_entities,
                     )
-                    && closest_move_direction.length() < 0.05 * self.info.scale
+                    && closest_move_direction.length() < SNAPPING_DIST * self.info.scale
                 {
                     let mut p0 = self.transform_set.p0();
                     let mut t = p0.get_mut(control_parent.1.0).unwrap();

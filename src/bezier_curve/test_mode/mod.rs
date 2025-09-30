@@ -295,7 +295,7 @@ pub struct EvaluationPointComponent;
 pub struct NextEvaluationEvent;
 
 #[allow(clippy::complexity)]
-fn handle_next_eval_event(
+pub fn handle_next_eval_event(
     mut reader: EventReader<NextEvaluationEvent>,
     mut evaluation: ResMut<Evaluation>,
     mut commands: Commands,
