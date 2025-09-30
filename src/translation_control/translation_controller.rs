@@ -1697,20 +1697,17 @@ fn update_texts(
     let scale = info.scale;
 
     for (text_entity, &ChildOf(parent), children) in texts {
-        let start_transform = *global_transforms.get(parent).unwrap();
-        let direction = start_transform.translation() - camera_transform.translation();
+        let start_transform = *transforms.get(parent).unwrap();
+        let direction = start_transform.translation - camera_transform.translation();
 
-        // let camera_forward = root_transform
-        //     .compute_affine()
-        //     .inverse()
-        //     .transform_vector3(direction.normalize_or_zero());
-
-        // {
-        let camera_forward = direction.normalize_or_zero();
+        let camera_forward = root_transform
+            .compute_affine()
+            .inverse()
+            .transform_vector3(camera_transform.forward().normalize_or_zero());
 
         {
             let mut transform = transforms.get_mut(text_entity).unwrap();
-            transform.rotation = start_transform.rotation().inverse();
+            transform.rotation = start_transform.rotation.inverse();
         }
 
         for child in children {
