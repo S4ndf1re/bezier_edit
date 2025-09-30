@@ -1,7 +1,9 @@
 use crate::bezier_curve::bezier_curve_renderer::hover_3d;
 use crate::bezier_curve::test_mode::NextEvaluationEvent;
 use crate::picking3d::events::HoveredBy;
+use crate::picking3d::picking_3d;
 use crate::translation_control::translation_controller::SetPrismMode;
+use crate::vr_control::trigger::ControllerTrigger;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
 use crate::vr_control::{AimLeft, AimRight};
 #[cfg(feature = "vr_enable")]
@@ -89,7 +91,7 @@ struct PrismMode;
 struct EvaluationMode;
 
 #[derive(Component)]
-struct VrMenuRoot;
+pub struct VrMenuRoot;
 
 #[derive(Resource, Default)]
 struct VrMenuState {
@@ -476,7 +478,19 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
             .observe(handle_hover_over3d)
-            .observe(hover_3d);
+            .observe(hover_3d)
+            .observe(
+                |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                 mut toggle_snap_mode: EventWriter<ToggleSnappingBehaviour>| {
+                    toggle_snap_mode.write(ToggleSnappingBehaviour);
+                },
+            )
+            .observe(
+                |_: Trigger<Pointer<Click>>,
+                 mut toggle_snap_mode: EventWriter<ToggleSnappingBehaviour>| {
+                    toggle_snap_mode.write(ToggleSnappingBehaviour);
+                },
+            );
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -15.0_f32.to_radians()));
@@ -506,7 +520,18 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
             .observe(handle_hover_over3d)
-            .observe(hover_3d);
+            .observe(hover_3d)
+            .observe(
+                |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                 mut set_delete_mode: EventWriter<DeleteModeEvent>| {
+                    set_delete_mode.write(DeleteModeEvent);
+                },
+            )
+            .observe(
+                |_: Trigger<Pointer<Click>>, mut set_delete_mode: EventWriter<DeleteModeEvent>| {
+                    set_delete_mode.write(DeleteModeEvent);
+                },
+            );
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 45.0_f32.to_radians()));
@@ -536,7 +561,27 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
             .observe(handle_hover_over3d)
-            .observe(hover_3d);
+            .observe(hover_3d)
+            .observe(
+                |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                 mut change_curvature_display_mode: EventWriter<
+                    ChangeCurvatureDisplayModeEvent,
+                >,
+                 info: Res<RenderInformation>| {
+                    change_curvature_display_mode
+                        .write(ChangeCurvatureDisplayModeEvent(info.curvature_mode.next()));
+                },
+            )
+            .observe(
+                |_: Trigger<Pointer<Click>>,
+                 mut change_curvature_display_mode: EventWriter<
+                    ChangeCurvatureDisplayModeEvent,
+                >,
+                 info: Res<RenderInformation>| {
+                    change_curvature_display_mode
+                        .write(ChangeCurvatureDisplayModeEvent(info.curvature_mode.next()));
+                },
+            );
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -45.0_f32.to_radians()));
@@ -566,7 +611,19 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
             .observe(handle_hover_over3d)
-            .observe(hover_3d);
+            .observe(hover_3d)
+            .observe(
+                |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                 mut set_create_camera_mode: EventWriter<CreateOrthoCameraEvent>| {
+                    set_create_camera_mode.write(CreateOrthoCameraEvent);
+                },
+            )
+            .observe(
+                |_: Trigger<Pointer<Click>>,
+                 mut set_create_camera_mode: EventWriter<CreateOrthoCameraEvent>| {
+                    set_create_camera_mode.write(CreateOrthoCameraEvent);
+                },
+            );
 
         if *self.control_state == ControlState::CreateCurve {
             let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
@@ -597,7 +654,18 @@ impl<'w, 's> MenuHandler<'w, 's> {
                 .observe(handle_hover_out3d)
                 .observe(handle_hover_over)
                 .observe(handle_hover_over3d)
-                .observe(hover_3d);
+                .observe(hover_3d)
+                .observe(
+                    |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                     mut set_end_mode: EventWriter<EndModeEvent>| {
+                        set_end_mode.write(EndModeEvent);
+                    },
+                )
+                .observe(
+                    |_: Trigger<Pointer<Click>>, mut set_end_mode: EventWriter<EndModeEvent>| {
+                        set_end_mode.write(EndModeEvent);
+                    },
+                );
         } else {
             let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
             transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 75.0_f32.to_radians()));
@@ -627,7 +695,19 @@ impl<'w, 's> MenuHandler<'w, 's> {
                 .observe(handle_hover_out3d)
                 .observe(handle_hover_over)
                 .observe(handle_hover_over3d)
-                .observe(hover_3d);
+                .observe(hover_3d)
+                .observe(
+                    |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                     mut set_create_curve_mode: EventWriter<CreateCurveEvent>| {
+                        set_create_curve_mode.write(CreateCurveEvent);
+                    },
+                )
+                .observe(
+                    |_: Trigger<Pointer<Click>>,
+                     mut set_create_curve_mode: EventWriter<CreateCurveEvent>| {
+                        set_create_curve_mode.write(CreateCurveEvent);
+                    },
+                );
         }
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
@@ -658,7 +738,21 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
             .observe(handle_hover_over3d)
-            .observe(hover_3d);
+            .observe(hover_3d)
+            .observe(
+                |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                 mut mesh_mode_writer: EventWriter<ChangeSurfaceMeshMode>,
+                 info: Res<RenderInformation>| {
+                    mesh_mode_writer.write(ChangeSurfaceMeshMode(info.surface_mesh_mode.next()));
+                },
+            )
+            .observe(
+                |_: Trigger<Pointer<Click>>,
+                 mut mesh_mode_writer: EventWriter<ChangeSurfaceMeshMode>,
+                 info: Res<RenderInformation>| {
+                    mesh_mode_writer.write(ChangeSurfaceMeshMode(info.surface_mesh_mode.next()));
+                },
+            );
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 105.0_f32.to_radians()));
@@ -688,7 +782,19 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
             .observe(handle_hover_over3d)
-            .observe(hover_3d);
+            .observe(hover_3d)
+            .observe(
+                |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                 mut decrease_degree: EventWriter<DecreaseDegreeEvent>| {
+                    decrease_degree.write(DecreaseDegreeEvent);
+                },
+            )
+            .observe(
+                |_: Trigger<Pointer<Click>>,
+                 mut decrease_degree: EventWriter<DecreaseDegreeEvent>| {
+                    decrease_degree.write(DecreaseDegreeEvent);
+                },
+            );
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -105.0_f32.to_radians()));
@@ -715,7 +821,19 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
             .observe(handle_hover_over3d)
-            .observe(hover_3d);
+            .observe(hover_3d)
+            .observe(
+                |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                 mut increase_degree: EventWriter<IncreaseDegreeEvent>| {
+                    increase_degree.write(IncreaseDegreeEvent);
+                },
+            )
+            .observe(
+                |_: Trigger<Pointer<Click>>,
+                 mut increase_degree: EventWriter<IncreaseDegreeEvent>| {
+                    increase_degree.write(IncreaseDegreeEvent);
+                },
+            );
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 155.0_f32.to_radians()));
@@ -774,7 +892,19 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
             .observe(handle_hover_over3d)
-            .observe(hover_3d);
+            .observe(hover_3d)
+            .observe(
+                |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                 mut translation_state: ResMut<TranslationControllerState>| {
+                    translation_state.step_mode = translation_state.step_mode.next();
+                },
+            )
+            .observe(
+                |_: Trigger<Pointer<Click>>,
+                 mut translation_state: ResMut<TranslationControllerState>| {
+                    translation_state.step_mode = translation_state.step_mode.next();
+                },
+            );
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -135.0_f32.to_radians()));
@@ -804,7 +934,21 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
             .observe(handle_hover_over3d)
-            .observe(hover_3d);
+            .observe(hover_3d)
+            .observe(
+                |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                 mut writer: EventWriter<SetPrismMode>,
+                 translation_state: Res<TranslationControllerState>| {
+                    writer.write(SetPrismMode(translation_state.prism_mode.next()));
+                },
+            )
+            .observe(
+                |_: Trigger<Pointer<Click>>,
+                 mut writer: EventWriter<SetPrismMode>,
+                 translation_state: Res<TranslationControllerState>| {
+                    writer.write(SetPrismMode(translation_state.prism_mode.next()));
+                },
+            );
 
         // Spawn center to start evaluation
         self.commands
@@ -824,7 +968,18 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_out3d)
             .observe(handle_hover_over)
             .observe(handle_hover_over3d)
-            .observe(hover_3d);
+            .observe(hover_3d)
+            .observe(
+                |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                 mut eval_writer: EventWriter<NextEvaluationEvent>| {
+                    eval_writer.write(NextEvaluationEvent);
+                },
+            )
+            .observe(
+                |_: Trigger<Pointer<Click>>, mut eval_writer: EventWriter<NextEvaluationEvent>| {
+                    eval_writer.write(NextEvaluationEvent);
+                },
+            );
     }
 
     pub fn apply_menu_state(&mut self) {
@@ -840,24 +995,10 @@ impl<'w, 's> MenuHandler<'w, 's> {
                     ));
             } else if self.cameras.get(selected).is_ok() {
                 self.set_create_camera_mode.write(CreateOrthoCameraEvent);
-            } else if self.blocks.get(selected).is_ok() {
-                self.mesh_mode_writer
-                    .write(ChangeSurfaceMeshMode(self.info.surface_mesh_mode.next()));
             } else if self.pencils.get(selected).is_ok() {
                 self.set_create_curve_mode.write(CreateCurveEvent);
             } else if self.checkboxes.get(selected).is_ok() {
                 self.set_end_mode.write(EndModeEvent);
-            } else if self.minus.get(selected).is_ok() {
-                self.decrease_degree.write(DecreaseDegreeEvent);
-            } else if self.plus.get(selected).is_ok() {
-                self.increase_degree.write(IncreaseDegreeEvent);
-            } else if self.steps.get(selected).is_ok() {
-                self.translation_state.step_mode = self.translation_state.step_mode.next();
-            } else if self.prisms.get(selected).is_ok() {
-                self.set_prism_mode
-                    .write(SetPrismMode(self.translation_state.prism_mode.next()));
-            } else if self.evaluations.get(selected).is_ok() {
-                self.next_evaluation.write(NextEvaluationEvent);
             }
         }
     }

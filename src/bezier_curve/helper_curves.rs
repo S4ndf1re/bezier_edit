@@ -9,6 +9,7 @@ use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::projection::{AddBoundingEntityEvent, BoundingEntitiesManager, DisplayIn};
 use crate::translation_control::translation_controller::CantSnapToCurve;
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
+use crate::vr_menu::VrMenuRoot;
 use crate::{
     RootTransform,
     nurbs::{bezier::shortest_distance_to_point, point::Point},
@@ -115,6 +116,7 @@ pub fn add_point(
     temp_curve: Query<Entity, With<TemporaryCurve>>,
     root: Query<&Transform, With<RootTransform>>,
     ui_root: Query<&UiLayoutRoot>,
+    vr_ui_root: Query<&VrMenuRoot>,
     childof: Query<&ChildOf>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -131,7 +133,7 @@ pub fn add_point(
     for evt in reader.read() {
         let mut is_ui_element = false;
         for parent in childof.iter_ancestors(evt.target) {
-            if ui_root.get(parent).is_ok() {
+            if ui_root.get(parent).is_ok() || vr_ui_root.get(parent).is_ok() {
                 is_ui_element = true;
                 break;
             }
