@@ -138,8 +138,12 @@ fn create_app() -> App {
 #[cfg(feature = "vr_enable")]
 fn custom_add_xr_plugins<G: PluginGroup>(plugins: G) -> PluginGroupBuilder {
     let mut oxr_plugin = OxrInitPlugin::default();
-    oxr_plugin.exts.varjo_xr4_controller_interaction = true;
-    oxr_plugin.exts.varjo_quad_views = true;
+
+    #[cfg(feature = "varjo_ready")]
+    {
+        oxr_plugin.exts.varjo_xr4_controller_interaction = true;
+        oxr_plugin.exts.varjo_quad_views = true;
+    }
 
     plugins
         .build()
@@ -164,7 +168,10 @@ fn custom_add_xr_plugins<G: PluginGroup>(plugins: G) -> PluginGroupBuilder {
         // session and instance
         .set(WindowPlugin {
             primary_window: Some(Window {
+                #[cfg(feature = "varjo_ready")]
                 transparent: true,
+                #[cfg(not(feature = "varjo_ready"))]
+                transparent: false,
                 present_mode: PresentMode::AutoNoVsync,
                 // title: self.app_info.name.clone(),
                 ..default()
@@ -209,8 +216,12 @@ fn create_app() -> App {
     .add_plugins(LinkedEntitiesPlugin)
     .add_plugins(VrMenuPlugin)
     .add_systems(Startup, (setup.before(generate_default_curve),))
-    .init_resource::<ControlStorage>()
-    .insert_resource(ClearColor(Color::NONE));
+    .init_resource::<ControlStorage>();
+
+    #[cfg(feature = "varjo_ready")]
+    app.insert_resource(ClearColor(Color::NONE));
+    #[cfg(not(feature = "varjo_ready"))]
+    app.insert_resource(ClearColor(GRAY_700.into()));
 
     app
 }

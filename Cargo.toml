@@ -36,6 +36,7 @@ opt-level = 3
 
 [features]
 vr_enable = []
+varjo_ready = []
 
 
 [dependencies.openxr]

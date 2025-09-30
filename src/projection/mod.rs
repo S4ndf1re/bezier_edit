@@ -2,7 +2,7 @@ use std::collections::{HashSet, hash_set::Iter};
 
 use bevy::{
     asset::RenderAssetUsages,
-    color::palettes::tailwind::{BLUE_500, GRAY_700, RED_800},
+    color::palettes::tailwind::{BLUE_500, GRAY_500, GRAY_700, GRAY_800, RED_800},
     ecs::system::{SystemParam, lifetimeless::Read},
     prelude::*,
     render::{
@@ -313,7 +313,7 @@ fn handle_enable_ortho_camera(
                             // appear
                             order: -1,
                             target: image_handle.clone().into(),
-                            clear_color: Color::from(GRAY_700).into(),
+                            clear_color: Color::from(GRAY_500).into(),
                             ..default()
                         },
                         RenderLayers::from(DisplayIn::Ortho),
