@@ -259,7 +259,7 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<Ui
                 .pack(),
         )
         .with_children(|ui| {
-            let mut slider = UiSlider::new("U #Box:".to_owned(), 0.0, 100.0, Rl((100.0, 100.0)));
+            let mut slider = UiSlider::new("U #Box:".to_owned(), 0.0, 10.0, Rl((100.0, 100.0)));
             slider.set(ui_state.u_box_count as f32);
             slider.set_to_string_fn(|value| format!("{}", value as u32));
             ui.spawn(slider).observe(
@@ -283,7 +283,7 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<Ui
                 .pack(),
         )
         .with_children(|ui| {
-            let mut slider = UiSlider::new("V #Box:".to_owned(), 0.0, 100.0, Rl((100.0, 100.0)));
+            let mut slider = UiSlider::new("V #Box:".to_owned(), 0.0, 10.0, Rl((100.0, 100.0)));
             slider.set_to_string_fn(|value| format!("{}", value as u32));
             slider.set(ui_state.v_box_count as f32);
             ui.spawn(slider).observe(
@@ -307,7 +307,7 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<Ui
                 .pack(),
         )
         .with_children(|ui| {
-            let mut slider = UiSlider::new("Width Box:".to_owned(), 0.0, 2.0, Rl((100.0, 100.0)));
+            let mut slider = UiSlider::new("Width Box:".to_owned(), 0.0, 0.5, Rl((100.0, 100.0)));
             slider.set_to_string_fn(|value| format!("{value:.2}"));
             slider.set(ui_state.box_width);
             ui.spawn(slider).observe(
@@ -331,7 +331,7 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<Ui
                 .pack(),
         )
         .with_children(|ui| {
-            let mut slider = UiSlider::new("Height Box:".to_owned(), 0.0, 2.0, Rl((100.0, 100.0)));
+            let mut slider = UiSlider::new("Height Box:".to_owned(), 0.0, 0.5, Rl((100.0, 100.0)));
             slider.set_to_string_fn(|value| format!("{value:.2}"));
             slider.set(ui_state.box_height);
             ui.spawn(slider).observe(
@@ -355,7 +355,7 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<Ui
                 .pack(),
         )
         .with_children(|ui| {
-            let mut slider = UiSlider::new("Depth Box:".to_owned(), 0.0, 2.0, Rl((100.0, 100.0)));
+            let mut slider = UiSlider::new("Depth Box:".to_owned(), 0.0, 0.5, Rl((100.0, 100.0)));
             slider.set_to_string_fn(|value| format!("{value:.2}"));
             slider.set(ui_state.box_depth);
             ui.spawn(slider).observe(
