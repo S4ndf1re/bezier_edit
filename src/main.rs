@@ -164,7 +164,7 @@ fn custom_add_xr_plugins<G: PluginGroup>(plugins: G) -> PluginGroupBuilder {
         // session and instance
         .set(WindowPlugin {
             primary_window: Some(Window {
-                transparent: false,
+                transparent: true,
                 present_mode: PresentMode::AutoNoVsync,
                 // title: self.app_info.name.clone(),
                 ..default()
@@ -210,7 +210,7 @@ fn create_app() -> App {
     .add_plugins(VrMenuPlugin)
     .add_systems(Startup, (setup.before(generate_default_curve),))
     .init_resource::<ControlStorage>()
-    .insert_resource(ClearColor(GRAY_700.into()));
+    .insert_resource(ClearColor(Color::NONE));
 
     app
 }
