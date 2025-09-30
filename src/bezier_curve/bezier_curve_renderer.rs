@@ -48,6 +48,7 @@ use crate::projection::{
     handle_add_bounding_entity_event,
 };
 use crate::translation_control::obligatory_drag_params::ObligatoryDragParams;
+use crate::translation_control::proximity_detector::Snappable;
 use crate::translation_control::translation_controller::{
     CantSnapToEntities, EnableTranslationControl, MovedEntityEvent, SnappedPoint,
 };
@@ -606,6 +607,7 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                         Picking3dInteractable::NoDrag,
                         RenderLayers::from(DisplayIn::BothNormalAndOrtho),
                         Visibility::Inherited,
+                        Snappable,
                         ChildOf(surface),
                     ))
                     .observe(update_material_on::<Pointer<Over>>(material_hover.clone()))
