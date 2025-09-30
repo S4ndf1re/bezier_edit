@@ -59,6 +59,12 @@ pub struct CurveSegment {
     curve: Entity,
 }
 
+#[derive(Component)]
+#[require(Transform)]
+pub struct CurveSupportPoint {
+    u: f64,
+}
+
 #[derive(Event)]
 pub struct RedrawCurvesEvent;
 
@@ -292,10 +298,19 @@ pub fn commit_curve(
     mut duplicate_set: ParamSet<(
         (Commands, EventWriter<AddBoundingEntityEvent>),
         BridgeSpawner,
+        (ResMut<Assets<Mesh>>, ResMut<Assets<StandardMaterial>>),
     )>,
     transforms: Query<&Transform, (Without<RootTransform>, Without<TemporaryCurve>)>,
+    info: Res<RenderInformation>,
 ) {
     let root = root.single().unwrap();
+    let (sphere_mesh, purple) = {
+        let (mut meshes, mut materials) = duplicate_set.p2();
+        (
+            meshes.add(Sphere::new(0.03 * info.scale)),
+            materials.add(StandardMaterial::from_color(PURPLE_600)),
+        )
+    };
 
     // Iterate over possible (actually only one) temporary curves
     for curve in tmp_curves.iter() {
@@ -360,6 +375,25 @@ pub fn commit_curve(
                 duplicate_set
                     .p1()
                     .spawn_bridges_1d(parent, points.len(), &points, &ids);
+
+                // Spawn helper spheres
+                let mut points = points;
+                points.sort_by_key(|p| p.0);
+                for i in 0..10 {
+                    let u = (i + 1) as f64 / 11.0;
+
+                    let points = points.iter().map(|p| Point::from(p.1)).collect::<Vec<_>>();
+
+                    let point = *de_casteljau(&points, u).last().unwrap().last().unwrap();
+
+                    duplicate_set.p0().0.spawn((
+                        ChildOf(parent),
+                        CurveSupportPoint { u },
+                        Transform::from_translation(Vec3::from(point)),
+                        Mesh3d(sphere_mesh.clone()),
+                        MeshMaterial3d(purple.clone()),
+                    ));
+                }
             }
         }
         // Despawn temporary curve, that was replaced by a final curve
@@ -590,7 +624,26 @@ pub fn render_curves(
     }
 }
 
-/// Commit a plane after the mode for the creation ends
-pub fn commit_plane() {
-    unimplemented!()
+#[allow(clippy::complexity)]
+pub fn update_sphere_positions(
+    all_curves: AllCurveCollection,
+    mut transforms: Query<
+        (&ChildOf, &mut Transform, &CurveSupportPoint),
+        (Without<TemporaryCurvePoint>, Without<ControlCurvePoint>),
+    >,
+) {
+    let curves = all_curves.collect();
+
+    for (child_of, mut support_transform, support) in &mut transforms {
+        if let Some(points) = curves.get(&child_of.parent())
+            && points.len() > 2
+        {
+            let point = *de_casteljau(points, support.u)
+                .last()
+                .unwrap()
+                .last()
+                .unwrap();
+            support_transform.translation = Vec3::from(point);
+        }
+    }
 }

@@ -9,8 +9,8 @@ use super::degree_manipulation::{
     handle_degree_reduction_event,
 };
 use super::helper_curves::{
-    CreateCurveState, RedrawCurvesEvent, add_point, commit_curve, commit_plane,
-    enter_create_curve_mode, render_curves,
+    CreateCurveState, RedrawCurvesEvent, add_point, commit_curve, enter_create_curve_mode,
+    render_curves,
 };
 use super::test_mode::EvaluationPlugin;
 use super::{components::*, handle_generic_deleted_event};
@@ -35,6 +35,7 @@ use super::util::{
 };
 use crate::bezier_curve::EntityDeletedEvent;
 use crate::bezier_curve::bridges::{BridgeConnector, CompleteBridge};
+use crate::bezier_curve::helper_curves::update_sphere_positions;
 use crate::custom_shapes::parallelogram::Parallelogram2d;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{
@@ -736,6 +737,7 @@ impl Plugin for BezierRenderPlugin {
                 redraw_boxes.after(generate_pointcloud),
                 redraw_iso_lines.after(generate_pointcloud),
                 render_curves,
+                update_sphere_positions,
             ),
         ); // , listen_to_mouse_left_button));
         app.add_systems(
@@ -774,7 +776,6 @@ impl Plugin for BezierRenderPlugin {
         // Systems for snapping curves creation
         app.add_systems(OnEnter(ControlState::CreateCurve), enter_create_curve_mode);
         app.add_systems(OnExit(ControlState::CreateCurve), commit_curve);
-        app.add_systems(OnExit(ControlState::CreatePlane), commit_plane);
 
         #[cfg(feature = "vr_enable")]
         app.add_systems(
