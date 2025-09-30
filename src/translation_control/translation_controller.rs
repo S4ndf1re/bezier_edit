@@ -1717,9 +1717,9 @@ fn update_texts(
             if let Ok(mut text3d) = text3d.get_mut(*child) {
                 *text3d = Text3d::new(format!(
                     "({:.3}, {:.3}, {:.3})",
-                    start_transform.translation().x / scale,
-                    start_transform.translation().y / scale,
-                    start_transform.translation().z / scale
+                    start_transform.translation.x / scale,
+                    start_transform.translation.y / scale,
+                    start_transform.translation.z / scale
                 ));
             }
         }
