@@ -81,7 +81,7 @@ struct MinusMode;
 #[derive(Component)]
 struct PlusMode;
 
-#[derive(Component)]
+#[derive(Component, Clone, Copy)]
 struct StepMode;
 
 #[derive(Component)]
@@ -228,7 +228,50 @@ fn spawn_plus(scene: Handle<Scene>, scale: f32) -> impl Bundle {
     )
 }
 
-fn spawn_text(scene: Handle<Scene>, scale: f32) -> impl Bundle {
+fn spawn_text(
+    scale: f32,
+    step_mode: &translation_controller::StepMode,
+    gltf: &Res<Assets<Gltf>>,
+    models: &Res<GltfAssets>,
+) -> impl Bundle {
+    let model = match *step_mode {
+        translation_controller::StepMode::None => gltf
+            .get(
+                models
+                    .mm_0
+                    .clone()
+                    .expect("must be loaded to run this system")
+                    .id(),
+            )
+            .unwrap(),
+        translation_controller::StepMode::MM1 => gltf
+            .get(
+                models
+                    .mm_1
+                    .clone()
+                    .expect("must be loaded to run this system")
+                    .id(),
+            )
+            .unwrap(),
+        translation_controller::StepMode::MM5 => gltf
+            .get(
+                models
+                    .mm_5
+                    .clone()
+                    .expect("must be loaded to run this system")
+                    .id(),
+            )
+            .unwrap(),
+        translation_controller::StepMode::MM10 => gltf
+            .get(
+                models
+                    .mm_10
+                    .clone()
+                    .expect("must be loaded to run this system")
+                    .id(),
+            )
+            .unwrap(),
+    };
     let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians())
         * Quat::from_axis_angle(Vec3::X, 180.0_f32.to_radians())
         * Quat::from_axis_angle(Vec3::Y, 180.0_f32.to_radians())
@@ -239,7 +282,7 @@ fn spawn_text(scene: Handle<Scene>, scale: f32) -> impl Bundle {
             .with_scale(Vec3::ONE * 0.1 * scale)
             .with_rotation(rotation),
         Visibility::Inherited,
-        SceneRoot(scene),
+        SceneRoot(model.scenes[0].clone()),
         Picking3dInteractable::default(),
         PlusMode,
     )
@@ -397,18 +440,6 @@ pub struct MenuHandler<'w, 's> {
     menu_roots: Query<'w, 's, Entity, With<VrMenuRoot>>,
     state: ResMut<'w, VrMenuState>,
     info: Res<'w, RenderInformation>,
-    trashcans: Query<'w, 's, Entity, With<TrashcanMode>>,
-    magnets: Query<'w, 's, Entity, With<MagnetMode>>,
-    curves: Query<'w, 's, Entity, With<CurvatureMode>>,
-    cameras: Query<'w, 's, Entity, With<CameraMode>>,
-    pencils: Query<'w, 's, Entity, With<PencilMode>>,
-    checkboxes: Query<'w, 's, Entity, With<CheckmarkMode>>,
-    set_end_mode: EventWriter<'w, EndModeEvent>,
-    set_delete_mode: EventWriter<'w, DeleteModeEvent>,
-    set_create_curve_mode: EventWriter<'w, CreateCurveEvent>,
-    set_create_camera_mode: EventWriter<'w, CreateOrthoCameraEvent>,
-    toggle_snap_mode: EventWriter<'w, ToggleSnappingBehaviour>,
-    change_curvature_display_mode: EventWriter<'w, ChangeCurvatureDisplayModeEvent>,
     control_state: Res<'w, State<ControlState>>,
     translation_state: ResMut<'w, TranslationControllerState>,
     models: Res<'w, GltfAssets>,
@@ -429,9 +460,10 @@ impl<'w, 's> MenuHandler<'w, 's> {
     pub fn spawn_at_position_and_orientation(&mut self, transform: Transform) {
         self.despawn_menu();
 
+        let top_level_transform = transform;
         let root = self
             .commands
-            .spawn((VrMenuRoot, transform, Visibility::Inherited))
+            .spawn((VrMenuRoot, top_level_transform, Visibility::Inherited))
             .id();
 
         #[cfg(feature = "vr_enable")]
@@ -469,15 +501,19 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_over3d)
             .observe(hover_3d)
             .observe(
-                |_: Trigger<Pointer3d<picking3d::events::Click>>,
-                 mut toggle_snap_mode: EventWriter<ToggleSnappingBehaviour>| {
+                move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                      mut toggle_snap_mode: EventWriter<ToggleSnappingBehaviour>,
+                      mut menu: MenuHandler| {
                     toggle_snap_mode.write(ToggleSnappingBehaviour);
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             )
             .observe(
-                |_: Trigger<Pointer<Click>>,
-                 mut toggle_snap_mode: EventWriter<ToggleSnappingBehaviour>| {
+                move |_: Trigger<Pointer<Click>>,
+                      mut toggle_snap_mode: EventWriter<ToggleSnappingBehaviour>,
+                      mut menu: MenuHandler| {
                     toggle_snap_mode.write(ToggleSnappingBehaviour);
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             );
 
@@ -511,14 +547,19 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_over3d)
             .observe(hover_3d)
             .observe(
-                |_: Trigger<Pointer3d<picking3d::events::Click>>,
-                 mut set_delete_mode: EventWriter<DeleteModeEvent>| {
+                move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                      mut set_delete_mode: EventWriter<DeleteModeEvent>,
+                      mut menu: MenuHandler| {
                     set_delete_mode.write(DeleteModeEvent);
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             )
             .observe(
-                |_: Trigger<Pointer<Click>>, mut set_delete_mode: EventWriter<DeleteModeEvent>| {
+                move |_: Trigger<Pointer<Click>>,
+                      mut set_delete_mode: EventWriter<DeleteModeEvent>,
+                      mut menu: MenuHandler| {
                     set_delete_mode.write(DeleteModeEvent);
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             );
 
@@ -552,23 +593,27 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_over3d)
             .observe(hover_3d)
             .observe(
-                |_: Trigger<Pointer3d<picking3d::events::Click>>,
-                 mut change_curvature_display_mode: EventWriter<
+                move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                      mut change_curvature_display_mode: EventWriter<
                     ChangeCurvatureDisplayModeEvent,
                 >,
-                 info: Res<RenderInformation>| {
+                      info: Res<RenderInformation>,
+                      mut menu: MenuHandler| {
                     change_curvature_display_mode
                         .write(ChangeCurvatureDisplayModeEvent(info.curvature_mode.next()));
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             )
             .observe(
-                |_: Trigger<Pointer<Click>>,
-                 mut change_curvature_display_mode: EventWriter<
+                move |_: Trigger<Pointer<Click>>,
+                      mut change_curvature_display_mode: EventWriter<
                     ChangeCurvatureDisplayModeEvent,
                 >,
-                 info: Res<RenderInformation>| {
+                      info: Res<RenderInformation>,
+                      mut menu: MenuHandler| {
                     change_curvature_display_mode
                         .write(ChangeCurvatureDisplayModeEvent(info.curvature_mode.next()));
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             );
 
@@ -602,15 +647,19 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_over3d)
             .observe(hover_3d)
             .observe(
-                |_: Trigger<Pointer3d<picking3d::events::Click>>,
-                 mut set_create_camera_mode: EventWriter<CreateOrthoCameraEvent>| {
+                move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                      mut set_create_camera_mode: EventWriter<CreateOrthoCameraEvent>,
+                      mut menu: MenuHandler| {
                     set_create_camera_mode.write(CreateOrthoCameraEvent);
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             )
             .observe(
-                |_: Trigger<Pointer<Click>>,
-                 mut set_create_camera_mode: EventWriter<CreateOrthoCameraEvent>| {
+                move |_: Trigger<Pointer<Click>>,
+                      mut set_create_camera_mode: EventWriter<CreateOrthoCameraEvent>,
+                      mut menu: MenuHandler| {
                     set_create_camera_mode.write(CreateOrthoCameraEvent);
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             );
 
@@ -645,14 +694,19 @@ impl<'w, 's> MenuHandler<'w, 's> {
                 .observe(handle_hover_over3d)
                 .observe(hover_3d)
                 .observe(
-                    |_: Trigger<Pointer3d<picking3d::events::Click>>,
-                     mut set_end_mode: EventWriter<EndModeEvent>| {
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut set_end_mode: EventWriter<EndModeEvent>,
+                          mut menu: MenuHandler| {
                         set_end_mode.write(EndModeEvent);
+                        menu.spawn_at_position_and_orientation(top_level_transform);
                     },
                 )
                 .observe(
-                    |_: Trigger<Pointer<Click>>, mut set_end_mode: EventWriter<EndModeEvent>| {
+                    move |_: Trigger<Pointer<Click>>,
+                          mut set_end_mode: EventWriter<EndModeEvent>,
+                          mut menu: MenuHandler| {
                         set_end_mode.write(EndModeEvent);
+                        menu.spawn_at_position_and_orientation(top_level_transform);
                     },
                 );
         } else {
@@ -686,15 +740,19 @@ impl<'w, 's> MenuHandler<'w, 's> {
                 .observe(handle_hover_over3d)
                 .observe(hover_3d)
                 .observe(
-                    |_: Trigger<Pointer3d<picking3d::events::Click>>,
-                     mut set_create_curve_mode: EventWriter<CreateCurveEvent>| {
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut set_create_curve_mode: EventWriter<CreateCurveEvent>,
+                          mut menu: MenuHandler| {
                         set_create_curve_mode.write(CreateCurveEvent);
+                        menu.spawn_at_position_and_orientation(top_level_transform);
                     },
                 )
                 .observe(
-                    |_: Trigger<Pointer<Click>>,
-                     mut set_create_curve_mode: EventWriter<CreateCurveEvent>| {
+                    move |_: Trigger<Pointer<Click>>,
+                          mut set_create_curve_mode: EventWriter<CreateCurveEvent>,
+                          mut menu: MenuHandler| {
                         set_create_curve_mode.write(CreateCurveEvent);
+                        menu.spawn_at_position_and_orientation(top_level_transform);
                     },
                 );
         }
@@ -729,17 +787,21 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_over3d)
             .observe(hover_3d)
             .observe(
-                |_: Trigger<Pointer3d<picking3d::events::Click>>,
-                 mut mesh_mode_writer: EventWriter<ChangeSurfaceMeshMode>,
-                 info: Res<RenderInformation>| {
+                move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                      mut mesh_mode_writer: EventWriter<ChangeSurfaceMeshMode>,
+                      info: Res<RenderInformation>,
+                      mut menu: MenuHandler| {
                     mesh_mode_writer.write(ChangeSurfaceMeshMode(info.surface_mesh_mode.next()));
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             )
             .observe(
-                |_: Trigger<Pointer<Click>>,
-                 mut mesh_mode_writer: EventWriter<ChangeSurfaceMeshMode>,
-                 info: Res<RenderInformation>| {
+                move |_: Trigger<Pointer<Click>>,
+                      mut mesh_mode_writer: EventWriter<ChangeSurfaceMeshMode>,
+                      info: Res<RenderInformation>,
+                      mut menu: MenuHandler| {
                     mesh_mode_writer.write(ChangeSurfaceMeshMode(info.surface_mesh_mode.next()));
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             );
 
@@ -773,15 +835,19 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_over3d)
             .observe(hover_3d)
             .observe(
-                |_: Trigger<Pointer3d<picking3d::events::Click>>,
-                 mut decrease_degree: EventWriter<DecreaseDegreeEvent>| {
+                move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                      mut decrease_degree: EventWriter<DecreaseDegreeEvent>,
+                      mut menu: MenuHandler| {
                     decrease_degree.write(DecreaseDegreeEvent);
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             )
             .observe(
-                |_: Trigger<Pointer<Click>>,
-                 mut decrease_degree: EventWriter<DecreaseDegreeEvent>| {
+                move |_: Trigger<Pointer<Click>>,
+                      mut decrease_degree: EventWriter<DecreaseDegreeEvent>,
+                      mut menu: MenuHandler| {
                     decrease_degree.write(DecreaseDegreeEvent);
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             );
 
@@ -812,68 +878,35 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_over3d)
             .observe(hover_3d)
             .observe(
-                |_: Trigger<Pointer3d<picking3d::events::Click>>,
-                 mut increase_degree: EventWriter<IncreaseDegreeEvent>| {
+                move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                      mut increase_degree: EventWriter<IncreaseDegreeEvent>,
+                      mut menu: MenuHandler| {
                     increase_degree.write(IncreaseDegreeEvent);
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             )
             .observe(
-                |_: Trigger<Pointer<Click>>,
-                 mut increase_degree: EventWriter<IncreaseDegreeEvent>| {
+                move |_: Trigger<Pointer<Click>>,
+                      mut increase_degree: EventWriter<IncreaseDegreeEvent>,
+                      mut menu: MenuHandler| {
                     increase_degree.write(IncreaseDegreeEvent);
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             );
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 155.0_f32.to_radians()));
-        let model = match self.translation_state.step_mode {
-            translation_controller::StepMode::None => self
-                .gltf
-                .get(
-                    self.models
-                        .mm_0
-                        .clone()
-                        .expect("must be loaded to run this system")
-                        .id(),
-                )
-                .unwrap(),
-            translation_controller::StepMode::MM1 => self
-                .gltf
-                .get(
-                    self.models
-                        .mm_1
-                        .clone()
-                        .expect("must be loaded to run this system")
-                        .id(),
-                )
-                .unwrap(),
-            translation_controller::StepMode::MM5 => self
-                .gltf
-                .get(
-                    self.models
-                        .mm_5
-                        .clone()
-                        .expect("must be loaded to run this system")
-                        .id(),
-                )
-                .unwrap(),
-            translation_controller::StepMode::MM10 => self
-                .gltf
-                .get(
-                    self.models
-                        .mm_10
-                        .clone()
-                        .expect("must be loaded to run this system")
-                        .id(),
-                )
-                .unwrap(),
-        };
 
         self.commands
             .spawn((
                 transform,
                 StepMode,
-                children![spawn_text(model.scenes[0].clone(), self.info.scale * scale,)],
+                children![spawn_text(
+                    self.info.scale * scale,
+                    &self.translation_state.step_mode,
+                    &self.gltf,
+                    &self.models,
+                )],
                 Visibility::Inherited,
                 ChildOf(root),
             ))
@@ -883,17 +916,17 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_over3d)
             .observe(hover_3d)
             .observe(
-                |_: Trigger<Pointer3d<picking3d::events::Click>>,
-                 mut translation_state: ResMut<TranslationControllerState>| {
-                    translation_state.step_mode = translation_state.step_mode.next();
+                move |_: Trigger<Pointer3d<picking3d::events::Click>>, mut menu: MenuHandler| {
+                    menu.translation_state.step_mode = menu.translation_state.step_mode.next();
+
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             )
-            .observe(
-                |_: Trigger<Pointer<Click>>,
-                 mut translation_state: ResMut<TranslationControllerState>| {
-                    translation_state.step_mode = translation_state.step_mode.next();
-                },
-            );
+            .observe(move |_: Trigger<Pointer<Click>>, mut menu: MenuHandler| {
+                menu.translation_state.step_mode = menu.translation_state.step_mode.next();
+
+                menu.spawn_at_position_and_orientation(top_level_transform);
+            });
 
         let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
         transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -135.0_f32.to_radians()));
@@ -925,17 +958,19 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_over3d)
             .observe(hover_3d)
             .observe(
-                |_: Trigger<Pointer3d<picking3d::events::Click>>,
-                 mut writer: EventWriter<SetPrismMode>,
-                 translation_state: Res<TranslationControllerState>| {
-                    writer.write(SetPrismMode(translation_state.prism_mode.next()));
+                move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                      mut writer: EventWriter<SetPrismMode>,
+                      mut menu: MenuHandler| {
+                    writer.write(SetPrismMode(menu.translation_state.prism_mode.next()));
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             )
             .observe(
-                |_: Trigger<Pointer<Click>>,
-                 mut writer: EventWriter<SetPrismMode>,
-                 translation_state: Res<TranslationControllerState>| {
-                    writer.write(SetPrismMode(translation_state.prism_mode.next()));
+                move |_: Trigger<Pointer<Click>>,
+                      mut writer: EventWriter<SetPrismMode>,
+                      mut menu: MenuHandler| {
+                    writer.write(SetPrismMode(menu.translation_state.prism_mode.next()));
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             );
 
@@ -959,37 +994,21 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(handle_hover_over3d)
             .observe(hover_3d)
             .observe(
-                |_: Trigger<Pointer3d<picking3d::events::Click>>,
-                 mut eval_writer: EventWriter<NextEvaluationEvent>| {
+                move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                      mut eval_writer: EventWriter<NextEvaluationEvent>,
+                      mut menu: MenuHandler| {
                     eval_writer.write(NextEvaluationEvent);
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             )
             .observe(
-                |_: Trigger<Pointer<Click>>, mut eval_writer: EventWriter<NextEvaluationEvent>| {
+                move |_: Trigger<Pointer<Click>>,
+                      mut eval_writer: EventWriter<NextEvaluationEvent>,
+                      mut menu: MenuHandler| {
                     eval_writer.write(NextEvaluationEvent);
+                    menu.spawn_at_position_and_orientation(top_level_transform);
                 },
             );
-    }
-
-    pub fn apply_menu_state(&mut self) {
-        if let Some(selected) = self.state.currently_selected {
-            if self.trashcans.get(selected).is_ok() {
-                self.set_delete_mode.write(DeleteModeEvent);
-            } else if self.magnets.get(selected).is_ok() {
-                self.toggle_snap_mode.write(ToggleSnappingBehaviour);
-            } else if self.curves.get(selected).is_ok() {
-                self.change_curvature_display_mode
-                    .write(ChangeCurvatureDisplayModeEvent(
-                        self.info.curvature_mode.next(),
-                    ));
-            } else if self.cameras.get(selected).is_ok() {
-                self.set_create_camera_mode.write(CreateOrthoCameraEvent);
-            } else if self.pencils.get(selected).is_ok() {
-                self.set_create_curve_mode.write(CreateCurveEvent);
-            } else if self.checkboxes.get(selected).is_ok() {
-                self.set_end_mode.write(EndModeEvent);
-            }
-        }
     }
 }
 
@@ -1013,7 +1032,6 @@ fn spawn_despawn_model_into_scene(
         if keyboard.just_pressed(KeyCode::KeyM) {
             manager.spawn_at_position_and_orientation(transform);
         } else if keyboard.just_released(KeyCode::KeyM) {
-            manager.apply_menu_state();
             manager.despawn_menu();
         }
     }
