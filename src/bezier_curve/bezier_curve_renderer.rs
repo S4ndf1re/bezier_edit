@@ -334,6 +334,7 @@ fn generate_pointcloud(
             base_color_texture: Some(image_handle),
             double_sided: true,
             cull_mode: None,
+            reflectance: 1.0,
             ..Default::default()
         };
 
