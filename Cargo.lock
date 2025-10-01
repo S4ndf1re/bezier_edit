@@ -1578,6 +1578,7 @@ dependencies = [
  "openxr",
  "rand 0.9.2",
  "rayon",
+ "scopeguard",
  "serde",
  "serde_json",
  "struct-patch",

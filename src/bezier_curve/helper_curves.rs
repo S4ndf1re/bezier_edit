@@ -3,20 +3,20 @@ use std::collections::HashMap;
 use super::bezier_curve_renderer::EndModeEvent;
 use super::bridges::BridgeSpawner;
 use super::{EntityDeletedEvent, components::ControlState, render_info::RenderInformation};
-use crate::MainCamera;
-use crate::nurbs::bezier::de_casteljau;
+use crate::bezier_curve::bridges::BridgeDespawner;
+use crate::nurbs::bezier::{de_casteljau, increase_degree};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::projection::{AddBoundingEntityEvent, BoundingEntitiesManager, DisplayIn};
 use crate::translation_control::translation_controller::CantSnapToCurve;
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::vr_menu::VrMenuRoot;
+use crate::{MainCamera, picking3d};
 use crate::{
     RootTransform,
     nurbs::{bezier::shortest_distance_to_point, point::Point},
     picking3d::events::{self, Pointer3d},
     translation_control::translation_controller::EnableTranslationControl,
 };
-use bevy::color::palettes::css::BLACK;
 use bevy::render::view::RenderLayers;
 use bevy::{
     color::palettes::tailwind::PURPLE_600,
@@ -25,6 +25,7 @@ use bevy::{
 };
 use bevy_lunex::UiLayoutRoot;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use scopeguard::defer;
 
 #[derive(Component)]
 #[require(Transform)]
@@ -202,88 +203,323 @@ pub fn enter_create_curve_mode(
 #[allow(clippy::complexity)]
 fn handle_click_on_curve_point3d(
     trigger: Trigger<Pointer3d<events::Click>>,
-    mut commands: Commands,
+    commands: Commands,
     enabled: Query<&EnableTranslationControl>,
     state: Res<State<ControlState>>,
-    points: Query<(Entity, &ChildOf), With<ControlCurvePoint>>,
-    children: Query<&Children>,
-    mut delete_event: EventWriter<EntityDeletedEvent>,
-    mut end_mode_writer: EventWriter<EndModeEvent>,
-    mut bounding_entities: BoundingEntitiesManager,
+    points: Query<(Entity, &ChildOf, &ControlCurvePoint)>,
+    mut remove_point_writer: EventWriter<RemovePointFromCurveEvent>,
+    mut add_point_writer: EventWriter<AddPointToCurveEvent>,
 ) {
-    // when clicked on a point that belongs to a curve, delete the curve and all its control
-    // points. Trigger deleted events
-    if *state == ControlState::Delete {
-        if let Ok(curve) = points.get(trigger.target()) {
-            let parent = curve.1.parent();
-            for child in children.iter_descendants(parent) {
-                commands
-                    .get_entity(child)
-                    .unwrap()
-                    .trigger(EntityDeletedEvent(child));
-                delete_event.write(EntityDeletedEvent(child));
-
-                bounding_entities.remove_entity(&child);
-            }
-
-            delete_event.write(EntityDeletedEvent(parent));
-            commands
-                .get_entity(parent)
-                .unwrap()
-                .trigger(EntityDeletedEvent(parent))
-                .despawn();
-
-            bounding_entities.remove_entity(&parent);
-
-            end_mode_writer.write(EndModeEvent);
-        }
-    } else if *state == ControlState::Main {
+    if *state == ControlState::Main {
         enable_gizmo3d(EnableTranslationControl::OnlyTranslation)(
             trigger, commands, enabled, state,
         );
+    } else if *state == ControlState::Minus
+        && let Ok(point) = points.get(trigger.target())
+    {
+        let curve = point.1.parent();
+        let idx = point.2.0;
+
+        remove_point_writer.write(RemovePointFromCurveEvent { curve, point: idx });
+    } else if *state == ControlState::Plus
+        && let Ok(point) = points.get(trigger.target())
+    {
+        let curve = point.1.parent();
+
+        add_point_writer.write(AddPointToCurveEvent { curve });
     }
 }
 
 #[allow(clippy::complexity)]
 fn handle_click_on_curve_point(
     trigger: Trigger<Pointer<Click>>,
-    mut commands: Commands,
+    commands: Commands,
     enabled: Query<&EnableTranslationControl>,
     state: Res<State<ControlState>>,
-    points: Query<(Entity, &ChildOf), With<ControlCurvePoint>>,
+    points: Query<(Entity, &ChildOf, &ControlCurvePoint)>,
+    mut remove_point_writer: EventWriter<RemovePointFromCurveEvent>,
+    mut add_point_writer: EventWriter<AddPointToCurveEvent>,
+) {
+    if *state == ControlState::Main {
+        enable_gizmo(EnableTranslationControl::OnlyTranslation)(trigger, commands, enabled, state);
+    } else if *state == ControlState::Minus
+        && let Ok(point) = points.get(trigger.target())
+    {
+        let curve = point.1.parent();
+        let idx = point.2.0;
+
+        remove_point_writer.write(RemovePointFromCurveEvent { curve, point: idx });
+    } else if *state == ControlState::Plus
+        && let Ok(point) = points.get(trigger.target())
+    {
+        let curve = point.1.parent();
+
+        add_point_writer.write(AddPointToCurveEvent { curve });
+    }
+}
+
+#[allow(clippy::complexity)]
+fn handle_click_event_on_curve_level(
+    trigger: Trigger<Pointer<Click>>,
+    mut commands: Commands,
+    state: Res<State<ControlState>>,
+    curves: Query<Entity, With<ControlCurve>>,
     children: Query<&Children>,
     mut delete_event: EventWriter<EntityDeletedEvent>,
     mut end_mode_writer: EventWriter<EndModeEvent>,
     mut bounding_entities: BoundingEntitiesManager,
 ) {
-    // when clicked on a point that belongs to a curve, delete the curve and all its control
-    // points. Trigger deleted events
-    if *state == ControlState::Delete {
-        if let Ok(curve) = points.get(trigger.target()) {
-            let parent = curve.1.parent();
-            for child in children.iter_descendants(parent) {
-                commands
-                    .get_entity(child)
-                    .unwrap()
-                    .trigger(EntityDeletedEvent(child));
-                delete_event.write(EntityDeletedEvent(child));
-
-                bounding_entities.remove_entity(&child);
-            }
-
-            delete_event.write(EntityDeletedEvent(parent));
+    if *state == ControlState::Delete
+        && let Ok(curve) = curves.get(trigger.target())
+    {
+        for child in children.iter_descendants(curve) {
             commands
-                .get_entity(parent)
+                .get_entity(child)
                 .unwrap()
-                .trigger(EntityDeletedEvent(parent))
-                .despawn();
+                .trigger(EntityDeletedEvent(child));
+            delete_event.write(EntityDeletedEvent(child));
 
-            bounding_entities.remove_entity(&parent);
-
-            end_mode_writer.write(EndModeEvent);
+            bounding_entities.remove_entity(&child);
         }
-    } else if *state == ControlState::Main {
-        enable_gizmo(EnableTranslationControl::OnlyTranslation)(trigger, commands, enabled, state);
+
+        delete_event.write(EntityDeletedEvent(curve));
+        commands
+            .get_entity(curve)
+            .unwrap()
+            .trigger(EntityDeletedEvent(curve))
+            .despawn();
+
+        end_mode_writer.write(EndModeEvent);
+    }
+}
+
+#[allow(clippy::complexity)]
+fn handle_click_event_on_curve_level3d(
+    trigger: Trigger<Pointer3d<picking3d::events::Click>>,
+    mut commands: Commands,
+    state: Res<State<ControlState>>,
+    curves: Query<Entity, With<ControlCurve>>,
+    children: Query<&Children>,
+    mut delete_event: EventWriter<EntityDeletedEvent>,
+    mut end_mode_writer: EventWriter<EndModeEvent>,
+    mut bounding_entities: BoundingEntitiesManager,
+) {
+    if *state == ControlState::Delete
+        && let Ok(curve) = curves.get(trigger.target())
+    {
+        for child in children.iter_descendants(curve) {
+            commands
+                .get_entity(child)
+                .unwrap()
+                .trigger(EntityDeletedEvent(child));
+            delete_event.write(EntityDeletedEvent(child));
+
+            bounding_entities.remove_entity(&child);
+        }
+
+        delete_event.write(EntityDeletedEvent(curve));
+        commands
+            .get_entity(curve)
+            .unwrap()
+            .trigger(EntityDeletedEvent(curve))
+            .despawn();
+
+        end_mode_writer.write(EndModeEvent);
+    }
+}
+
+#[derive(Event)]
+pub struct RemovePointFromCurveEvent {
+    curve: Entity,
+    point: usize,
+}
+
+#[allow(clippy::complexity)]
+pub fn remove_point_from_curve_handler(
+    mut reader: EventReader<RemovePointFromCurveEvent>,
+    children: Query<&Children>,
+    mut duplicate_set: ParamSet<(Commands, BridgeSpawner, BridgeDespawner)>,
+    mut points: Query<(Entity, &ChildOf, &mut ControlCurvePoint)>,
+    mut delete_event: EventWriter<EntityDeletedEvent>,
+    mut end_mode_writer: EventWriter<EndModeEvent>,
+    mut redraw_curves: EventWriter<RedrawCurvesEvent>,
+    transforms: Query<&Transform>,
+) {
+    for evt in reader.read() {
+        defer!({
+            redraw_curves.write(RedrawCurvesEvent);
+            end_mode_writer.write(EndModeEvent);
+        });
+
+        let curve = evt.curve;
+        let selected_idx = evt.point;
+
+        let Ok(curve_children) = children.get(curve) else {
+            continue;
+        };
+
+        let mut points_collected = Vec::new();
+
+        for child in curve_children {
+            if let Ok(point) = points.get(*child) {
+                points_collected.push((point.2.0, point.0));
+            }
+        }
+
+        if points_collected.len() <= 2 {
+            continue;
+        }
+
+        duplicate_set.p2().despawn_from_parent(curve);
+
+        points_collected.sort_by_key(|p| p.0);
+
+        if let Some(to_remove_idx) = points_collected.iter().position(|p| p.0 == selected_idx) {
+            let removed = points_collected.remove(to_remove_idx);
+            delete_event.write(EntityDeletedEvent(removed.1));
+            duplicate_set.p0().entity(removed.1).despawn();
+
+            points_collected
+                .iter_mut()
+                .enumerate()
+                .for_each(|(idx, p)| p.0 = idx);
+        }
+
+        for point in &points_collected {
+            if let Ok(mut curve_point) = points.get_mut(point.1) {
+                curve_point.2.0 = point.0;
+            }
+        }
+
+        let l = points_collected.len();
+        let mut points_with_position = Vec::new();
+        let mut ids = Vec::new();
+
+        for p in points_collected {
+            ids.push(p.1);
+
+            let position = transforms
+                .get(p.1)
+                .expect("Is required for curve points")
+                .translation;
+            points_with_position.push((p.0, position));
+        }
+
+        duplicate_set
+            .p1()
+            .spawn_bridges_1d(curve, l, &points_with_position, &ids);
+    }
+}
+
+#[derive(Event)]
+pub struct AddPointToCurveEvent {
+    curve: Entity,
+}
+
+#[allow(clippy::complexity)]
+pub fn add_point_to_curve_handler(
+    mut reader: EventReader<AddPointToCurveEvent>,
+    children: Query<&Children>,
+    mut duplicate_set: ParamSet<(
+        Commands,
+        BridgeSpawner,
+        BridgeDespawner,
+        (ResMut<Assets<Mesh>>, ResMut<Assets<StandardMaterial>>),
+    )>,
+    points: Query<(Entity, &ChildOf, &ControlCurvePoint)>,
+    mut end_mode_writer: EventWriter<EndModeEvent>,
+    mut redraw_curves: EventWriter<RedrawCurvesEvent>,
+    mut transforms: Query<&mut Transform>,
+    info: Res<RenderInformation>,
+) {
+    for evt in reader.read() {
+        defer!({
+            redraw_curves.write(RedrawCurvesEvent);
+            end_mode_writer.write(EndModeEvent);
+        });
+
+        let curve = evt.curve;
+
+        let Ok(curve_children) = children.get(curve) else {
+            continue;
+        };
+
+        let mut points_collected = Vec::new();
+
+        for child in curve_children {
+            if let Ok(point) = points.get(*child) {
+                points_collected.push((point.2.0, point.0));
+            }
+        }
+
+        duplicate_set.p2().despawn_from_parent(curve);
+
+        points_collected.sort_by_key(|p| p.0);
+
+        let mut control_points = Vec::new();
+        for point in &points_collected {
+            control_points.push(Point::from(
+                transforms
+                    .get(point.1)
+                    .expect("must be present")
+                    .translation,
+            ));
+        }
+
+        let new_points = increase_degree(&control_points);
+
+        for (idx, (_, point_entity)) in points_collected.iter().enumerate() {
+            if let Ok(mut transform) = transforms.get_mut(*point_entity) {
+                transform.translation = Vec3::from(new_points[idx]);
+            }
+        }
+
+        let mut l = points_collected.len();
+        let mut points_with_position = Vec::new();
+        let mut ids = Vec::new();
+
+        for p in points_collected {
+            ids.push(p.1);
+
+            let position = transforms
+                .get(p.1)
+                .expect("Is required for curve points")
+                .translation;
+            points_with_position.push((p.0, position));
+        }
+
+        let (sphere, material) = {
+            let (mut meshes, mut materials) = duplicate_set.p3();
+            let sphere = meshes.add(Sphere::new(0.08 * info.scale));
+            let material = materials.add(StandardMaterial::from_color(PURPLE_600));
+            (sphere, material)
+        };
+        let counter = points_with_position.last().unwrap().0 + 1;
+
+        let new_id = duplicate_set
+            .p0()
+            .spawn((
+                ChildOf(curve),
+                ControlCurvePoint(counter),
+                Name::new(format!("Curve point {}", counter)),
+                Transform::from_translation(Vec3::from(*new_points.last().unwrap())),
+                Mesh3d(sphere.clone()),
+                MeshMaterial3d(material.clone()),
+                RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                Picking3dInteractable::default(),
+                CantSnapToCurve::Single(curve),
+            ))
+            .observe(handle_click_on_curve_point3d)
+            .observe(handle_click_on_curve_point)
+            .id();
+
+        ids.push(new_id);
+        points_with_position.push((counter, Vec3::from(*new_points.last().unwrap())));
+        l += 1;
+
+        duplicate_set
+            .p1()
+            .spawn_bridges_1d(curve, l, &points_with_position, &ids);
     }
 }
 
@@ -333,6 +569,8 @@ pub fn commit_curve(
                     Visibility::Inherited,
                     ChildOf(root.0),
                 ))
+                .observe(handle_click_event_on_curve_level)
+                .observe(handle_click_event_on_curve_level3d)
                 .id();
 
             let mut points = Vec::new();
@@ -355,7 +593,6 @@ pub fn commit_curve(
                     .get_entity(entity)
                     .unwrap()
                     .remove::<TemporaryCurvePoint>()
-                    .remove::<CurveSegments>()
                     .insert((
                         ChildOf(parent),
                         ControlCurvePoint(idx),
@@ -368,7 +605,7 @@ pub fn commit_curve(
                 points.push((idx, entity, transforms.get(entity).unwrap().translation));
             }
 
-            if points.len() > 1 {
+            if points.len() >= 2 {
                 points.sort_by_key(|v| v.0);
                 let ids = points.iter().map(|p| p.1).collect::<Vec<_>>();
                 let points = points.into_iter().map(|p| (p.0, p.2)).collect::<Vec<_>>();
@@ -551,20 +788,20 @@ pub fn render_curves(
 
     // after collecting, set meshes accordingly
     for (entity, points) in curves_collected {
-        let points = (0..=100)
-            .into_par_iter()
-            .map(|u| {
-                Vec3::from(
-                    *de_casteljau(&points, (u as f64) / 100.0)
-                        .last()
-                        .unwrap()
-                        .last()
-                        .unwrap(),
-                )
-            })
-            .collect::<Vec<_>>();
-
         if points.len() >= 2 {
+            let points = (0..=100)
+                .into_par_iter()
+                .map(|u| {
+                    Vec3::from(
+                        *de_casteljau(&points, (u as f64) / 100.0)
+                            .last()
+                            .unwrap()
+                            .last()
+                            .unwrap(),
+                    )
+                })
+                .collect::<Vec<_>>();
+
             if let Ok(segments) = curve_segments.get(entity) {
                 for segment in &segments.0 {
                     if let Ok(segment_params) = curve_segment.get(*segment) {
@@ -636,7 +873,7 @@ pub fn update_sphere_positions(
 
     for (child_of, mut support_transform, support) in &mut transforms {
         if let Some(points) = curves.get(&child_of.parent())
-            && points.len() > 2
+            && points.len() >= 2
         {
             let point = *de_casteljau(points, support.u)
                 .last()

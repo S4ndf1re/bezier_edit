@@ -1,4 +1,4 @@
-use crate::bezier_curve::bezier_curve_renderer::hover_3d;
+use crate::bezier_curve::bezier_curve_renderer::{MinusModeEvent, PlusModeEvent, hover_3d};
 use crate::bezier_curve::test_mode::{NextEvaluationEvent, handle_next_eval_event};
 use crate::picking3d::events::HoveredBy;
 use crate::picking3d::picking_3d;
@@ -114,6 +114,9 @@ struct PrismMode;
 
 #[derive(Component)]
 struct EvaluationMode;
+
+#[derive(Component)]
+struct EndAnyMode;
 
 #[derive(Component)]
 pub struct VrMenuRoot;
@@ -766,17 +769,17 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(hover_3d)
             .observe(
                 move |_: Trigger<Pointer3d<picking3d::events::Click>>,
-                      mut decrease_degree: EventWriter<DecreaseDegreeEvent>,
+                      mut minus_mode: EventWriter<MinusModeEvent>,
                       mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-                    decrease_degree.write(DecreaseDegreeEvent);
+                    minus_mode.write(MinusModeEvent);
                     respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             )
             .observe(
                 move |_: Trigger<Pointer<Click>>,
-                      mut decrease_degree: EventWriter<DecreaseDegreeEvent>,
+                      mut minus_mode: EventWriter<MinusModeEvent>,
                       mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-                    decrease_degree.write(DecreaseDegreeEvent);
+                    minus_mode.write(MinusModeEvent);
                     respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             );
@@ -800,17 +803,17 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .observe(hover_3d)
             .observe(
                 move |_: Trigger<Pointer3d<picking3d::events::Click>>,
-                      mut increase_degree: EventWriter<IncreaseDegreeEvent>,
+                      mut plus_mode: EventWriter<PlusModeEvent>,
                       mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-                    increase_degree.write(IncreaseDegreeEvent);
+                    plus_mode.write(PlusModeEvent);
                     respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             )
             .observe(
                 move |_: Trigger<Pointer<Click>>,
-                      mut increase_degree: EventWriter<IncreaseDegreeEvent>,
+                      mut plus_mode: EventWriter<PlusModeEvent>,
                       mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-                    increase_degree.write(IncreaseDegreeEvent);
+                    plus_mode.write(PlusModeEvent);
                     respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             );
@@ -926,6 +929,46 @@ impl<'w, 's> MenuHandler<'w, 's> {
                       mut eval_writer: EventWriter<NextEvaluationEvent>,
                       mut respawn_menu: EventWriter<RedrawMenuEvent>| {
                     eval_writer.write(NextEvaluationEvent);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
+                },
+            );
+
+        // Spawn center to start evaluation
+        self.commands
+            .spawn((
+                Transform::from_xyz(0.0, 0.0, 0.0),
+                EndAnyMode,
+                Visibility::Inherited,
+                ChildOf(root),
+                Mesh3d(self.meshes.add(Cuboid::new(
+                    0.05 * self.info.scale,
+                    0.05 * self.info.scale,
+                    0.05 * self.info.scale,
+                ))),
+                MeshMaterial3d(
+                    self.materials
+                        .add(StandardMaterial::from_color(Color::from(BLACK))),
+                ),
+                Picking3dInteractable::default(),
+            ))
+            .observe(handle_hover_out)
+            .observe(handle_hover_out3d)
+            .observe(handle_hover_over)
+            .observe(handle_hover_over3d)
+            .observe(hover_3d)
+            .observe(
+                move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                      mut end_mode: EventWriter<EndModeEvent>,
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                    end_mode.write(EndModeEvent);
+                    respawn_menu.write(RedrawMenuEvent(top_level_transform));
+                },
+            )
+            .observe(
+                move |_: Trigger<Pointer<Click>>,
+                      mut end_mode: EventWriter<EndModeEvent>,
+                      mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                    end_mode.write(EndModeEvent);
                     respawn_menu.write(RedrawMenuEvent(top_level_transform));
                 },
             );

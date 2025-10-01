@@ -23,7 +23,7 @@ use bevy::{
         css::BLACK,
         tailwind::{GREEN_600, GREEN_800},
     },
-    ecs::system::SystemParam,
+    ecs::system::{SystemParam, lifetimeless::Read},
     prelude::*,
     render::view::RenderLayers,
 };
@@ -524,6 +524,42 @@ impl<'w, 's> BridgeSpawner<'w, 's> {
                     .observe(moved_complete_bridge)
                     .id();
                 self.add_bounding_entities.write(AddBoundingEntityEvent(id));
+            }
+        }
+    }
+}
+
+#[derive(SystemParam)]
+pub struct BridgeDespawner<'w, 's> {
+    commands: Commands<'w, 's>,
+    children: Query<'w, 's, Read<Children>>,
+    bridges: Query<'w, 's, Entity, With<Bridge>>,
+    bridge_centers: Query<'w, 's, Entity, With<CompleteBridgeCenter>>,
+    complete_bridges: Query<'w, 's, Entity, With<CompleteBridge>>,
+}
+
+impl<'w, 's> BridgeDespawner<'w, 's> {
+    pub fn despawn_from_parent(&mut self, parent: Entity) {
+        if let Ok(children) = self.children.get(parent) {
+            // First delete bridges
+            for child in children {
+                if let Ok(entity) = self.bridges.get(*child) {
+                    let _ = self.commands.get_entity(entity).map(|mut e| e.despawn());
+                }
+            }
+
+            // Then delete Centers
+            for child in children {
+                if let Ok(entity) = self.bridge_centers.get(*child) {
+                    let _ = self.commands.get_entity(entity).map(|mut e| e.despawn());
+                }
+            }
+
+            // Last, delete Complete Bridges
+            for child in children {
+                if let Ok(entity) = self.complete_bridges.get(*child) {
+                    let _ = self.commands.get_entity(entity).map(|mut e| e.despawn());
+                }
             }
         }
     }

@@ -35,7 +35,10 @@ use super::util::{
 };
 use crate::bezier_curve::EntityDeletedEvent;
 use crate::bezier_curve::bridges::{BridgeConnector, CompleteBridge};
-use crate::bezier_curve::helper_curves::update_sphere_positions;
+use crate::bezier_curve::helper_curves::{
+    AddPointToCurveEvent, RemovePointFromCurveEvent, add_point_to_curve_handler,
+    remove_point_from_curve_handler, update_sphere_positions,
+};
 use crate::custom_shapes::parallelogram::Parallelogram2d;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{
@@ -55,7 +58,7 @@ use crate::translation_control::translation_controller::{
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
-use crate::{MainCamera, RootTransform};
+use crate::{MainCamera, RootTransform, picking3d};
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::css::BLACK;
@@ -114,6 +117,12 @@ pub struct DeleteModeEvent;
 
 #[derive(Event)]
 pub struct EndModeEvent;
+
+#[derive(Event)]
+pub struct MinusModeEvent;
+
+#[derive(Event)]
+pub struct PlusModeEvent;
 
 pub fn generic_on_despawn_trigger(mut world: DeferredWorld, context: HookContext) {
     let mut writer = world.resource_mut::<Events<EntityDeletedEvent>>();
@@ -183,6 +192,29 @@ fn handle_delete_mode_event(
     next_state.set(ControlState::Delete);
 }
 
+fn handle_minus_mode_event(
+    mut reader: EventReader<MinusModeEvent>,
+    mut next_state: ResMut<NextState<ControlState>>,
+) {
+    if reader.is_empty() {
+        return;
+    }
+    reader.clear();
+
+    next_state.set(ControlState::Minus);
+}
+fn handle_plus_mode_event(
+    mut reader: EventReader<PlusModeEvent>,
+    mut next_state: ResMut<NextState<ControlState>>,
+) {
+    if reader.is_empty() {
+        return;
+    }
+    reader.clear();
+
+    next_state.set(ControlState::Plus);
+}
+
 fn handle_end_mode(
     mut reader: EventReader<EndModeEvent>,
     mut next_state: ResMut<NextState<ControlState>>,
@@ -204,6 +236,50 @@ pub fn distribute_redraw_event(
         redraw_boxes.write(RedrawBoxesEvent);
         redraw_iso_lines.write(RedrawLinesEvent::from(*event));
         update_ortho_views.write(UpdateOrthoViews);
+    }
+}
+
+fn click_on_control_point(
+    trigger: Trigger<Pointer<Click>>,
+    commands: Commands,
+    enable_translation_control: Query<&EnableTranslationControl>,
+    state: Res<State<ControlState>>,
+    mut decrease_degree: EventWriter<DecreaseDegreeEvent>,
+    mut increase_degree: EventWriter<IncreaseDegreeEvent>,
+) {
+    if *state == ControlState::Main {
+        enable_gizmo(EnableTranslationControl::OnlyTranslation)(
+            trigger,
+            commands,
+            enable_translation_control,
+            state,
+        );
+    } else if *state == ControlState::Minus {
+        decrease_degree.write(DecreaseDegreeEvent);
+    } else if *state == ControlState::Plus {
+        increase_degree.write(IncreaseDegreeEvent);
+    }
+}
+
+fn click_on_control_point3d(
+    trigger: Trigger<Pointer3d<picking3d::events::Click>>,
+    commands: Commands,
+    enable_translation_control: Query<&EnableTranslationControl>,
+    state: Res<State<ControlState>>,
+    mut decrease_degree: EventWriter<DecreaseDegreeEvent>,
+    mut increase_degree: EventWriter<IncreaseDegreeEvent>,
+) {
+    if *state == ControlState::Main {
+        enable_gizmo3d(EnableTranslationControl::OnlyTranslation)(
+            trigger,
+            commands,
+            enable_translation_control,
+            state,
+        );
+    } else if *state == ControlState::Minus {
+        decrease_degree.write(DecreaseDegreeEvent);
+    } else if *state == ControlState::Plus {
+        increase_degree.write(IncreaseDegreeEvent);
     }
 }
 
@@ -620,8 +696,8 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
                     >(material.clone()))
                     .observe(hover_3d)
                     //.observe(drag_point)
-                    .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
-                    .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
+                    .observe(click_on_control_point3d)
+                    .observe(click_on_control_point)
                     .id();
                 add_bounding_entities.write(AddBoundingEntityEvent(id));
                 ids.push(id);
@@ -763,6 +839,8 @@ impl Plugin for BezierRenderPlugin {
                 handle_create_ortho_camera_event.run_if(in_state(ControlState::Main)),
                 handle_create_plane_event.run_if(in_state(ControlState::Main)),
                 handle_delete_mode_event.run_if(in_state(ControlState::Main)),
+                handle_minus_mode_event.run_if(in_state(ControlState::Main)),
+                handle_plus_mode_event.run_if(in_state(ControlState::Main)),
                 create_camera_on_click.run_if(in_state(ControlState::CreateOrthoCamera)),
                 #[cfg(feature = "vr_enable")]
                 create_camera_on_click3d.run_if(in_state(ControlState::CreateOrthoCamera)),
@@ -770,6 +848,8 @@ impl Plugin for BezierRenderPlugin {
                     in_state(ControlState::CreateCurve)
                         .or(in_state(ControlState::CreatePlane))
                         .or(in_state(ControlState::Delete))
+                        .or(in_state(ControlState::Minus))
+                        .or(in_state(ControlState::Plus))
                         .or(in_state(ControlState::CreateOrthoCamera)),
                 ),
             ),
@@ -792,6 +872,14 @@ impl Plugin for BezierRenderPlugin {
             add_point
                 .run_if(in_state(ControlState::CreateCurve).or(in_state(ControlState::CreatePlane)))
                 .after(render_curves),
+        );
+
+        app.add_systems(
+            PostUpdate,
+            (
+                remove_point_from_curve_handler.run_if(on_event::<RemovePointFromCurveEvent>),
+                add_point_to_curve_handler.run_if(on_event::<AddPointToCurveEvent>),
+            ),
         );
 
         app.add_systems(
@@ -832,10 +920,14 @@ impl Plugin for BezierRenderPlugin {
         app.add_event::<CreateOrthoCameraEvent>();
         app.add_event::<DeleteModeEvent>();
         app.add_event::<EndModeEvent>();
+        app.add_event::<MinusModeEvent>();
+        app.add_event::<PlusModeEvent>();
         app.add_event::<EntityDeletedEvent>();
         app.add_event::<IncreaseDegreeEvent>();
         app.add_event::<DecreaseDegreeEvent>();
         app.add_event::<ResetDefaultCurveEvent>();
+        app.add_event::<RemovePointFromCurveEvent>();
+        app.add_event::<AddPointToCurveEvent>();
         app.init_state::<ControlState>();
 
         app.add_plugins(EvaluationPlugin);
