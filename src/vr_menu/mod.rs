@@ -79,43 +79,56 @@ struct GltfAssets {
     prism: Handle<Gltf>,
 }
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct TrashcanMode;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct MagnetMode;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct CurvatureMode;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct CameraMode;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct BlocksMode;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct PencilMode;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct CheckmarkMode;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct MinusMode;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct PlusMode;
 
-#[derive(Component, Clone, Copy)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct StepMode;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct PrismMode;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct EvaluationMode;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct EndAnyMode;
 
 #[derive(Component)]
@@ -1066,5 +1079,19 @@ impl Plugin for VrMenuPlugin {
                 .continue_to_state(AssetLoadingState::Loaded)
                 .load_collection::<GltfAssets>(),
         );
+
+        app.register_type::<TrashcanMode>();
+        app.register_type::<MagnetMode>();
+        app.register_type::<CurvatureMode>();
+        app.register_type::<CameraMode>();
+        app.register_type::<BlocksMode>();
+        app.register_type::<PencilMode>();
+        app.register_type::<CheckmarkMode>();
+        app.register_type::<MinusMode>();
+        app.register_type::<PlusMode>();
+        app.register_type::<StepMode>();
+        app.register_type::<PrismMode>();
+        app.register_type::<EvaluationMode>();
+        app.register_type::<EndAnyMode>();
     }
 }

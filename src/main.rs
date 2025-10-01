@@ -110,6 +110,7 @@ fn create_app() -> App {
     use bevy::color::palettes::tailwind::{GRAY_700, GRAY_900};
     use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
     use bevy_rich_text3d::Text3dPlugin;
+    use bevy_skein::SkeinPlugin;
     use linked_entities::LinkedEntitiesPlugin;
     use projection::ProjectionPlugin;
     use vr_menu::VrMenuPlugin;
@@ -123,6 +124,7 @@ fn create_app() -> App {
         .add_plugins(AdvancedOrbitControls)
         .add_plugins(TranslationController)
         .add_plugins(UiPlugin)
+        .add_plugins(SkeinPlugin::default())
         .add_plugins(EguiPlugin::default())
         .add_plugins(WorldInspectorPlugin::new())
         .add_plugins(ProjectionPlugin)
