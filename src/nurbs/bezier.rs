@@ -203,7 +203,7 @@ pub fn decrease_degree<T: AsRef<[Point]>>(points: T) -> Vec<Point> {
         points_right[i - 1] = ((n as f64) * b_i - (n as f64 - i as f64) * b_hat_i) / (i as f64);
     }
 
-    let mid = m / 2;
+    let mid = (m as f64 / 2.0).ceil() as usize;
 
     let mut result = Vec::with_capacity(m + 1);
     result.extend(points_left[0..mid].iter());
