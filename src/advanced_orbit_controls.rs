@@ -1,9 +1,11 @@
-use crate::RootTransform;
+use crate::vr_control::thumbstick3d::AccumulatedThumbstickInfoLeft;
+use crate::{MainCamera, RootTransform};
 use bevy::app::App;
 use bevy::prelude::*;
+use bevy_xr_utils::tracking_utils::XrTrackedView;
 
 #[cfg(feature = "vr_enable")]
-use crate::vr_control::thumbstick3d::AccumulatedThumbstickInfo;
+use crate::vr_control::thumbstick3d::AccumulatedThumbstickInfoRight;
 
 #[cfg(not(feature = "vr_enable"))]
 use bevy::input::mouse::AccumulatedMouseMotion;
@@ -64,11 +66,39 @@ fn orbit(
         * Quat::from_axis_angle(Vec3::Y, delta_yaw);
 }
 
+#[cfg(not(feature = "vr_enable"))]
+fn move_root(
+    mut root: Single<&mut Transform, With<RootTransform>>,
+    input: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+    camera: Single<&GlobalTransform, With<MainCamera>>,
+) {
+    let forward = 10.0 * camera.forward();
+    let left = 10.0 * camera.left();
+
+    // NOTE: Invert vectors for better control
+    if input.pressed(KeyCode::KeyW) {
+        root.translation -= forward * time.delta().as_secs_f32();
+    }
+
+    if input.pressed(KeyCode::KeyS) {
+        root.translation += forward * time.delta().as_secs_f32();
+    }
+
+    if input.pressed(KeyCode::KeyA) {
+        root.translation -= left * time.delta().as_secs_f32();
+    }
+
+    if input.pressed(KeyCode::KeyD) {
+        root.translation += left * time.delta().as_secs_f32();
+    }
+}
+
 #[cfg(feature = "vr_enable")]
 fn orbit(
     mut root: Single<&mut Transform, With<RootTransform>>,
     camera_settings: Res<CameraSettings>,
-    accumulated_thumbstick_info: Res<AccumulatedThumbstickInfo>,
+    accumulated_thumbstick_info: Res<AccumulatedThumbstickInfoRight>,
 ) {
     let delta = Vec2::new(
         accumulated_thumbstick_info.x(),
@@ -83,9 +113,24 @@ fn orbit(
         * Quat::from_axis_angle(Vec3::Y, delta_yaw);
 }
 
+#[cfg(feature = "vr_enable")]
+fn move_root(
+    mut root: Single<&mut Transform, With<RootTransform>>,
+    accumulated_thumbstick_info: Res<AccumulatedThumbstickInfoLeft>,
+    time: Res<Time>,
+    camera: Single<&GlobalTransform, With<XrTrackedView>>,
+) {
+    let forward = 10.0 * camera.forward();
+    let left = 10.0 * camera.left();
+
+    // NOTE: Invert vectors for better control
+    root.translation -= time.delta_secs() * forward * accumulated_thumbstick_info.y();
+    root.translation -= time.delta_secs() * left * accumulated_thumbstick_info.x();
+}
+
 impl Plugin for AdvancedOrbitControls {
     fn build(&self, app: &mut App) {
         app.init_resource::<CameraSettings>();
-        app.add_systems(Update, orbit);
+        app.add_systems(Update, (orbit, move_root));
     }
 }

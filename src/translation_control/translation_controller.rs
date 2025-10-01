@@ -965,7 +965,7 @@ pub fn drag_plane(
                 .unwrap()
                 .affine()
                 .inverse()
-                .transform_point3(end - start)
+                .transform_vector3(end - start)
         };
 
         let axis = control.0;
@@ -1005,7 +1005,7 @@ pub fn drag_plane3d(
         .unwrap()
         .affine()
         .inverse()
-        .transform_point3(diff);
+        .transform_vector3(diff);
 
     let axis = control.0;
     let translation = axis * diff;

@@ -69,7 +69,6 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
     ) -> Vec3 {
         let mut p0 = self.transform_set.p0();
         let mut t = p0.get_mut(control_parent.1.0).unwrap();
-        info!("Step mode is: {:?}", self.state.step_mode);
         t.translation = match self.state.step_mode {
             StepMode::MM1 => {
                 if self
