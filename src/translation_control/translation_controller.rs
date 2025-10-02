@@ -8,16 +8,15 @@ use crate::picking3d::events::{HoveredBy, MoveIn, MoveOut, Pointer3d};
 use crate::picking3d::picking_3d::{CustomPicking3dHitbox, Picking3dInteractable};
 use crate::translation_control::control_storage::ControlStorage;
 use crate::translation_control::proximity_detector::Snappable;
+use crate::translation_control::shadow_boxes::{
+    AssignedShadowBoxes, generate_shadow_box_bundle, update_boxes,
+};
 use crate::util::update_material_on;
-use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
 use crate::{MainCamera, RootTransform};
 use bevy::color::palettes::tailwind::{
     BLUE_600, BLUE_800, GRAY_400, GRAY_500, PURPLE_600, PURPLE_800, RED_600, RED_800,
 };
 use bevy::ecs::relationship::RelatedSpawnerCommands;
-use bevy::gizmos::start_gizmo_context;
-use bevy::math::bounding::BoundingSphere;
-use bevy::math::ops::atan2;
 use bevy::prelude::*;
 use bevy_lunex::prelude::{Text3d, Text3dStyling, TextAlign, TextAtlas, Weight};
 use bevy_xr_utils::tracking_utils::XrTrackedView;
@@ -60,6 +59,12 @@ pub struct ShadowMarker(Entity);
 #[derive(Component)]
 #[relationship_target(relationship = ShadowMarker, linked_spawn)]
 pub struct AssignedShadowMarkers(Vec<Entity>);
+
+impl AssignedShadowMarkers {
+    pub fn entities(&self) -> &Vec<Entity> {
+        &self.0
+    }
+}
 
 #[derive(Component, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Default)]
 pub enum EnableTranslationControl {
@@ -304,12 +309,15 @@ pub fn draw_arrow(
         .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()));
 
-    child_builder.spawn((
-        Transform::default().with_rotation(Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians())),
-        MeshMaterial3d(mat.clone()),
-        Visibility::Inherited,
-        Mesh3d(thin_line.clone()),
-    ));
+    if !is_shadow {
+        child_builder.spawn((
+            Transform::default()
+                .with_rotation(Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians())),
+            MeshMaterial3d(mat.clone()),
+            Visibility::Inherited,
+            Mesh3d(thin_line.clone()),
+        ));
+    }
 }
 
 fn draw_ring(
@@ -687,6 +695,17 @@ fn drag_start(
             }
         });
 
+    // Spawn box
+    let diff = Vec3::new(0.0, 0.0, 0.0);
+    commands.spawn(generate_shadow_box_bundle(
+        diff,
+        &mut materials,
+        &mut meshes,
+        control_parent.0,
+        scale,
+    ));
+
+    // Spawn texts
     let start_transform = *all_transforms.get(control_parent.0).unwrap();
     let camera_transform = camera.single().unwrap();
     let camera_forward = root_transform
@@ -827,6 +846,17 @@ fn drag_start3d(
             }
         });
 
+    // Spawn box
+    let diff = Vec3::new(0.0, 0.0, 0.0);
+    commands.spawn(generate_shadow_box_bundle(
+        diff,
+        &mut materials,
+        &mut meshes,
+        control_parent.0,
+        scale,
+    ));
+
+    // Spawn texts
     let start_transform = *all_transforms.get(control_parent.0).unwrap();
     let camera_transform = camera.single().unwrap();
     let camera_forward = root_transform
@@ -914,6 +944,7 @@ fn drag_end_trigger_redraw(
     arrow_query: Query<(&ChildOf, Entity), With<Control>>,
     control_parents: Query<&ControlParent>,
     assigned_markers: Query<&AssignedShadowMarkers>,
+    assigned_boxes: Query<&AssignedShadowBoxes>,
     mut redraw_writer: EventWriter<RedrawEvent>,
     mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
     mut commands: Commands,
@@ -935,8 +966,14 @@ fn drag_end_trigger_redraw(
     redraw_curves_writer.write(RedrawCurvesEvent);
 
     if let Ok(markers) = assigned_markers.get(control_parent.0) {
-        for marker in markers.iter() {
-            let _ = commands.get_entity(marker).map(|mut e| e.despawn());
+        for marker in markers.entities() {
+            let _ = commands.get_entity(*marker).map(|mut e| e.despawn());
+        }
+    }
+
+    if let Ok(boxes) = assigned_boxes.get(control_parent.0) {
+        for r#box in boxes.entities() {
+            let _ = commands.get_entity(*r#box).map(|mut e| e.despawn());
         }
     }
 
@@ -964,6 +1001,7 @@ fn drag_end3d_trigger_redraw(
     arrow_query: Query<(&ChildOf, Entity), With<Control>>,
     control_parents: Query<&ControlParent>,
     assigned_markers: Query<&AssignedShadowMarkers>,
+    assigned_boxes: Query<&AssignedShadowBoxes>,
     mut redraw_writer: EventWriter<RedrawEvent>,
     mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
     mut commands: Commands,
@@ -987,6 +1025,12 @@ fn drag_end3d_trigger_redraw(
     if let Ok(markers) = assigned_markers.get(control_parent.0) {
         for marker in markers.iter() {
             let _ = commands.get_entity(marker).map(|mut e| e.despawn());
+        }
+    }
+
+    if let Ok(boxes) = assigned_boxes.get(control_parent.0) {
+        for r#box in boxes.entities() {
+            let _ = commands.get_entity(*r#box).map(|mut e| e.despawn());
         }
     }
 
@@ -1939,6 +1983,7 @@ impl Plugin for TranslationController {
                 update_plane_directions,
                 handle_translate_by_delta_event,
                 update_texts,
+                update_boxes,
             ),
         );
         app.init_resource::<ControlStorage>();
