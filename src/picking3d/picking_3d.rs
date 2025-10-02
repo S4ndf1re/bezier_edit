@@ -133,8 +133,8 @@ fn check_intersections(
         if *p.3 == Picking3dInteractable::Ignore {
             continue;
         }
-        let test: Box<dyn IntersectsVolume<BoundingSphere>> = if p.2.is_some() {
-            match p.2.unwrap() {
+        let test: Box<dyn IntersectsVolume<BoundingSphere>> = if let Some(hitbox) = p.2 {
+            match hitbox {
                 CustomPicking3dHitbox::Sphere(s) => {
                     Box::new(BoundingSphere::new(p.0.translation(), *s))
                 }
@@ -266,7 +266,7 @@ fn test_all_hovered(
             to_remove.push((*entity, HoveredBy::Right));
             continue;
         }
-        let p = p.unwrap();
+        let p = p.expect("Already checked above");
 
         if *p.3 == Picking3dInteractable::Ignore {
             to_remove.push((*entity, HoveredBy::Left));
@@ -274,8 +274,8 @@ fn test_all_hovered(
             continue;
         }
 
-        let test: Box<dyn IntersectsVolume<BoundingSphere>> = if p.2.is_some() {
-            match p.2.unwrap() {
+        let test: Box<dyn IntersectsVolume<BoundingSphere>> = if let Some(hitbox) = p.2 {
+            match hitbox {
                 CustomPicking3dHitbox::Sphere(s) => {
                     Box::new(BoundingSphere::new(p.0.translation(), *s))
                 }
@@ -426,11 +426,9 @@ fn handle_input_grab(
             // End Drag here, new state is false, old one was true for >n ticks
             for (_, marker, entity) in &moved_marked_query {
                 if picking_state.contains_entity(&marker.entity, &hover_by) {
-                    let entity_global_position = transform_query.get(entity);
-                    if entity_global_position.is_err() {
+                    let Ok(entity_global_position) = transform_query.get(entity) else {
                         continue;
-                    }
-                    let entity_global_position = entity_global_position.unwrap();
+                    };
 
                     commands.trigger_targets(
                         Pointer3d {
@@ -447,7 +445,7 @@ fn handle_input_grab(
             picking_state.set_dragging(false, &hover_by);
 
             for (_, _, entity) in moved_marked_query.iter() {
-                commands.get_entity(entity).unwrap().despawn();
+                let _ = commands.get_entity(entity).map(|mut e| e.despawn());
             }
         } else if current_state
             && pointer_state.is_grabbing(&hover_by)
@@ -486,7 +484,9 @@ fn handle_input_grab(
                         continue;
                     }
 
-                    let transform = transform_query.get(*entity).unwrap();
+                    let Ok(transform) = transform_query.get(*entity) else {
+                        continue;
+                    };
                     let translation = match picking_state.get_start_transform(entity) {
                         Some(vec) => vec,
                         None => transform.translation(),
@@ -508,11 +508,10 @@ fn handle_input_grab(
                 if let Some(entity) = smallest_entity
                     && let Some(dist) = smallest_distance_vec
                 {
-                    let transform = transform_query.get(entity).unwrap();
+                    let Ok(transform) = transform_query.get(entity) else {
+                        continue;
+                    };
 
-                    // TODO: Figure out if Transform::default feels better here. This would
-                    // mean that it is not allowed to rotate the wrist. this will then not
-                    // change any translations.
                     commands.spawn((
                         ChildOf(tracked.1),
                         Transform::from_translation(dist),
@@ -545,7 +544,9 @@ fn handle_input_grab(
         {
             for (transform, mut marker, _) in moved_marked_query.iter_mut() {
                 if picking_state.contains_entity(&marker.entity, &hover_by) {
-                    let entity_global_position = transform_query.get(marker.entity).unwrap();
+                    let Ok(entity_global_position) = transform_query.get(marker.entity) else {
+                        continue;
+                    };
 
                     // PRISM: Use prism precision movement
                     let (delta, new_timer) = prism_function(
@@ -589,11 +590,10 @@ fn handle_input_grab(
             let mut sended_event = false;
             // Click event here, since the new state is false, the old state was true and the state change lasted only <n ticks
             for entity in picking_state.iter(&hover_by) {
-                let entity_global_position = transform_query.get(*entity);
-                if entity_global_position.is_err() {
+                let Ok(entity_global_position) = transform_query.get(*entity) else {
                     continue;
-                }
-                let entity_global_position = entity_global_position.unwrap();
+                };
+
                 commands.trigger_targets(
                     Pointer3d {
                         hit_entity: tracked.1,
@@ -716,14 +716,6 @@ pub fn show_aim(
     mut set: ParamSet<(ResMut<Assets<Mesh>>, MeshRayCast)>,
     scale: Res<RenderInformation>,
 ) {
-    // for line in aim_line {
-    //     if line.1.0 == HoveredBy::Left && squeeze.left <= 0.2
-    //         || line.1.0 == HoveredBy::Right && squeeze.right <= 0.2
-    //     {
-    //         commands.get_entity(line.0).unwrap().despawn();
-    //     }
-    // }
-
     for (_, aim_query, hovered_by) in [
         (squeeze.left, aim_query_left.single(), HoveredBy::Left),
         (squeeze.right, aim_query_right.single(), HoveredBy::Right),

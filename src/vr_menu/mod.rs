@@ -5,14 +5,10 @@ use crate::picking3d::picking_3d;
 use crate::translation_control::translation_controller::{
     SetPrismMode, handle_set_prism_mode, handle_toggle_snapping,
 };
-use crate::vr_control::trigger::ControllerTrigger;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
 use crate::vr_control::{AimLeft, AimRight};
 #[cfg(feature = "vr_enable")]
-use crate::vr_control::{
-    GripLeft, GripRight,
-    trigger::{ControllerSqueeze, ControllerTrigger},
-};
+use crate::vr_control::{GripLeft, GripRight, trigger::ControllerSqueeze};
 use crate::{
     MainCamera,
     bezier_curve::{
@@ -278,11 +274,6 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
             continue;
         };
         let components = components.collect::<Vec<_>>();
-        let component_names = components
-            .iter()
-            .map(|info| info.name())
-            .collect::<Vec<_>>();
-        info!("Components: {:?}", component_names);
 
         let components = components.iter().map(|info| info.id()).collect::<Vec<_>>();
 
@@ -690,7 +681,7 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .id();
 
         #[cfg(feature = "vr_enable")]
-        let scale = 15.0;
+        let scale = 3.0;
         #[cfg(not(feature = "vr_enable"))]
         let scale = 5.0;
 
@@ -761,7 +752,6 @@ fn spawn_despawn_model_into_scene(
             .looking_to(-transform.forward(), transform.up());
         manager.spawn_at_position_and_orientation(transform);
     } else if !spawn_menu && vr_menu_exists {
-        manager.apply_menu_state();
         manager.despawn_menu();
     }
 }

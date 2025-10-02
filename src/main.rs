@@ -31,6 +31,7 @@ use bevy_mod_openxr::render::OxrRenderPlugin;
 use bevy_mod_openxr::{action_binding, action_set_attaching, action_set_syncing, features, spaces};
 use bevy_mod_xr::camera::XrCameraPlugin;
 use bevy_mod_xr::session::XrSessionPlugin;
+use bevy_skein::SkeinPlugin;
 use bevy_xr_utils::xr_utils_actions::{XRUtilsActionSystemSet, XRUtilsActionsPlugin};
 use bezier_curve::bezier_curve_renderer::*;
 use history::plugin::HistoryPlugin;
@@ -110,7 +111,6 @@ fn create_app() -> App {
     use bevy::color::palettes::tailwind::{GRAY_700, GRAY_900};
     use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
     use bevy_rich_text3d::Text3dPlugin;
-    use bevy_skein::SkeinPlugin;
     use linked_entities::LinkedEntitiesPlugin;
     use projection::ProjectionPlugin;
     use vr_menu::VrMenuPlugin;
@@ -212,6 +212,7 @@ fn create_app() -> App {
     .add_plugins(AdvancedOrbitControls)
     .add_plugins(ObjectPicking3d)
     .add_plugins(TranslationController)
+    .add_plugins(SkeinPlugin { handle_brp: false })
     .add_plugins(VrControlPlugin)
     .add_plugins(UiPlugin)
     .add_plugins(ProjectionPlugin)
