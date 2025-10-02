@@ -681,7 +681,7 @@ impl<'w, 's> MenuHandler<'w, 's> {
             .id();
 
         #[cfg(feature = "vr_enable")]
-        let scale = 3.0;
+        let scale = 1.0;
         #[cfg(not(feature = "vr_enable"))]
         let scale = 5.0;
 
