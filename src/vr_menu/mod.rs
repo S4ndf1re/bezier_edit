@@ -21,17 +21,15 @@ use crate::{
         },
         components::ControlState,
         curvature_display_mode::ChangeCurvatureDisplayModeEvent,
-        degree_manipulation::{DecreaseDegreeEvent, IncreaseDegreeEvent},
         render_info::{ChangeSurfaceMeshMode, RenderInformation},
     },
     picking3d::{self, events::Pointer3d, picking_3d::Picking3dInteractable},
     translation_control::translation_controller::{
-        self, SnappingBehaviour, ToggleSnappingBehaviour, TranslationControllerState,
+        self, ToggleSnappingBehaviour, TranslationControllerState,
     },
 };
-use bevy::color::palettes::css::{BLACK, BLUE, LIGHT_BLUE};
 use bevy::{
-    color::palettes::{css::WHITE, tailwind::RED_500},
+    color::palettes::tailwind::RED_500,
     ecs::system::{SystemParam, lifetimeless::Read},
     prelude::*,
     scene::SceneInstanceReady,
@@ -49,35 +47,6 @@ pub enum AssetLoadingState {
 
 #[derive(AssetCollection, Resource)]
 struct GltfAssets {
-    #[asset(path = "magnet/scene.gltf")]
-    magnet: Handle<Gltf>,
-    #[asset(path = "garbage_can__trashcan__bin/scene.gltf")]
-    trashcan: Handle<Gltf>,
-    #[asset(path = "saddle_wires/scene.gltf")]
-    curve: Handle<Gltf>,
-    #[asset(path = "polaroid_camera/scene.gltf")]
-    camera: Handle<Gltf>,
-    #[asset(path = "box_mode/scene.gltf")]
-    blocks: Handle<Gltf>,
-    #[asset(path = "pencil/scene.gltf")]
-    pencil: Handle<Gltf>,
-    #[asset(path = "checkmark/scene.gltf")]
-    checkmark: Handle<Gltf>,
-    #[asset(path = "minus/scene.gltf")]
-    minus: Handle<Gltf>,
-    #[asset(path = "plus/scene.gltf")]
-    plus: Handle<Gltf>,
-    #[asset(path = "0mm/scene.gltf")]
-    mm_0: Handle<Gltf>,
-    #[asset(path = "1mm/scene.gltf")]
-    mm_1: Handle<Gltf>,
-    #[asset(path = "5mm/scene.gltf")]
-    mm_5: Handle<Gltf>,
-    #[asset(path = "10mm/scene.gltf")]
-    mm_10: Handle<Gltf>,
-    #[asset(path = "diamond/scene.gltf")]
-    prism: Handle<Gltf>,
-
     #[asset(path = "menu/scene.gltf")]
     menu: Handle<Gltf>,
 }
@@ -134,186 +103,28 @@ struct EvaluationMode;
 #[reflect(Component)]
 struct EndAnyMode;
 
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct MM0;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct MM1;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct MM5;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct MM10;
+
 #[derive(Component)]
 pub struct VrMenuRoot;
 
 #[derive(Resource, Default)]
 struct VrMenuState {
     currently_selected: Option<Entity>,
-}
-
-fn spawn_magnet(scene: Handle<Scene>, scale: f32) -> impl Bundle {
-    let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians());
-
-    (
-        Transform::from_xyz(0.0, 0.0, -0.2 * scale)
-            .with_scale(Vec3::ONE * 0.05 * scale)
-            .with_rotation(rotation),
-        Visibility::Inherited,
-        SceneRoot(scene),
-        Picking3dInteractable::default(),
-        MagnetMode,
-    )
-}
-
-fn spawn_trash(scene: Handle<Scene>, scale: f32) -> impl Bundle {
-    (
-        Transform::from_xyz(0.0, 0.0, -0.2 * scale)
-            .with_scale(Vec3::ONE * 0.3 * scale)
-            .with_rotation(Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians())),
-        Visibility::Inherited,
-        SceneRoot(scene),
-        Picking3dInteractable::default(),
-        TrashcanMode,
-    )
-}
-
-fn spawn_curveature(scene: Handle<Scene>, scale: f32) -> impl Bundle {
-    let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians());
-
-    (
-        Transform::from_xyz(0.0, 0.0, -0.2 * scale)
-            .with_scale(Vec3::ONE * 0.05 * scale)
-            .with_rotation(rotation),
-        Visibility::Inherited,
-        SceneRoot(scene),
-        Picking3dInteractable::default(),
-        CurvatureMode,
-    )
-}
-
-fn spawn_camera(scene: Handle<Scene>, scale: f32) -> impl Bundle {
-    let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians());
-
-    (
-        Transform::from_xyz(0.0, 0.0, -0.2 * scale)
-            .with_scale(Vec3::ONE * 0.2 * scale)
-            .with_rotation(rotation),
-        Visibility::Inherited,
-        SceneRoot(scene),
-        Picking3dInteractable::default(),
-        CameraMode,
-    )
-}
-
-fn spawn_blocks(scene: Handle<Scene>, scale: f32) -> impl Bundle {
-    let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians())
-        * Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians())
-        * Quat::from_axis_angle(Vec3::Y, -45.0_f32.to_radians());
-
-    (
-        Transform::from_xyz(0.0, 0.0, -0.2 * scale)
-            .with_scale(Vec3::ONE * 0.03 * scale)
-            .with_rotation(rotation),
-        Visibility::Inherited,
-        SceneRoot(scene),
-        Picking3dInteractable::default(),
-        BlocksMode,
-    )
-}
-
-fn spawn_pencil(scene: Handle<Scene>, scale: f32) -> impl Bundle {
-    let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians());
-
-    (
-        Transform::from_xyz(0.0, 0.0, -0.2 * scale)
-            .with_scale(Vec3::ONE * 0.02 * scale)
-            .with_rotation(rotation),
-        Visibility::Inherited,
-        SceneRoot(scene),
-        Picking3dInteractable::default(),
-        PencilMode,
-    )
-}
-
-fn spawn_checkmark(scene: Handle<Scene>, scale: f32) -> impl Bundle {
-    let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians());
-
-    (
-        Transform::from_xyz(0.0, 0.0, -0.2 * scale)
-            .with_scale(Vec3::ONE * 0.01 * scale)
-            .with_rotation(rotation),
-        Visibility::Inherited,
-        SceneRoot(scene),
-        Picking3dInteractable::default(),
-        CheckmarkMode,
-    )
-}
-
-fn spawn_minus(scene: Handle<Scene>, scale: f32) -> impl Bundle {
-    let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians())
-        * Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians())
-        * Quat::from_axis_angle(Vec3::Z, 90.0_f32.to_radians());
-
-    (
-        Transform::from_xyz(0.0, 0.0, -0.2 * scale)
-            .with_scale(Vec3::ONE * 0.01 * scale)
-            .with_rotation(rotation),
-        Visibility::Inherited,
-        SceneRoot(scene),
-        Picking3dInteractable::default(),
-        MinusMode,
-    )
-}
-
-fn spawn_plus(scene: Handle<Scene>, scale: f32) -> impl Bundle {
-    let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians())
-        * Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians())
-        * Quat::from_axis_angle(Vec3::Z, 90.0_f32.to_radians());
-
-    (
-        Transform::from_xyz(0.0, 0.0, -0.2 * scale)
-            .with_scale(Vec3::ONE * 0.01 * scale)
-            .with_rotation(rotation),
-        Visibility::Inherited,
-        SceneRoot(scene),
-        Picking3dInteractable::default(),
-        StepMode,
-    )
-}
-
-fn spawn_text(
-    scale: f32,
-    step_mode: &translation_controller::StepMode,
-    gltf: &Res<Assets<Gltf>>,
-    models: &Res<GltfAssets>,
-) -> impl Bundle {
-    let model = match *step_mode {
-        translation_controller::StepMode::None => gltf.get(models.mm_0.clone().id()).unwrap(),
-        translation_controller::StepMode::MM1 => gltf.get(models.mm_1.clone().id()).unwrap(),
-        translation_controller::StepMode::MM5 => gltf.get(models.mm_5.clone().id()).unwrap(),
-        translation_controller::StepMode::MM10 => gltf.get(models.mm_10.clone().id()).unwrap(),
-    };
-    let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians())
-        * Quat::from_axis_angle(Vec3::X, 180.0_f32.to_radians())
-        * Quat::from_axis_angle(Vec3::Y, 180.0_f32.to_radians())
-        * Quat::from_axis_angle(Vec3::Z, 10.0_f32.to_radians());
-
-    (
-        Transform::from_xyz(0.0, 0.0, -0.2 * scale)
-            .with_scale(Vec3::ONE * 0.1 * scale)
-            .with_rotation(rotation),
-        Visibility::Inherited,
-        SceneRoot(model.scenes[0].clone()),
-        Picking3dInteractable::default(),
-        PlusMode,
-    )
-}
-
-fn spawn_prism(scene: Handle<Scene>, scale: f32) -> impl Bundle {
-    let rotation = Quat::from_axis_angle(Vec3::X, -90.0_f32.to_radians())
-        * Quat::from_axis_angle(Vec3::X, 180.0_f32.to_radians())
-        * Quat::from_axis_angle(Vec3::Y, 180.0_f32.to_radians());
-
-    (
-        Transform::from_xyz(0.0, 0.0, -0.2 * scale)
-            .with_scale(Vec3::ONE * 0.0001 * scale)
-            .with_rotation(rotation),
-        Visibility::Inherited,
-        SceneRoot(scene),
-        Picking3dInteractable::default(),
-        PrismMode,
-    )
 }
 
 #[derive(Component)]
@@ -416,36 +227,429 @@ fn handle_hover_out3d(
     color_changer.change_color_back(trigger.target());
 }
 
-fn trigger_scene_spawn(
+fn set_initial_color(
     trigger: Trigger<SceneInstanceReady>,
-    mut commands: Commands,
     mut color_changer: ColorChangerChildren,
-    translation_state: Res<TranslationControllerState>,
-    magnets: Query<&MagnetMode>,
-    prisms: Query<&PrismMode>,
-    children: Query<&Children>,
 ) {
     color_changer.set_initial_color(trigger.target());
+}
 
-    if magnets.get(trigger.target()).is_ok()
-        && translation_state.curve_snapping == SnappingBehaviour::NoSnap
-    {
-        color_changer.change_color(trigger.target(), WHITE.into());
-    }
+fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) {
+    let root = {
+        let mut root = world.query::<(&Transform, &VrMenuRoot)>();
+        let root = root.query(world);
 
-    if prisms.get(trigger.target()).is_ok()
-        && translation_state.prism_mode == translation_controller::PrismMode::Prism
-    {
-        color_changer.change_color(trigger.target(), LIGHT_BLUE.into());
-    }
+        let Ok((root, _)) = root.single() else {
+            return;
+        };
 
-    for child in children.iter_descendants(trigger.target()) {
-        commands
+        *root
+    };
+
+    // if components.contains(&world.component_id::<MagnetMode>().unwrap())
+    //     && translation_state.curve_snapping == SnappingBehaviour::NoSnap
+    // {
+    //     color_changer.change_color(trigger.target(), WHITE.into());
+    // }
+    //
+    // if components.contains(&world.component_id::<PrismMode>().unwrap())
+    //     && translation_state.prism_mode == translation_controller::PrismMode::Prism
+    // {
+    //     color_changer.change_color(trigger.target(), LIGHT_BLUE.into());
+    // }
+
+    let children = {
+        let mut children = world.query::<&Children>();
+        children
+            .query(world)
+            .iter_descendants(trigger.target())
+            .collect::<Vec<_>>()
+    };
+
+    let mut entities_to_hide = Vec::new();
+
+    for child in children {
+        world
+            .commands()
             .entity(child)
             .insert(Picking3dInteractable::default());
+
+        let Ok(components) = world.inspect_entity(child) else {
+            continue;
+        };
+        let components = components.collect::<Vec<_>>();
+        let component_names = components
+            .iter()
+            .map(|info| info.name())
+            .collect::<Vec<_>>();
+        info!("Components: {:?}", component_names);
+
+        let components = components.iter().map(|info| info.id()).collect::<Vec<_>>();
+
+        // TODO: add observers and pickable to correct components
+        if components.contains(&world.component_id::<MagnetMode>().unwrap()) {
+            world
+                .commands()
+                .entity(child)
+                .observe(handle_hover_out)
+                .observe(handle_hover_out3d)
+                .observe(handle_hover_over)
+                .observe(handle_hover_over3d)
+                .observe(hover_3d)
+                .observe(
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut toggle_snap_mode: EventWriter<ToggleSnappingBehaviour>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        toggle_snap_mode.write(ToggleSnappingBehaviour);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                )
+                .observe(
+                    move |_: Trigger<Pointer<Click>>,
+                          mut toggle_snap_mode: EventWriter<ToggleSnappingBehaviour>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        toggle_snap_mode.write(ToggleSnappingBehaviour);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                );
+        }
+
+        if components.contains(&world.component_id::<TrashcanMode>().unwrap()) {
+            world
+                .commands()
+                .entity(child)
+                .observe(handle_hover_out)
+                .observe(handle_hover_out3d)
+                .observe(handle_hover_over)
+                .observe(handle_hover_over3d)
+                .observe(hover_3d)
+                .observe(
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut set_delete_mode: EventWriter<DeleteModeEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        set_delete_mode.write(DeleteModeEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                )
+                .observe(
+                    move |_: Trigger<Pointer<Click>>,
+                          mut set_delete_mode: EventWriter<DeleteModeEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        set_delete_mode.write(DeleteModeEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                );
+        }
+
+        if components.contains(&world.component_id::<CurvatureMode>().unwrap()) {
+            world
+                .commands()
+                .entity(child)
+                .observe(handle_hover_out)
+                .observe(handle_hover_out3d)
+                .observe(handle_hover_over)
+                .observe(handle_hover_over3d)
+                .observe(hover_3d)
+                .observe(
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut change_curvature_display_mode: EventWriter<
+                        ChangeCurvatureDisplayModeEvent,
+                    >,
+                          info: Res<RenderInformation>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        change_curvature_display_mode
+                            .write(ChangeCurvatureDisplayModeEvent(info.curvature_mode.next()));
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                )
+                .observe(
+                    move |_: Trigger<Pointer<Click>>,
+                          mut change_curvature_display_mode: EventWriter<
+                        ChangeCurvatureDisplayModeEvent,
+                    >,
+                          info: Res<RenderInformation>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        change_curvature_display_mode
+                            .write(ChangeCurvatureDisplayModeEvent(info.curvature_mode.next()));
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                );
+        }
+
+        if components.contains(&world.component_id::<CameraMode>().unwrap()) {
+            world
+                .commands()
+                .entity(child)
+                .observe(handle_hover_out)
+                .observe(handle_hover_out3d)
+                .observe(handle_hover_over)
+                .observe(handle_hover_over3d)
+                .observe(hover_3d)
+                .observe(
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut set_create_camera_mode: EventWriter<CreateOrthoCameraEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        set_create_camera_mode.write(CreateOrthoCameraEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                )
+                .observe(
+                    move |_: Trigger<Pointer<Click>>,
+                          mut set_create_camera_mode: EventWriter<CreateOrthoCameraEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        set_create_camera_mode.write(CreateOrthoCameraEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                );
+        }
+
+        if components.contains(&world.component_id::<CheckmarkMode>().unwrap()) {
+            world
+                .commands()
+                .entity(child)
+                .observe(handle_hover_out)
+                .observe(handle_hover_out3d)
+                .observe(handle_hover_over)
+                .observe(handle_hover_over3d)
+                .observe(hover_3d)
+                .observe(
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut set_end_mode: EventWriter<EndModeEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        set_end_mode.write(EndModeEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                )
+                .observe(
+                    move |_: Trigger<Pointer<Click>>,
+                          mut set_end_mode: EventWriter<EndModeEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        set_end_mode.write(EndModeEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                );
+        }
+
+        if components.contains(&world.component_id::<PencilMode>().unwrap()) {
+            world
+                .commands()
+                .entity(child)
+                .observe(handle_hover_out)
+                .observe(handle_hover_out3d)
+                .observe(handle_hover_over)
+                .observe(handle_hover_over3d)
+                .observe(hover_3d)
+                .observe(
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut set_create_curve_mode: EventWriter<CreateCurveEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        set_create_curve_mode.write(CreateCurveEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                )
+                .observe(
+                    move |_: Trigger<Pointer<Click>>,
+                          mut set_create_curve_mode: EventWriter<CreateCurveEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        set_create_curve_mode.write(CreateCurveEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                );
+        }
+
+        if components.contains(&world.component_id::<BlocksMode>().unwrap()) {
+            world
+                .commands()
+                .entity(child)
+                .observe(handle_hover_out)
+                .observe(handle_hover_out3d)
+                .observe(handle_hover_over)
+                .observe(handle_hover_over3d)
+                .observe(hover_3d)
+                .observe(
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut mesh_mode_writer: EventWriter<ChangeSurfaceMeshMode>,
+                          info: Res<RenderInformation>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        mesh_mode_writer
+                            .write(ChangeSurfaceMeshMode(info.surface_mesh_mode.next()));
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                )
+                .observe(
+                    move |_: Trigger<Pointer<Click>>,
+                          mut mesh_mode_writer: EventWriter<ChangeSurfaceMeshMode>,
+                          info: Res<RenderInformation>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        mesh_mode_writer
+                            .write(ChangeSurfaceMeshMode(info.surface_mesh_mode.next()));
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                );
+        }
+
+        if components.contains(&world.component_id::<MinusMode>().unwrap()) {
+            world
+                .commands()
+                .entity(child)
+                .observe(handle_hover_out)
+                .observe(handle_hover_out3d)
+                .observe(handle_hover_over)
+                .observe(handle_hover_over3d)
+                .observe(hover_3d)
+                .observe(
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut minus_mode: EventWriter<MinusModeEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        minus_mode.write(MinusModeEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                )
+                .observe(
+                    move |_: Trigger<Pointer<Click>>,
+                          mut minus_mode: EventWriter<MinusModeEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        minus_mode.write(MinusModeEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                );
+        }
+
+        if components.contains(&world.component_id::<PlusMode>().unwrap()) {
+            world
+                .commands()
+                .entity(child)
+                .observe(handle_hover_out)
+                .observe(handle_hover_out3d)
+                .observe(handle_hover_over)
+                .observe(handle_hover_over3d)
+                .observe(hover_3d)
+                .observe(
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut plus_mode: EventWriter<PlusModeEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        plus_mode.write(PlusModeEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                )
+                .observe(
+                    move |_: Trigger<Pointer<Click>>,
+                          mut plus_mode: EventWriter<PlusModeEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        plus_mode.write(PlusModeEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                );
+        }
+
+        if components.contains(&world.component_id::<PrismMode>().unwrap()) {
+            world
+                .commands()
+                .entity(child)
+                .observe(handle_hover_out)
+                .observe(handle_hover_out3d)
+                .observe(handle_hover_over)
+                .observe(handle_hover_over3d)
+                .observe(hover_3d)
+                .observe(
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut writer: EventWriter<SetPrismMode>,
+                          translation_state: Res<TranslationControllerState>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        writer.write(SetPrismMode(translation_state.prism_mode.next()));
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                )
+                .observe(
+                    move |_: Trigger<Pointer<Click>>,
+                          mut writer: EventWriter<SetPrismMode>,
+                          translation_state: Res<TranslationControllerState>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        writer.write(SetPrismMode(translation_state.prism_mode.next()));
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                );
+        }
+
+        if components.contains(&world.component_id::<EvaluationMode>().unwrap()) {
+            world
+                .commands()
+                .entity(child)
+                .observe(handle_hover_out)
+                .observe(handle_hover_out3d)
+                .observe(handle_hover_over)
+                .observe(handle_hover_over3d)
+                .observe(hover_3d)
+                .observe(
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut eval_writer: EventWriter<NextEvaluationEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        eval_writer.write(NextEvaluationEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                )
+                .observe(
+                    move |_: Trigger<Pointer<Click>>,
+                          mut eval_writer: EventWriter<NextEvaluationEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        eval_writer.write(NextEvaluationEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                );
+        }
+
+        if components.contains(&world.component_id::<StepMode>().unwrap()) {
+            world
+                .commands()
+                .entity(child)
+                .observe(handle_hover_out)
+                .observe(handle_hover_out3d)
+                .observe(handle_hover_over)
+                .observe(handle_hover_over3d)
+                .observe(hover_3d)
+                .observe(
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut translation_state: ResMut<TranslationControllerState>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        translation_state.step_mode = translation_state.step_mode.next();
+
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                )
+                .observe(
+                    move |_: Trigger<Pointer<Click>>,
+                          mut translation_state: ResMut<TranslationControllerState>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        translation_state.step_mode = translation_state.step_mode.next();
+
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                );
+
+            if world.resource::<TranslationControllerState>().step_mode
+                == translation_controller::StepMode::None
+                && !components.contains(&world.component_id::<MM0>().unwrap())
+                || world.resource::<TranslationControllerState>().step_mode
+                    == translation_controller::StepMode::MM1
+                    && !components.contains(&world.component_id::<MM1>().unwrap())
+                || world.resource::<TranslationControllerState>().step_mode
+                    == translation_controller::StepMode::MM5
+                    && !components.contains(&world.component_id::<MM5>().unwrap())
+                || world.resource::<TranslationControllerState>().step_mode
+                    == translation_controller::StepMode::MM10
+                    && !components.contains(&world.component_id::<MM10>().unwrap())
+            {
+                entities_to_hide.push(child);
+            }
+        }
     }
 
-    // TODO: add observers and pickable to correct components
+    for entity in entities_to_hide {
+        world
+            .commands()
+            .entity(entity)
+            .insert((Visibility::Hidden, Picking3dInteractable::Ignore));
+    }
 }
 
 #[derive(Event)]
@@ -463,12 +667,8 @@ pub struct MenuHandler<'w, 's> {
     menu_roots: Query<'w, 's, Entity, With<VrMenuRoot>>,
     state: ResMut<'w, VrMenuState>,
     info: Res<'w, RenderInformation>,
-    control_state: Res<'w, State<ControlState>>,
-    translation_state: ResMut<'w, TranslationControllerState>,
     models: Res<'w, GltfAssets>,
     gltf: Res<'w, Assets<Gltf>>,
-    meshes: ResMut<'w, Assets<Mesh>>,
-    materials: ResMut<'w, Assets<StandardMaterial>>,
 }
 
 impl<'w, 's> MenuHandler<'w, 's> {
@@ -500,504 +700,6 @@ impl<'w, 's> MenuHandler<'w, 's> {
             Visibility::Inherited,
             ChildOf(root),
         ));
-
-        //
-        // let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
-        // transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 15.0_f32.to_radians()));
-        // let model = self.gltf.get(self.models.magnet.clone().id()).unwrap();
-        //
-        // self.commands
-        //     .spawn((
-        //         transform,
-        //         MagnetMode,
-        //         children![spawn_magnet(
-        //             model.scenes[0].clone(),
-        //             self.info.scale * scale
-        //         )],
-        //         Visibility::Inherited,
-        //         ChildOf(root),
-        //     ))
-        //     .observe(handle_hover_out)
-        //     .observe(handle_hover_out3d)
-        //     .observe(handle_hover_over)
-        //     .observe(handle_hover_over3d)
-        //     .observe(hover_3d)
-        //     .observe(
-        //         move |_: Trigger<Pointer3d<picking3d::events::Click>>,
-        //               mut toggle_snap_mode: EventWriter<ToggleSnappingBehaviour>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             toggle_snap_mode.write(ToggleSnappingBehaviour);
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     )
-        //     .observe(
-        //         move |_: Trigger<Pointer<Click>>,
-        //               mut toggle_snap_mode: EventWriter<ToggleSnappingBehaviour>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             toggle_snap_mode.write(ToggleSnappingBehaviour);
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     );
-        //
-        // let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
-        // transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -15.0_f32.to_radians()));
-        // let model = self.gltf.get(self.models.trashcan.clone().id()).unwrap();
-        //
-        // self.commands
-        //     .spawn((
-        //         transform,
-        //         TrashcanMode,
-        //         children![spawn_trash(
-        //             model.scenes[0].clone(),
-        //             self.info.scale * scale
-        //         )],
-        //         Visibility::Inherited,
-        //         ChildOf(root),
-        //     ))
-        //     .observe(handle_hover_out)
-        //     .observe(handle_hover_out3d)
-        //     .observe(handle_hover_over)
-        //     .observe(handle_hover_over3d)
-        //     .observe(hover_3d)
-        //     .observe(
-        //         move |_: Trigger<Pointer3d<picking3d::events::Click>>,
-        //               mut set_delete_mode: EventWriter<DeleteModeEvent>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             set_delete_mode.write(DeleteModeEvent);
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     )
-        //     .observe(
-        //         move |_: Trigger<Pointer<Click>>,
-        //               mut set_delete_mode: EventWriter<DeleteModeEvent>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             set_delete_mode.write(DeleteModeEvent);
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     );
-        //
-        // let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
-        // transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 45.0_f32.to_radians()));
-        // let model = self.gltf.get(self.models.curve.clone().id()).unwrap();
-        //
-        // self.commands
-        //     .spawn((
-        //         transform,
-        //         CurvatureMode,
-        //         children![spawn_curveature(
-        //             model.scenes[0].clone(),
-        //             self.info.scale * scale
-        //         )],
-        //         Visibility::Inherited,
-        //         ChildOf(root),
-        //     ))
-        //     .observe(handle_hover_out)
-        //     .observe(handle_hover_out3d)
-        //     .observe(handle_hover_over)
-        //     .observe(handle_hover_over3d)
-        //     .observe(hover_3d)
-        //     .observe(
-        //         move |_: Trigger<Pointer3d<picking3d::events::Click>>,
-        //               mut change_curvature_display_mode: EventWriter<
-        //             ChangeCurvatureDisplayModeEvent,
-        //         >,
-        //               info: Res<RenderInformation>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             change_curvature_display_mode
-        //                 .write(ChangeCurvatureDisplayModeEvent(info.curvature_mode.next()));
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     )
-        //     .observe(
-        //         move |_: Trigger<Pointer<Click>>,
-        //               mut change_curvature_display_mode: EventWriter<
-        //             ChangeCurvatureDisplayModeEvent,
-        //         >,
-        //               info: Res<RenderInformation>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             change_curvature_display_mode
-        //                 .write(ChangeCurvatureDisplayModeEvent(info.curvature_mode.next()));
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     );
-        //
-        // let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
-        // transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -45.0_f32.to_radians()));
-        // let model = self.gltf.get(self.models.camera.clone().id()).unwrap();
-        //
-        // self.commands
-        //     .spawn((
-        //         transform,
-        //         CameraMode,
-        //         children![spawn_camera(
-        //             model.scenes[0].clone(),
-        //             self.info.scale * scale
-        //         )],
-        //         Visibility::Inherited,
-        //         ChildOf(root),
-        //     ))
-        //     .observe(handle_hover_out)
-        //     .observe(handle_hover_out3d)
-        //     .observe(handle_hover_over)
-        //     .observe(handle_hover_over3d)
-        //     .observe(hover_3d)
-        //     .observe(
-        //         move |_: Trigger<Pointer3d<picking3d::events::Click>>,
-        //               mut set_create_camera_mode: EventWriter<CreateOrthoCameraEvent>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             set_create_camera_mode.write(CreateOrthoCameraEvent);
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     )
-        //     .observe(
-        //         move |_: Trigger<Pointer<Click>>,
-        //               mut set_create_camera_mode: EventWriter<CreateOrthoCameraEvent>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             set_create_camera_mode.write(CreateOrthoCameraEvent);
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     );
-        //
-        // if *self.control_state == ControlState::CreateCurve {
-        //     let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
-        //     transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 75.0_f32.to_radians()));
-        //     let model = self.gltf.get(self.models.checkmark.clone().id()).unwrap();
-        //
-        //     self.commands
-        //         .spawn((
-        //             transform,
-        //             CheckmarkMode,
-        //             children![spawn_checkmark(
-        //                 model.scenes[0].clone(),
-        //                 self.info.scale * scale,
-        //             )],
-        //             Visibility::Inherited,
-        //             ChildOf(root),
-        //         ))
-        //         .observe(handle_hover_out)
-        //         .observe(handle_hover_out3d)
-        //         .observe(handle_hover_over)
-        //         .observe(handle_hover_over3d)
-        //         .observe(hover_3d)
-        //         .observe(
-        //             move |_: Trigger<Pointer3d<picking3d::events::Click>>,
-        //                   mut set_end_mode: EventWriter<EndModeEvent>,
-        //                   mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //                 set_end_mode.write(EndModeEvent);
-        //                 respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //             },
-        //         )
-        //         .observe(
-        //             move |_: Trigger<Pointer<Click>>,
-        //                   mut set_end_mode: EventWriter<EndModeEvent>,
-        //                   mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //                 set_end_mode.write(EndModeEvent);
-        //                 respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //             },
-        //         );
-        // } else {
-        //     let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
-        //     transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 75.0_f32.to_radians()));
-        //     let model = self.gltf.get(self.models.pencil.clone().id()).unwrap();
-        //
-        //     self.commands
-        //         .spawn((
-        //             transform,
-        //             PencilMode,
-        //             children![spawn_pencil(
-        //                 model.scenes[0].clone(),
-        //                 self.info.scale * scale,
-        //             )],
-        //             Visibility::Inherited,
-        //             ChildOf(root),
-        //         ))
-        //         .observe(handle_hover_out)
-        //         .observe(handle_hover_out3d)
-        //         .observe(handle_hover_over)
-        //         .observe(handle_hover_over3d)
-        //         .observe(hover_3d)
-        //         .observe(
-        //             move |_: Trigger<Pointer3d<picking3d::events::Click>>,
-        //                   mut set_create_curve_mode: EventWriter<CreateCurveEvent>,
-        //                   mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //                 set_create_curve_mode.write(CreateCurveEvent);
-        //                 respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //             },
-        //         )
-        //         .observe(
-        //             move |_: Trigger<Pointer<Click>>,
-        //                   mut set_create_curve_mode: EventWriter<CreateCurveEvent>,
-        //                   mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //                 set_create_curve_mode.write(CreateCurveEvent);
-        //                 respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //             },
-        //         );
-        // }
-        //
-        // let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
-        // transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -75.0_f32.to_radians()));
-        // let model = self.gltf.get(self.models.blocks.clone().id()).unwrap();
-        //
-        // self.commands
-        //     .spawn((
-        //         transform,
-        //         BlocksMode,
-        //         children![spawn_blocks(
-        //             model.scenes[0].clone(),
-        //             self.info.scale * scale,
-        //         )],
-        //         Visibility::Inherited,
-        //         ChildOf(root),
-        //     ))
-        //     .observe(handle_hover_out)
-        //     .observe(handle_hover_out3d)
-        //     .observe(handle_hover_over)
-        //     .observe(handle_hover_over3d)
-        //     .observe(hover_3d)
-        //     .observe(
-        //         move |_: Trigger<Pointer3d<picking3d::events::Click>>,
-        //               mut mesh_mode_writer: EventWriter<ChangeSurfaceMeshMode>,
-        //               info: Res<RenderInformation>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             mesh_mode_writer.write(ChangeSurfaceMeshMode(info.surface_mesh_mode.next()));
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     )
-        //     .observe(
-        //         move |_: Trigger<Pointer<Click>>,
-        //               mut mesh_mode_writer: EventWriter<ChangeSurfaceMeshMode>,
-        //               info: Res<RenderInformation>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             mesh_mode_writer.write(ChangeSurfaceMeshMode(info.surface_mesh_mode.next()));
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     );
-        //
-        // let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
-        // transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 105.0_f32.to_radians()));
-        // let model = self.gltf.get(self.models.minus.clone().id()).unwrap();
-        //
-        // self.commands
-        //     .spawn((
-        //         transform,
-        //         MinusMode,
-        //         children![spawn_minus(
-        //             model.scenes[0].clone(),
-        //             self.info.scale * scale,
-        //         )],
-        //         Visibility::Inherited,
-        //         ChildOf(root),
-        //     ))
-        //     .observe(handle_hover_out)
-        //     .observe(handle_hover_out3d)
-        //     .observe(handle_hover_over)
-        //     .observe(handle_hover_over3d)
-        //     .observe(hover_3d)
-        //     .observe(
-        //         move |_: Trigger<Pointer3d<picking3d::events::Click>>,
-        //               mut minus_mode: EventWriter<MinusModeEvent>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             minus_mode.write(MinusModeEvent);
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     )
-        //     .observe(
-        //         move |_: Trigger<Pointer<Click>>,
-        //               mut minus_mode: EventWriter<MinusModeEvent>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             minus_mode.write(MinusModeEvent);
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     );
-        //
-        // let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
-        // transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -105.0_f32.to_radians()));
-        // let model = self.gltf.get(self.models.plus.clone().id()).unwrap();
-        //
-        // self.commands
-        //     .spawn((
-        //         transform,
-        //         PlusMode,
-        //         children![spawn_plus(model.scenes[0].clone(), self.info.scale * scale,)],
-        //         Visibility::Inherited,
-        //         ChildOf(root),
-        //     ))
-        //     .observe(handle_hover_out)
-        //     .observe(handle_hover_out3d)
-        //     .observe(handle_hover_over)
-        //     .observe(handle_hover_over3d)
-        //     .observe(hover_3d)
-        //     .observe(
-        //         move |_: Trigger<Pointer3d<picking3d::events::Click>>,
-        //               mut plus_mode: EventWriter<PlusModeEvent>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             plus_mode.write(PlusModeEvent);
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     )
-        //     .observe(
-        //         move |_: Trigger<Pointer<Click>>,
-        //               mut plus_mode: EventWriter<PlusModeEvent>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             plus_mode.write(PlusModeEvent);
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     );
-        //
-        // let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
-        // transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, 155.0_f32.to_radians()));
-        //
-        // self.commands
-        //     .spawn((
-        //         transform,
-        //         StepMode,
-        //         children![spawn_text(
-        //             self.info.scale * scale,
-        //             &self.translation_state.step_mode,
-        //             &self.gltf,
-        //             &self.models,
-        //         )],
-        //         Visibility::Inherited,
-        //         ChildOf(root),
-        //     ))
-        //     .observe(handle_hover_out)
-        //     .observe(handle_hover_out3d)
-        //     .observe(handle_hover_over)
-        //     .observe(handle_hover_over3d)
-        //     .observe(hover_3d)
-        //     .observe(
-        //         move |_: Trigger<Pointer3d<picking3d::events::Click>>,
-        //               mut translation_state: ResMut<TranslationControllerState>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             translation_state.step_mode = translation_state.step_mode.next();
-        //
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     )
-        //     .observe(
-        //         move |_: Trigger<Pointer<Click>>,
-        //               mut translation_state: ResMut<TranslationControllerState>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             translation_state.step_mode = translation_state.step_mode.next();
-        //
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     );
-        //
-        // let mut transform = Transform::default().looking_to(Vec3::Y, Vec3::NEG_Z);
-        // transform.rotate(Quat::from_axis_angle(Vec3::NEG_Z, -135.0_f32.to_radians()));
-        // let model = self.gltf.get(self.models.prism.clone().id()).unwrap();
-        //
-        // self.commands
-        //     .spawn((
-        //         transform,
-        //         PrismMode,
-        //         children![spawn_prism(
-        //             model.scenes[0].clone(),
-        //             self.info.scale * scale,
-        //         )],
-        //         Visibility::Inherited,
-        //         ChildOf(root),
-        //     ))
-        //     .observe(handle_hover_out)
-        //     .observe(handle_hover_out3d)
-        //     .observe(handle_hover_over)
-        //     .observe(handle_hover_over3d)
-        //     .observe(hover_3d)
-        //     .observe(
-        //         move |_: Trigger<Pointer3d<picking3d::events::Click>>,
-        //               mut writer: EventWriter<SetPrismMode>,
-        //               translation_state: Res<TranslationControllerState>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             writer.write(SetPrismMode(translation_state.prism_mode.next()));
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     )
-        //     .observe(
-        //         move |_: Trigger<Pointer<Click>>,
-        //               mut writer: EventWriter<SetPrismMode>,
-        //               translation_state: Res<TranslationControllerState>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             writer.write(SetPrismMode(translation_state.prism_mode.next()));
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     );
-        //
-        // // Spawn center to start evaluation
-        // self.commands
-        //     .spawn((
-        //         Transform::from_xyz(0.0, -0.08 * scale, 0.0),
-        //         EvaluationMode,
-        //         Visibility::Inherited,
-        //         ChildOf(root),
-        //         Mesh3d(self.meshes.add(Sphere::new(0.05 * self.info.scale))),
-        //         MeshMaterial3d(
-        //             self.materials
-        //                 .add(StandardMaterial::from_color(Color::from(BLACK))),
-        //         ),
-        //         Picking3dInteractable::default(),
-        //     ))
-        //     .observe(handle_hover_out)
-        //     .observe(handle_hover_out3d)
-        //     .observe(handle_hover_over)
-        //     .observe(handle_hover_over3d)
-        //     .observe(hover_3d)
-        //     .observe(
-        //         move |_: Trigger<Pointer3d<picking3d::events::Click>>,
-        //               mut eval_writer: EventWriter<NextEvaluationEvent>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             eval_writer.write(NextEvaluationEvent);
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     )
-        //     .observe(
-        //         move |_: Trigger<Pointer<Click>>,
-        //               mut eval_writer: EventWriter<NextEvaluationEvent>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             eval_writer.write(NextEvaluationEvent);
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     );
-        //
-        // // Spawn center to start evaluation
-        // self.commands
-        //     .spawn((
-        //         Transform::from_xyz(0.0, 0.0, 0.0),
-        //         EndAnyMode,
-        //         Visibility::Inherited,
-        //         ChildOf(root),
-        //         Mesh3d(self.meshes.add(Cuboid::new(
-        //             0.05 * self.info.scale,
-        //             0.05 * self.info.scale,
-        //             0.05 * self.info.scale,
-        //         ))),
-        //         MeshMaterial3d(
-        //             self.materials
-        //                 .add(StandardMaterial::from_color(Color::from(BLACK))),
-        //         ),
-        //         Picking3dInteractable::default(),
-        //     ))
-        //     .observe(handle_hover_out)
-        //     .observe(handle_hover_out3d)
-        //     .observe(handle_hover_over)
-        //     .observe(handle_hover_over3d)
-        //     .observe(hover_3d)
-        //     .observe(
-        //         move |_: Trigger<Pointer3d<picking3d::events::Click>>,
-        //               mut end_mode: EventWriter<EndModeEvent>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             end_mode.write(EndModeEvent);
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     )
-        //     .observe(
-        //         move |_: Trigger<Pointer<Click>>,
-        //               mut end_mode: EventWriter<EndModeEvent>,
-        //               mut respawn_menu: EventWriter<RedrawMenuEvent>| {
-        //             end_mode.write(EndModeEvent);
-        //             respawn_menu.write(RedrawMenuEvent(top_level_transform));
-        //         },
-        //     );
     }
 }
 
@@ -1074,15 +776,13 @@ impl Plugin for VrMenuPlugin {
         );
 
         app.add_systems(
-            PostUpdate,
-            handle_redraw_menu_event
-                .run_if(in_state(AssetLoadingState::Loaded))
-                .after(handle_toggle_snapping)
-                .after(handle_set_prism_mode)
-                .after(handle_next_eval_event),
+            Last,
+            handle_redraw_menu_event.run_if(in_state(AssetLoadingState::Loaded)),
         );
+
         app.init_resource::<VrMenuState>();
         app.add_observer(trigger_scene_spawn);
+        app.add_observer(set_initial_color);
 
         app.add_event::<RedrawMenuEvent>();
 
@@ -1106,5 +806,9 @@ impl Plugin for VrMenuPlugin {
         app.register_type::<PrismMode>();
         app.register_type::<EvaluationMode>();
         app.register_type::<EndAnyMode>();
+        app.register_type::<MM0>();
+        app.register_type::<MM1>();
+        app.register_type::<MM5>();
+        app.register_type::<MM10>();
     }
 }

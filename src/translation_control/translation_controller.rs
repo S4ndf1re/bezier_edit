@@ -97,7 +97,7 @@ pub enum SnappingBehaviour {
     Snap,
 }
 
-#[derive(Default, Clone, Copy, Debug)]
+#[derive(Default, Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum StepMode {
     #[default]
     None,
