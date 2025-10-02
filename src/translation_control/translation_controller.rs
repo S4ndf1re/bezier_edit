@@ -32,6 +32,9 @@ use super::obligatory_drag_params::ObligatoryDragParams;
 #[derive(Component)]
 pub struct CoordinateTextMarker;
 
+#[derive(Component)]
+pub struct DistanceTextMarker;
+
 #[derive(Event)]
 pub struct MovedEntityEvent {
     pub entity: Entity,
@@ -725,6 +728,40 @@ fn drag_start(
         )],
     ));
 
+    commands.spawn((
+        ChildOf(control_parent.0),
+        Transform::from_rotation(start_transform.rotation.inverse()),
+        DistanceTextMarker,
+        Visibility::Inherited,
+        children![(
+            Transform::from_translation(-camera_forward * 1.0 * scale - Vec3::Y * scale)
+                .looking_to(camera_forward, Vec3::Y)
+                .with_scale(Vec3::ONE * 0.0025 * scale),
+            Text3d::new(format!(
+                "({:.3}, {:.3}, {:.3})",
+                0.0 / scale,
+                0.0 / scale,
+                0.0 / scale
+            )),
+            Text3dStyling {
+                size: 64.0,
+                color: Srgba::new(0., 0., 0., 1.),
+                align: TextAlign::Center,
+                font: Arc::from("Rajdhani"),
+                weight: Weight::BOLD,
+                ..Default::default()
+            },
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
+                alpha_mode: AlphaMode::Blend,
+                unlit: true,
+                ..Default::default()
+            })),
+            Mesh3d::default(),
+            Visibility::Inherited,
+        )],
+    ));
+
     history.write(HistoryLogEvent::Begin(
         control_parent.0,
         Some(start_transform),
@@ -831,6 +868,40 @@ fn drag_start3d(
         )],
     ));
 
+    commands.spawn((
+        ChildOf(control_parent.0),
+        Transform::from_rotation(start_transform.rotation.inverse()),
+        DistanceTextMarker,
+        Visibility::Inherited,
+        children![(
+            Transform::from_translation(-camera_forward * 1.0 * scale - Vec3::Y * scale)
+                .looking_to(camera_forward, Vec3::Y)
+                .with_scale(Vec3::ONE * 0.0025 * scale),
+            Text3d::new(format!(
+                "({:.3}, {:.3}, {:.3})",
+                0.0 / scale,
+                0.0 / scale,
+                0.0 / scale
+            )),
+            Text3dStyling {
+                size: 64.0,
+                color: Srgba::new(0., 0., 0., 1.),
+                align: TextAlign::Center,
+                font: Arc::from("Rajdhani"),
+                weight: Weight::BOLD,
+                ..Default::default()
+            },
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
+                alpha_mode: AlphaMode::Blend,
+                unlit: true,
+                ..Default::default()
+            })),
+            Mesh3d::default(),
+            Visibility::Inherited,
+        )],
+    ));
+
     history.write(HistoryLogEvent::Begin(
         control_parent.0,
         Some(start_transform),
@@ -850,6 +921,7 @@ fn drag_end_trigger_redraw(
     mut accumulated_movement: ResMut<AccumulatedMovementStore>,
     children: Query<&Children>,
     text_marker: Query<Entity, With<CoordinateTextMarker>>,
+    distance_marker: Query<Entity, With<DistanceTextMarker>>,
 ) {
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
@@ -872,6 +944,10 @@ fn drag_end_trigger_redraw(
     for child in children.get(control_parent.0).unwrap() {
         if let Ok(text_entity) = text_marker.get(*child) {
             commands.entity(text_entity).despawn();
+        }
+
+        if let Ok(distance_entity) = distance_marker.get(*child) {
+            commands.entity(distance_entity).despawn();
         }
     }
 
@@ -895,6 +971,7 @@ fn drag_end3d_trigger_redraw(
     mut accumulated_movement: ResMut<AccumulatedMovementStore>,
     children: Query<&Children>,
     text_marker: Query<Entity, With<CoordinateTextMarker>>,
+    distance_marker: Query<Entity, With<DistanceTextMarker>>,
 ) {
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
@@ -917,6 +994,10 @@ fn drag_end3d_trigger_redraw(
     for child in children.get(control_parent.0).unwrap() {
         if let Ok(text_entity) = text_marker.get(*child) {
             commands.entity(text_entity).despawn();
+        }
+
+        if let Ok(distance_entity) = distance_marker.get(*child) {
+            commands.entity(distance_entity).despawn();
         }
     }
 
@@ -1656,11 +1737,20 @@ fn update_plane_directions(
 }
 
 #[cfg(not(feature = "vr_enable"))]
+#[allow(clippy::complexity)]
 fn update_texts(
     mut transforms: Query<&mut Transform>,
     root: Query<Entity, With<RootTransform>>,
-    texts: Query<(Entity, &ChildOf, &Children), With<CoordinateTextMarker>>,
+    coordinate_texts: Query<
+        (Entity, &ChildOf, &Children),
+        (With<CoordinateTextMarker>, Without<DistanceTextMarker>),
+    >,
+    distance_texts: Query<
+        (Entity, &ChildOf, &Children),
+        (With<DistanceTextMarker>, Without<CoordinateTextMarker>),
+    >,
     mut text3d: Query<&mut Text3d>,
+    markers: Query<&AssignedShadowMarkers>,
     camera: Query<&GlobalTransform, With<MainCamera>>,
     info: Res<RenderInformation>,
 ) {
@@ -1669,7 +1759,7 @@ fn update_texts(
     let camera_transform = camera.single().unwrap();
     let scale = info.scale;
 
-    for (text_entity, &ChildOf(parent), children) in texts {
+    for (text_entity, &ChildOf(parent), children) in coordinate_texts {
         let start_transform = *transforms.get(parent).unwrap();
 
         let camera_forward = root_transform
@@ -1696,15 +1786,63 @@ fn update_texts(
             }
         }
     }
+
+    for (text_entity, &ChildOf(parent), children) in distance_texts {
+        let start_transform = *transforms.get(parent).unwrap();
+        if let Ok(markers) = markers.get(parent) {
+            let marker = *markers
+                .0
+                .first()
+                .expect("Only one marker can exists at a time");
+
+            let shadow_position = *transforms
+                .get(marker)
+                .expect("A shadow must always exist when the text exists");
+
+            let diff = start_transform.translation - shadow_position.translation;
+
+            let camera_forward = root_transform
+                .compute_affine()
+                .inverse()
+                .transform_vector3(camera_transform.forward().normalize_or_zero());
+
+            {
+                let mut transform = transforms.get_mut(text_entity).unwrap();
+                transform.rotation = start_transform.rotation.inverse();
+            }
+
+            for child in children {
+                let mut transform = transforms.get_mut(*child).unwrap();
+                transform.translation = -camera_forward * 0.3 * info.scale - Vec3::Y * info.scale;
+                transform.look_to(camera_forward, Vec3::Y);
+                if let Ok(mut text3d) = text3d.get_mut(*child) {
+                    *text3d = Text3d::new(format!(
+                        "({:.3}, {:.3}, {:.3})",
+                        diff.x / scale,
+                        diff.y / scale,
+                        diff.z / scale
+                    ));
+                }
+            }
+        }
+    }
 }
 
 #[cfg(feature = "vr_enable")]
+#[allow(clippy::complexity)]
 fn update_texts(
     mut transforms: Query<&mut Transform>,
-    mut global_transforms: Query<&GlobalTransform, Without<XrTrackedView>>,
     root: Query<Entity, With<RootTransform>>,
-    texts: Query<(Entity, &ChildOf, &Children), With<CoordinateTextMarker>>,
+    coordinate_texts: Query<
+        (Entity, &ChildOf, &Children),
+        (With<CoordinateTextMarker>, Without<DistanceTextMarker>),
+    >,
+    distance_texts: Query<
+        (Entity, &ChildOf, &Children),
+        (With<DistanceTextMarker>, Without<CoordinateTextMarker>),
+    >,
     mut text3d: Query<&mut Text3d>,
+    markers: Query<&AssignedShadowMarkers>,
     camera: Query<&GlobalTransform, With<XrTrackedView>>,
     info: Res<RenderInformation>,
 ) {
@@ -1716,9 +1854,8 @@ fn update_texts(
     };
     let scale = info.scale;
 
-    for (text_entity, &ChildOf(parent), children) in texts {
+    for (text_entity, &ChildOf(parent), children) in coordinate_texts {
         let start_transform = *transforms.get(parent).unwrap();
-        let direction = start_transform.translation - camera_transform.translation();
 
         let camera_forward = root_transform
             .compute_affine()
@@ -1741,6 +1878,47 @@ fn update_texts(
                     start_transform.translation.y / scale,
                     start_transform.translation.z / scale
                 ));
+            }
+        }
+    }
+
+    for (text_entity, &ChildOf(parent), children) in distance_texts {
+        let start_transform = *transforms.get(parent).unwrap();
+
+        if let Ok(markers) = markers.get(parent) {
+            let marker = *markers
+                .0
+                .first()
+                .expect("Only one marker can exists at a time");
+
+            let shadow_position = *transforms
+                .get(marker)
+                .expect("A shadow must always exist when the text exists");
+
+            let diff = start_transform.translation - shadow_position.translation;
+
+            let camera_forward = root_transform
+                .compute_affine()
+                .inverse()
+                .transform_vector3(camera_transform.forward().normalize_or_zero());
+
+            {
+                let mut transform = transforms.get_mut(text_entity).unwrap();
+                transform.rotation = start_transform.rotation.inverse();
+            }
+
+            for child in children {
+                let mut transform = transforms.get_mut(*child).unwrap();
+                transform.translation = -camera_forward * 0.3 * info.scale - Vec3::Y * info.scale;
+                transform.look_to(camera_forward, Vec3::Y);
+                if let Ok(mut text3d) = text3d.get_mut(*child) {
+                    *text3d = Text3d::new(format!(
+                        "({:.3}, {:.3}, {:.3})",
+                        diff.x / scale,
+                        diff.y / scale,
+                        diff.z / scale
+                    ));
+                }
             }
         }
     }
