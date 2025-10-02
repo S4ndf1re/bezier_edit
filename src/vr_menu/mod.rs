@@ -665,7 +665,7 @@ pub struct MenuHandler<'w, 's> {
 impl<'w, 's> MenuHandler<'w, 's> {
     pub fn despawn_menu(&mut self) {
         for root in self.menu_roots.iter() {
-            self.commands.entity(root).despawn();
+            let _ = self.commands.get_entity(root).map(|mut e| e.despawn());
         }
         self.state.currently_selected = None;
     }

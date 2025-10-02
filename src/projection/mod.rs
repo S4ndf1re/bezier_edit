@@ -229,8 +229,8 @@ fn handle_enable_ortho_camera(
 
         let image_handle = images.add(image);
 
-        let root = root.single().unwrap();
-        let root_transform = transforms.get(root).unwrap();
+        let root = root.single().expect("Root must be initialized");
+        let root_transform = transforms.get(root).expect("root must contain a transform");
 
         let affine_transform =
             root_transform.compute_affine().inverse() * transform.compute_affine();
@@ -372,7 +372,9 @@ fn update_ortho_camera_viewports(
     }
     reader.clear();
 
-    let root = root.single().unwrap();
+    let root = root
+        .single()
+        .expect("root must be initialzed and must have a transform");
 
     for (mut ortho, mut projection) in &mut cameras {
         let mut max_distance = (f64::MIN, f64::MIN);
@@ -475,13 +477,13 @@ fn handle_disable_ortho_camera(
     }
 
     if let Ok(to_delete_parent) = points.get(trigger.target()) {
-        if let Ok(mut entity) = commands.get_entity(to_delete_parent.1.camera) {
-            entity.despawn();
-        }
+        let _ = commands
+            .get_entity(to_delete_parent.1.camera)
+            .map(|mut e| e.despawn());
 
-        if let Ok(mut entity) = commands.get_entity(to_delete_parent.0) {
-            entity.despawn();
-        }
+        let _ = commands
+            .get_entity(to_delete_parent.0)
+            .map(|mut e| e.despawn());
 
         despawner.remove_link_for_all_on_same_plane(to_delete_parent.0);
 
@@ -503,13 +505,13 @@ fn handle_disable_ortho_camera3d(
     }
 
     if let Ok(to_delete_parent) = points.get(trigger.target()) {
-        if let Ok(mut entity) = commands.get_entity(to_delete_parent.1.camera) {
-            entity.despawn();
-        }
+        let _ = commands
+            .get_entity(to_delete_parent.1.camera)
+            .map(|mut e| e.despawn());
 
-        if let Ok(mut entity) = commands.get_entity(to_delete_parent.0) {
-            entity.despawn();
-        }
+        let _ = commands
+            .get_entity(to_delete_parent.0)
+            .map(|mut e| e.despawn());
 
         despawner.remove_link_for_all_on_same_plane(to_delete_parent.0);
 

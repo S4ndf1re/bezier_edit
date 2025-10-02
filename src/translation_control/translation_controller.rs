@@ -980,11 +980,13 @@ fn drag_end_trigger_redraw(
     // Despawn text
     for child in children.get(control_parent.0).unwrap() {
         if let Ok(text_entity) = text_marker.get(*child) {
-            commands.entity(text_entity).despawn();
+            let _ = commands.get_entity(text_entity).map(|mut e| e.despawn());
         }
 
         if let Ok(distance_entity) = distance_marker.get(*child) {
-            commands.entity(distance_entity).despawn();
+            let _ = commands
+                .get_entity(distance_entity)
+                .map(|mut e| e.despawn());
         }
     }
 
@@ -1037,11 +1039,13 @@ fn drag_end3d_trigger_redraw(
     // Despawn text
     for child in children.get(control_parent.0).unwrap() {
         if let Ok(text_entity) = text_marker.get(*child) {
-            commands.entity(text_entity).despawn();
+            let _ = commands.get_entity(text_entity).map(|mut e| e.despawn());
         }
 
         if let Ok(distance_entity) = distance_marker.get(*child) {
-            commands.entity(distance_entity).despawn();
+            let _ = commands
+                .get_entity(distance_entity)
+                .map(|mut e| e.despawn());
         }
     }
 

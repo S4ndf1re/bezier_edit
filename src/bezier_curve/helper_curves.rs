@@ -273,21 +273,19 @@ fn handle_click_event_on_curve_level(
         && let Ok(curve) = curves.get(trigger.target())
     {
         for child in children.iter_descendants(curve) {
-            commands
-                .get_entity(child)
-                .unwrap()
-                .trigger(EntityDeletedEvent(child));
+            let _ = commands.get_entity(child).map(|mut e| {
+                e.trigger(EntityDeletedEvent(child));
+            });
+
             delete_event.write(EntityDeletedEvent(child));
 
             bounding_entities.remove_entity(&child);
         }
 
         delete_event.write(EntityDeletedEvent(curve));
-        commands
-            .get_entity(curve)
-            .unwrap()
-            .trigger(EntityDeletedEvent(curve))
-            .despawn();
+        let _ = commands.get_entity(curve).map(|mut e| {
+            e.trigger(EntityDeletedEvent(curve)).despawn();
+        });
 
         end_mode_writer.write(EndModeEvent);
     }
@@ -308,21 +306,19 @@ fn handle_click_event_on_curve_level3d(
         && let Ok(curve) = curves.get(trigger.target())
     {
         for child in children.iter_descendants(curve) {
-            commands
-                .get_entity(child)
-                .unwrap()
-                .trigger(EntityDeletedEvent(child));
+            let _ = commands.get_entity(child).map(|mut e| {
+                e.trigger(EntityDeletedEvent(child));
+            });
+
             delete_event.write(EntityDeletedEvent(child));
 
             bounding_entities.remove_entity(&child);
         }
 
         delete_event.write(EntityDeletedEvent(curve));
-        commands
-            .get_entity(curve)
-            .unwrap()
-            .trigger(EntityDeletedEvent(curve))
-            .despawn();
+        let _ = commands.get_entity(curve).map(|mut e| {
+            e.trigger(EntityDeletedEvent(curve)).despawn();
+        });
 
         end_mode_writer.write(EndModeEvent);
     }
@@ -377,7 +373,10 @@ pub fn remove_point_from_curve_handler(
         if let Some(to_remove_idx) = points_collected.iter().position(|p| p.0 == selected_idx) {
             let removed = points_collected.remove(to_remove_idx);
             delete_event.write(EntityDeletedEvent(removed.1));
-            duplicate_set.p0().entity(removed.1).despawn();
+            let _ = duplicate_set
+                .p0()
+                .get_entity(removed.1)
+                .map(|mut e| e.despawn());
 
             points_collected
                 .iter_mut()
@@ -634,7 +633,11 @@ pub fn commit_curve(
             }
         }
         // Despawn temporary curve, that was replaced by a final curve
-        duplicate_set.p0().0.get_entity(curve).unwrap().despawn();
+        let _ = duplicate_set
+            .p0()
+            .0
+            .get_entity(curve)
+            .map(|mut e| e.despawn());
     }
 
     redraw_curves_writer.write(RedrawCurvesEvent);

@@ -112,7 +112,7 @@ pub fn update_lines(
         };
 
         if entity1.is_err() || entity2.is_err() {
-            commands.get_entity(line_entity).unwrap().despawn();
+            let _ = commands.get_entity(line_entity).map(|mut e| e.despawn());
             continue;
         }
 

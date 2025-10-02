@@ -314,7 +314,7 @@ fn generate_pointcloud(
 
     // Despawn old, respawn new
     for p in entities.iter() {
-        commands.entity(p).despawn();
+        let _ = commands.get_entity(p).map(|mut e| e.despawn());
     }
 
     if scale_info.surface_mesh_mode == SurfaceMeshMode::Mesh {
@@ -386,7 +386,7 @@ pub fn redraw_iso_lines(
 
     // Despawn old, respawn new
     for p in entities.iter() {
-        commands.entity(p).despawn();
+        let _ = commands.get_entity(p).map(|mut e| e.despawn());
     }
 
     let w = resolution.0;
@@ -458,7 +458,7 @@ pub fn redraw_boxes(
 
     // Despawn old, respawn new
     for p in boxes.iter() {
-        commands.entity(p).despawn();
+        let _ = commands.get_entity(p).map(|mut e| e.despawn());
     }
 
     let multi_curves = control_points.to_control_points();
@@ -659,7 +659,7 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
             let root = self.root.single().unwrap();
 
             if let Ok(surface) = self.surface.single() {
-                commands.entity(surface).despawn();
+                let _ = commands.get_entity(surface).map(|mut e| e.despawn());
             }
 
             let surface = commands
