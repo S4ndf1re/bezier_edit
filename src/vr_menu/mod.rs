@@ -15,7 +15,6 @@ use crate::{
         bezier_curve_renderer::{
             CreateCurveEvent, CreateOrthoCameraEvent, DeleteModeEvent, EndModeEvent,
         },
-        components::ControlState,
         curvature_display_mode::ChangeCurvatureDisplayModeEvent,
         render_info::{ChangeSurfaceMeshMode, RenderInformation},
     },
@@ -24,7 +23,6 @@ use crate::{
         self, ToggleSnappingBehaviour, TranslationControllerState,
     },
 };
-use bevy::pbr::StandardMaterialFlags;
 use bevy::{
     color::palettes::tailwind::RED_500,
     ecs::system::{SystemParam, lifetimeless::Read},
