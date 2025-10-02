@@ -1,7 +1,7 @@
 use crate::bezier_curve::bezier_curve_renderer::{MinusModeEvent, PlusModeEvent, hover_3d};
 use crate::bezier_curve::test_mode::{NextEvaluationEvent, handle_next_eval_event};
 use crate::picking3d::events::HoveredBy;
-use crate::picking3d::picking_3d;
+use crate::picking3d::picking_3d::{self, Picking3dTranslation};
 use crate::translation_control::translation_controller::{
     SetPrismMode, handle_set_prism_mode, handle_toggle_snapping,
 };
@@ -24,6 +24,7 @@ use crate::{
         self, ToggleSnappingBehaviour, TranslationControllerState,
     },
 };
+use bevy::pbr::StandardMaterialFlags;
 use bevy::{
     color::palettes::tailwind::RED_500,
     ecs::system::{SystemParam, lifetimeless::Read},
@@ -126,6 +127,9 @@ struct VrMenuState {
 #[derive(Component)]
 pub struct OriginalMaterial(StandardMaterial);
 
+#[derive(Component)]
+pub struct ColorChangeIgnoreMarker;
+
 #[derive(SystemParam)]
 struct ColorChangerChildren<'w, 's> {
     commands: Commands<'w, 's>,
@@ -133,6 +137,7 @@ struct ColorChangerChildren<'w, 's> {
     materials: Query<'w, 's, Read<MeshMaterial3d<StandardMaterial>>>,
     materials_assets: ResMut<'w, Assets<StandardMaterial>>,
     originals: Query<'w, 's, Read<OriginalMaterial>>,
+    to_ignore: Query<'w, 's, Read<ColorChangeIgnoreMarker>>,
 }
 
 impl<'w, 's> ColorChangerChildren<'w, 's> {
@@ -154,7 +159,9 @@ impl<'w, 's> ColorChangerChildren<'w, 's> {
     }
     fn change_color(&mut self, parent: Entity, color: Color) {
         for child in self.children.iter_descendants(parent) {
-            if let Ok(mat_handle) = self.materials.get(child) {
+            if let Ok(mat_handle) = self.materials.get(child)
+                && self.to_ignore.get(child).is_err()
+            {
                 let original =
                     if let Some(material) = self.materials_assets.get_mut(mat_handle.id()) {
                         material.clone()
@@ -277,7 +284,6 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
 
         let components = components.iter().map(|info| info.id()).collect::<Vec<_>>();
 
-        // TODO: add observers and pickable to correct components
         if components.contains(&world.component_id::<MagnetMode>().unwrap()) {
             world
                 .commands()
@@ -333,9 +339,35 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
         }
 
         if components.contains(&world.component_id::<CurvatureMode>().unwrap()) {
+            let scale = {
+                let info = world.resource_mut::<RenderInformation>();
+                info.scale
+            };
+            let mesh = {
+                let mut meshes = world.resource_mut::<Assets<Mesh>>();
+                meshes.add(Sphere::new(1.0 * scale))
+            };
+
+            let material = {
+                let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
+                materials.add(StandardMaterial {
+                    alpha_mode: AlphaMode::Mask(0.5),
+                    base_color: Color::NONE,
+                    ..default()
+                })
+            };
+
             world
                 .commands()
                 .entity(child)
+                .with_child((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(material),
+                    Transform::default(),
+                    Visibility::Inherited,
+                    Picking3dInteractable::Default,
+                    ColorChangeIgnoreMarker,
+                ))
                 .observe(handle_hover_out)
                 .observe(handle_hover_out3d)
                 .observe(handle_hover_over)

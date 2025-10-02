@@ -41,14 +41,14 @@ pub fn transpose_control_points(points: &ControlPoints2D) -> ControlPoints2D {
 /// First compute m+1 bezier curves of degree n. Use the resulting points to compute a single bezier curve of m+1 points
 pub fn eval_2d_bezier_curves(control_points: &ControlPoints2D, u: f64, v: f64) -> Point {
     let m = control_points.len() - 1;
-    assert!(m >= 2);
+    assert!(m >= 1);
 
     let n = control_points
         .first()
         .expect("already asserted") // Ok, since assert! prevents empty lists
         .len()
         - 1;
-    assert!(n >= 2);
+    assert!(n >= 1);
 
     let mut new_control = vec![Point::new(0.0, 0.0, 0.0, None); m + 1];
 
