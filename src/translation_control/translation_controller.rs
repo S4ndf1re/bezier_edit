@@ -7,6 +7,7 @@ use crate::nurbs::parametric::{Circle3D, MinDistanceToPoint, Parametric};
 use crate::picking3d::events::{HoveredBy, MoveIn, MoveOut, Pointer3d};
 use crate::picking3d::picking_3d::{CustomPicking3dHitbox, Picking3dInteractable};
 use crate::translation_control::control_storage::ControlStorage;
+use crate::translation_control::proximity_detector::Snappable;
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
 use crate::{MainCamera, RootTransform};
@@ -50,7 +51,12 @@ pub enum SnappedPoint {
 }
 
 #[derive(Component)]
-pub struct ShadowMarker;
+#[relationship(relationship_target = AssignedShadowMarkers)]
+pub struct ShadowMarker(Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship = ShadowMarker, linked_spawn)]
+pub struct AssignedShadowMarkers(Vec<Entity>);
 
 #[derive(Component, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Default)]
 pub enum EnableTranslationControl {
@@ -256,6 +262,7 @@ pub fn draw_arrow(
     let cuboid = meshes.add(Cuboid::new(0.07 * scale, 0.07 * scale, 0.4 * scale));
     let line = meshes.add(Cuboid::new(0.02 * scale, 0.02 * scale, 0.8 * scale));
     let arrow = meshes.add(Cone::new(0.035 * scale, 0.2 * scale));
+    let thin_line = meshes.add(Cylinder::new(0.005 * scale, 2000.0));
 
     let mut obj = child_builder.spawn((
         Transform::from_xyz(0.0, 0.0, -0.4 * scale),
@@ -293,6 +300,13 @@ pub fn draw_arrow(
         ))
         .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()));
+
+    child_builder.spawn((
+        Transform::default().with_rotation(Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians())),
+        MeshMaterial3d(mat.clone()),
+        Visibility::Inherited,
+        Mesh3d(thin_line.clone()),
+    ));
 }
 
 fn draw_ring(
@@ -642,10 +656,11 @@ fn drag_start(
 
     commands
         .spawn((
-            ShadowMarker,
+            ShadowMarker(control_parent.0),
             start_transform,
             Visibility::default(),
             ChildOf(root),
+            Snappable,
         ))
         .with_children(|parent| {
             for arrow in arrows.as_ref().iter_arrows() {
@@ -748,10 +763,11 @@ fn drag_start3d(
 
     commands
         .spawn((
-            ShadowMarker,
+            ShadowMarker(control_parent.0),
             start_transform,
             Visibility::default(),
             ChildOf(root),
+            Snappable,
         ))
         .with_children(|parent| {
             for arrow in arrows.as_ref().iter_arrows() {
@@ -826,10 +842,10 @@ fn drag_end_trigger_redraw(
     trigger: Trigger<Pointer<DragEnd>>,
     arrow_query: Query<(&ChildOf, Entity), With<Control>>,
     control_parents: Query<&ControlParent>,
+    assigned_markers: Query<&AssignedShadowMarkers>,
     mut redraw_writer: EventWriter<RedrawEvent>,
     mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
     mut commands: Commands,
-    query: Query<Entity, With<ShadowMarker>>,
     mut history: EventWriter<HistoryLogEvent>,
     mut accumulated_movement: ResMut<AccumulatedMovementStore>,
     children: Query<&Children>,
@@ -846,8 +862,10 @@ fn drag_end_trigger_redraw(
     redraw_writer.write(RedrawEvent::HighQuality);
     redraw_curves_writer.write(RedrawCurvesEvent);
 
-    for entity in query {
-        commands.get_entity(entity).unwrap().despawn();
+    if let Ok(markers) = assigned_markers.get(control_parent.0) {
+        for marker in markers.iter() {
+            let _ = commands.get_entity(marker).map(|mut e| e.despawn());
+        }
     }
 
     // Despawn text
@@ -869,10 +887,10 @@ fn drag_end3d_trigger_redraw(
     trigger: Trigger<Pointer3d<crate::picking3d::events::DragEnd>>,
     arrow_query: Query<(&ChildOf, Entity), With<Control>>,
     control_parents: Query<&ControlParent>,
+    assigned_markers: Query<&AssignedShadowMarkers>,
     mut redraw_writer: EventWriter<RedrawEvent>,
     mut redraw_curves_writer: EventWriter<RedrawCurvesEvent>,
     mut commands: Commands,
-    query: Query<Entity, With<ShadowMarker>>,
     mut history: EventWriter<HistoryLogEvent>,
     mut accumulated_movement: ResMut<AccumulatedMovementStore>,
     children: Query<&Children>,
@@ -889,8 +907,10 @@ fn drag_end3d_trigger_redraw(
     redraw_writer.write(RedrawEvent::HighQuality);
     redraw_curves_writer.write(RedrawCurvesEvent);
 
-    for entity in query {
-        commands.get_entity(entity).unwrap().despawn();
+    if let Ok(markers) = assigned_markers.get(control_parent.0) {
+        for marker in markers.iter() {
+            let _ = commands.get_entity(marker).map(|mut e| e.despawn());
+        }
     }
 
     // Despawn text
