@@ -239,7 +239,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             t.translation
         } else {
             if let Some((_, _, _, dist, _)) = &shortest
-                && *dist > 0.1 * self.info.scale as f64
+                && *dist > 2.0 * SNAPPING_DIST as f64 * self.info.scale as f64
                 && is_temporarily_blocked
             {
                 let _ = self.commands.get_entity(control_parent.1.0).map(|mut e| {

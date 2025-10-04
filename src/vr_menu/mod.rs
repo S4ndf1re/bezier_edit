@@ -343,7 +343,7 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
             };
             let mesh = {
                 let mut meshes = world.resource_mut::<Assets<Mesh>>();
-                meshes.add(Sphere::new(1.0 * scale))
+                meshes.add(Sphere::new(1.0))
             };
 
             let material = {
@@ -358,6 +358,7 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
             world
                 .commands()
                 .entity(child)
+                .remove::<Picking3dInteractable>()
                 .with_child((
                     Mesh3d(mesh),
                     MeshMaterial3d(material),
@@ -679,6 +680,7 @@ struct RedrawMenuEvent(Transform);
 fn handle_redraw_menu_event(mut menu: MenuHandler, mut reader: EventReader<RedrawMenuEvent>) {
     for event in reader.read() {
         menu.spawn_at_position_and_orientation(event.0);
+        break;
     }
 }
 
