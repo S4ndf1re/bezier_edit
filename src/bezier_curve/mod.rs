@@ -4,9 +4,9 @@ pub mod components;
 pub mod curvature_display_mode;
 pub mod degree_manipulation;
 pub mod helper_curves;
+pub mod inspector;
 pub mod ortho_camera;
 pub mod render_info;
-pub mod surface_click;
 pub mod test_mode;
 pub mod util;
 

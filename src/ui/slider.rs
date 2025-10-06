@@ -226,8 +226,6 @@ fn spawn_children<'s>(
     slider: &mut UiSlider,
     materials: &mut ResMut<Assets<StandardMaterial>>,
 ) {
-    let value = slider.get();
-
     let default_mat = materials.add(StandardMaterial {
         base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
         alpha_mode: AlphaMode::Blend,

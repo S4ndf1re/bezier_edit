@@ -18,15 +18,15 @@ use super::helper_curves::add_point_3d;
 
 use super::ortho_camera::create_camera_on_click;
 
+use super::inspector::{
+    SurfaceInspectorChangeset, handle_inspector_change_event, update_surface_inspector,
+};
 #[cfg(feature = "vr_enable")]
 use super::ortho_camera::create_camera_on_click3d;
 use super::render_info::{
     ChangeCoordinateMode, ChangeSurfaceMeshMode, CoordinateMode, RenderInformation,
     SurfaceMeshMode, UVEither, UpdateBoxDimEvent, UpdateIsoDimEvent, handle_box_dim_event,
     handle_change_coordinate_mode, handle_change_surface_mode, handle_iso_dim_event,
-};
-use super::surface_click::{
-    SurfaceClickChangeset, bezier_surface_picking, handle_state_change_event, update_surface_click,
 };
 use super::util::{
     SurfaceRenderMode, compute_point_by_params, create_mesh_from_control_points, curvature_to_color,
@@ -36,6 +36,7 @@ use crate::bezier_curve::helper_curves::{
     AddPointToCurveEvent, RemovePointFromCurveEvent, add_point_to_curve_handler,
     remove_point_from_curve_handler, update_sphere_positions,
 };
+use crate::bezier_curve::inspector::{inspectors_exist, setup_surface_inspector};
 use crate::custom_shapes::parallelogram::Parallelogram2d;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{ToControlPoints2D, eval_2d_bezier_curves};
@@ -330,18 +331,16 @@ fn generate_pointcloud(
 
         {
             let surface = surface.single().unwrap();
-            commands
-                .spawn((
-                    Transform::default(),
-                    ResultSurface,
-                    Name::new("Result Surface"),
-                    Mesh3d(meshes.add(mesh)),
-                    MeshMaterial3d(materials.add(mat)),
-                    RenderLayers::from(DisplayIn::Normal),
-                    Visibility::Inherited,
-                    ChildOf(surface),
-                ))
-                .observe(bezier_surface_picking);
+            commands.spawn((
+                Transform::default(),
+                ResultSurface,
+                Name::new("Result Surface"),
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(materials.add(mat)),
+                RenderLayers::from(DisplayIn::Normal),
+                Visibility::Inherited,
+                ChildOf(surface),
+            ));
         }
     }
 }
@@ -789,6 +788,12 @@ pub struct BezierRenderPlugin;
 impl Plugin for BezierRenderPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, startup);
+        // Requires root transform
+        app.add_systems(
+            PostStartup,
+            setup_surface_inspector.run_if(not(inspectors_exist)),
+        );
+
         // app.add_systems(PreUpdate, (handle_keyboard, solve_constraints));
         app.add_systems(
             PreUpdate,
@@ -802,7 +807,7 @@ impl Plugin for BezierRenderPlugin {
             (
                 (generate_pointcloud, distribute_redraw_event).run_if(on_event::<RedrawEvent>),
                 update_lines,
-                update_surface_click,
+                update_surface_inspector.run_if(inspectors_exist),
                 redraw_boxes.after(generate_pointcloud),
                 redraw_iso_lines.after(generate_pointcloud),
                 render_curves,
@@ -813,7 +818,8 @@ impl Plugin for BezierRenderPlugin {
             PostUpdate,
             (
                 // handle_c1_points_events,
-                handle_state_change_event,
+                handle_inspector_change_event
+                    .run_if(on_event::<SurfaceInspectorChangeset>.and(inspectors_exist)),
                 handle_change_curvature,
                 handle_box_dim_event,
                 handle_iso_dim_event,
@@ -897,7 +903,7 @@ impl Plugin for BezierRenderPlugin {
 
         app.add_event::<RedrawEvent>();
         // app.add_event::<ToggleC1Enable>();
-        app.add_event::<SurfaceClickChangeset>();
+        app.add_event::<SurfaceInspectorChangeset>();
         app.add_event::<ChangeCurvatureDisplayModeEvent>();
         app.add_event::<UpdateBoxDimEvent>();
         app.add_event::<UpdateIsoDimEvent>();

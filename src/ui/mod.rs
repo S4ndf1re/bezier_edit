@@ -17,10 +17,9 @@ use struct_patch::Patch;
 
 use crate::{
     bezier_curve::{
+        inspector::SurfaceInspectorChangeset,
         render_info::{RenderInformation, UpdateBoxDimEvent},
-        surface_click::SurfaceClickChangeset,
     },
-    history::plugin::HistoryUndoEvent,
     projection::DisplayIn,
 };
 
@@ -100,9 +99,9 @@ fn spawn_uv_control(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: &Res
         ui.spawn((slider, USlider)).observe(
             |trigger: Trigger<SliderValueChangedEvent>,
              mut state: ResMut<UiState>,
-             mut writer: EventWriter<SurfaceClickChangeset>| {
+             mut writer: EventWriter<SurfaceInspectorChangeset>| {
                 state.u = trigger.value as f64;
-                writer.write(SurfaceClickChangeset {
+                writer.write(SurfaceInspectorChangeset {
                     u: Some(state.u),
                     ..Default::default()
                 });
@@ -125,9 +124,9 @@ fn spawn_uv_control(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: &Res
         ui.spawn((slider, VSlider)).observe(
             |trigger: Trigger<SliderValueChangedEvent>,
              mut state: ResMut<UiState>,
-             mut writer: EventWriter<SurfaceClickChangeset>| {
+             mut writer: EventWriter<SurfaceInspectorChangeset>| {
                 state.v = trigger.value as f64;
-                writer.write(SurfaceClickChangeset {
+                writer.write(SurfaceInspectorChangeset {
                     v: Some(state.v),
                     ..Default::default()
                 });
