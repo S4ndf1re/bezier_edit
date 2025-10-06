@@ -678,9 +678,8 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
 struct RedrawMenuEvent(Transform);
 
 fn handle_redraw_menu_event(mut menu: MenuHandler, mut reader: EventReader<RedrawMenuEvent>) {
-    for event in reader.read() {
+    if let Some(event) = reader.read().next() {
         menu.spawn_at_position_and_orientation(event.0);
-        break;
     }
 }
 
