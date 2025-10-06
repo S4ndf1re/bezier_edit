@@ -93,62 +93,69 @@ where
     }
 }
 
-pub struct Circle3D {
-    pub origin: Point,
-    pub radius: f64,
-    pub normal: Point,
-    pub ortho1_unit: Point,
-    pub ortho2_unit: Point,
-}
+impl<T> MinDistanceToPoint<2, Point> for T
+where
+    T: Parametric<2, Point>,
+{
+    fn min_distance_to_point(&self, target: Point) -> MinDistanceResult<2, Point> {
+        let mut min = f64::MAX;
+        let mut min_index = [f64::MAX; 2];
+        let first_scans_counter = 100; // Modify using a resolution flag
+        let eps = 1e-10;
 
-impl Circle3D {
-    pub fn new(origin: Point, radius: f64, mut normal: Point) -> Self {
-        let mut rng = rand::rng();
-        let mut ortho1: Point = rng.random::<(f64, f64, f64)>().into();
-
-        normal = normal.normalize();
-
-        ortho1 = ortho1 - ((ortho1 * normal) * normal / normal.magnitude().powi(2));
-        ortho1 = ortho1.normalize();
-
-        let mut ortho2 = normal.cross(&ortho1);
-        ortho2 = ortho2.normalize();
-
-        assert!(
-            (ortho1 * ortho2).abs() <= f64::EPSILON,
-            "Both orthogonals must actually be orthogonal, meaning dot(o1, o2) == 0.0"
-        );
-        assert!(
-            (ortho1 * normal).abs() <= f64::EPSILON,
-            "Both orthogonal 1 must actually be orthogonal to the normal, meaning dot(o1, n) == 0.0"
-        );
-        assert!(
-            (ortho2 * normal).abs() <= f64::EPSILON,
-            "Both orthogonal 2 must actually be orthogonal to the normal, meaning dot(o2, n) == 0.0"
-        );
-
-        Self {
-            origin,
-            radius,
-            normal,
-            ortho1_unit: ortho1,
-            ortho2_unit: ortho2,
+        for i in 0..=first_scans_counter {
+            for j in 0..=first_scans_counter {
+                let u = (i as f64) / (first_scans_counter as f64);
+                let v = (j as f64) / (first_scans_counter as f64);
+                let p = self.f(&[u, v]);
+                let diff = target - p;
+                let distance = diff.magnitude();
+                if distance < min {
+                    min = distance;
+                    min_index = [i as f64, j as f64];
+                }
+            }
         }
-    }
-}
 
-impl Parametric<1, Point> for Circle3D {
-    fn f(&self, ts: &[f64; 1]) -> Point {
-        self.origin
-            + self.ortho1_unit * self.radius * ts[0].cos()
-            + self.ortho2_unit * self.radius * ts[0].sin()
-    }
+        // Now that the probable min index is found, use binary search to actually find the min index.
+        // (clamped)
 
-    fn range(&self) -> [[f64; 2]; 1] {
-        [[0.0, 2.0 * f64::consts::PI]]
-    }
+        let (t0_u, t0_v) = (
+            ((min_index[0] - 1.0) / first_scans_counter as f64).max(0.0),
+            ((min_index[1] - 1.0) / first_scans_counter as f64).max(0.0),
+        );
+        let (t1_u, t1_v) = (
+            ((min_index[0] + 1.0) / first_scans_counter as f64).min(1.0),
+            ((min_index[1] + 1.0) / first_scans_counter as f64).min(1.0),
+        );
+        let f = |u, v| (target - self.f(&[u, v])).magnitude();
 
-    fn derive(&self, ts: &[f64; 1], _: usize) -> Point {
-        -self.radius * ts[0].sin() * self.ortho1_unit + self.radius * ts[0].cos() * self.ortho2_unit
+        let (mut n_u, mut n_v) = (t0_u, t0_v);
+        let (mut m_u, mut m_v) = (t1_u, t1_v);
+        let mut k_u = 0.0;
+        let mut k_v = 0.0;
+
+        while (m_u - n_u) > eps && (m_v - n_v) > eps {
+            k_u = (n_u + m_u) / 2.0;
+            k_v = (n_v + m_v) / 2.0;
+
+            if f(k_u - eps, k_v) < f(k_u + eps, k_v) {
+                m_u = k_u;
+            } else {
+                n_u = k_u;
+            }
+
+            if f(k_u, k_v - eps) < f(k_u, k_v + eps) {
+                m_v = k_v;
+            } else {
+                n_v = k_v;
+            }
+        }
+
+        MinDistanceResult {
+            params: [k_u, k_v],
+            value: self.f(&[k_u, k_v]),
+            distance: f(k_u, k_v),
+        }
     }
 }
