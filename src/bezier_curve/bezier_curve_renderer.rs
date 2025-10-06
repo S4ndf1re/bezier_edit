@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-
-use super::bridges::{Bridge, BridgeMarker, BridgeSpawner, CompleteBridgeCenter, update_lines};
+use super::bridges::{BridgeSpawner, update_lines};
 use super::curvature_display_mode::{
     ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
 };
@@ -34,42 +32,34 @@ use super::util::{
     SurfaceRenderMode, compute_point_by_params, create_mesh_from_control_points, curvature_to_color,
 };
 use crate::bezier_curve::EntityDeletedEvent;
-use crate::bezier_curve::bridges::{BridgeConnector, CompleteBridge};
 use crate::bezier_curve::helper_curves::{
     AddPointToCurveEvent, RemovePointFromCurveEvent, add_point_to_curve_handler,
     remove_point_from_curve_handler, update_sphere_positions,
 };
 use crate::custom_shapes::parallelogram::Parallelogram2d;
 use crate::history::plugin::HistoryUndoEvent;
-use crate::nurbs::bezier_plane::{
-    ControlPoints2D, ToControlPoints2D, derive_2d, eval_2d_bezier_curves,
-};
+use crate::nurbs::bezier_plane::{ToControlPoints2D, eval_2d_bezier_curves};
+use crate::nurbs::parametric::Parametric;
 use crate::picking3d::events::{HoveredBy, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::projection::{
-    AddBoundingEntityEvent, BoundingEntitiesManager, DisplayIn, UpdateOrthoViews,
-    handle_add_bounding_entity_event,
+    AddBoundingEntityEvent, DisplayIn, UpdateOrthoViews, handle_add_bounding_entity_event,
 };
-use crate::translation_control::obligatory_drag_params::ObligatoryDragParams;
 use crate::translation_control::proximity_detector::Snappable;
-use crate::translation_control::translation_controller::{
-    CantSnapToEntities, EnableTranslationControl, MovedEntityEvent, SnappedPoint,
-};
+use crate::translation_control::translation_controller::EnableTranslationControl;
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
-use crate::{MainCamera, RootTransform, picking3d};
+use crate::{RootTransform, picking3d};
 use bevy::app::App;
 use bevy::asset::RenderAssetUsages;
-use bevy::color::palettes::css::BLACK;
 use bevy::color::palettes::tailwind::*;
 use bevy::ecs::component::HookContext;
 use bevy::ecs::system::SystemParam;
-use bevy::ecs::world::{DeferredWorld, OnDespawn};
+use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
 use bevy::render::mesh::{PrimitiveTopology, VertexAttributeValues};
 use bevy::render::view::RenderLayers;
-use num::ToPrimitive;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 pub type Resolution = (u32, u32);
@@ -464,9 +454,9 @@ pub fn redraw_boxes(
     let multi_curves = control_points.to_control_points();
     for (u, v) in scale_info.to_uv_sample() {
         let point = eval_2d_bezier_curves(&multi_curves, u, v);
-        let (u_diff, v_diff) = derive_2d(&multi_curves, u, v, 1);
+        let [u_diff, v_diff] = multi_curves.derive(&[u, v], 1);
         let normal = u_diff.cross(&v_diff) * -1.0;
-        let (u_diff_2, v_diff_2) = derive_2d(&multi_curves, u, v, 2);
+        let [u_diff_2, v_diff_2] = multi_curves.derive(&[u, v], 2);
 
         let color = if scale_info.curvature_mode == CurvatureDisplayMode::None {
             (1.0, 0.0, 0.0)

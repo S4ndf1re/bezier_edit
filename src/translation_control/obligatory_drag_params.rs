@@ -15,6 +15,7 @@ use crate::{
     },
     nurbs::{
         bezier::{de_casteljau, derive_after_de_casteljau},
+        parametric::Parametric,
         point::Point,
     },
     projection::ProjectedSnappingDetector,
@@ -198,7 +199,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             let mat = self.materials.add(StandardMaterial::from_color(YELLOW_600));
             let mat_hover = self.materials.add(StandardMaterial::from_color(YELLOW_400));
 
-            let deriv = derive_after_de_casteljau(&de_casteljau(points, *u), 1);
+            let deriv = points.derive(&[*u], 1)[0];
 
             self.commands
                 .get_entity(control_parent.1.0)

@@ -1,13 +1,14 @@
 use bevy::{color::palettes::tailwind::RED_400, prelude::*};
-use rand::seq::IndexedRandom;
 use struct_patch::Patch;
 
 use crate::{
-    RootTransform,
+    MainCamera, RootTransform,
     nurbs::{
-        bezier_plane::{ToControlPoints2D, derive_2d, determine_u_v, eval_2d_bezier_curves},
+        bezier_plane::{ControlPoints2D, ToControlPoints2D, determine_u_v, eval_2d_bezier_curves},
+        parametric::{MinDistanceToPoint, Parametric},
         point::Point,
     },
+    picking3d::{self, events::Pointer3d, picking_3d::Picking3dInteractable},
     ui::UiStateChangeset,
 };
 
@@ -79,7 +80,8 @@ pub fn bezier_surface_picking(
                 u = hit.0;
                 v = hit.1;
                 let evaluated = eval_2d_bezier_curves(&control_points, hit.0, hit.1);
-                let (u_diff, v_diff) = derive_2d(&control_points, hit.0, hit.1, 1);
+                let [u_diff, v_diff] = control_points.derive(&[hit.0, hit.1], 1);
+
                 let normal = u_diff.cross(&v_diff);
                 let normal_pointer = meshes.add(Cuboid::new(
                     0.07 * scale,
@@ -115,7 +117,9 @@ pub fn bezier_surface_picking(
                             SurfaceClickMesh,
                             Visibility::Inherited,
                         ));
-                    });
+                    })
+                    .observe(drag_surface_click)
+                    .observe(drag_surface_click3d);
                 });
             }
             ui_state_writer.write(UiStateChangeset {
@@ -149,7 +153,8 @@ pub fn update_surface_click(
 
     for (surface, mut transform, children) in set.p0() {
         let point = eval_2d_bezier_curves(&points, surface.u, surface.v);
-        let (u_diff, v_diff) = derive_2d(&points, surface.u, surface.v, 1);
+        let [u_diff, v_diff] = points.derive(&[surface.u, surface.v], 1);
+
         let normal = u_diff.cross(&v_diff);
 
         transform.translation = Vec3::new(point.x as f32, point.y as f32, point.z as f32);
@@ -204,12 +209,14 @@ pub fn handle_state_change_event(
             return;
         }
         let evaluated = eval_2d_bezier_curves(&control_points, surface_click.u, surface_click.v);
-        let (u_diff, v_diff) = derive_2d(&control_points, surface_click.u, surface_click.v, 1);
+        let [u_diff, v_diff] = control_points.derive(&[surface_click.u, surface_click.v], 1);
         let normal = u_diff.cross(&v_diff);
 
+        let SurfaceClick { u, v } = surface_click;
         root.with_children(|ui| {
             ui.spawn((
                 surface_click,
+                Name::new(format!("SurfaceClick({u}, {v})",)),
                 MeshMaterial3d(material.clone()),
                 Mesh3d(sphere.clone()),
                 Transform::from_xyz(evaluated.x as f32, evaluated.y as f32, evaluated.z as f32)
@@ -222,8 +229,11 @@ pub fn handle_state_change_event(
                     MeshMaterial3d(material.clone()),
                     Mesh3d(normal_pointer.clone()),
                     Visibility::Inherited,
+                    Picking3dInteractable::default(),
                 ));
-            });
+            })
+            .observe(drag_surface_click)
+            .observe(drag_surface_click3d);
         });
     } else {
         for evt in reader.read() {
@@ -231,5 +241,92 @@ pub fn handle_state_change_event(
                 click.apply(evt.clone());
             }
         }
+    }
+}
+
+#[allow(clippy::complexity)]
+pub fn drag_surface_click(
+    trigger: Trigger<Pointer<Drag>>,
+    mut surface_click: Query<
+        (&mut SurfaceClick, &Transform),
+        (Without<RenderPoint>, Without<RootTransform>),
+    >,
+    control_points: Query<(&Transform, &RenderPoint)>,
+    camera: Query<(&GlobalTransform, &Camera), With<MainCamera>>,
+    root: Query<&Transform, (With<RootTransform>, Without<RenderPoint>)>,
+    global_transforms: Query<&GlobalTransform, Without<MainCamera>>,
+    mut ui_state_writer: EventWriter<UiStateChangeset>,
+) {
+    let control_points: ControlPoints2D = control_points.to_control_points();
+    if let Ok((camera_transform, camera)) = camera.single()
+        && let Ok(root_transform) = root.single()
+        && let Ok(global_transform) = global_transforms.get(trigger.target())
+        && let Ok((mut surface_click, click_transform)) = surface_click.get_mut(trigger.target())
+    {
+        let end = trigger.pointer_location.position;
+        let start = end - trigger.delta;
+
+        let dist_to_target =
+            (camera_transform.translation() - global_transform.translation()).length();
+
+        if let Ok(end_ray) = camera.viewport_to_world(camera_transform, end)
+            && let Ok(start_ray) = camera.viewport_to_world(camera_transform, start)
+        {
+            let start = start_ray.get_point(dist_to_target);
+            let end = end_ray.get_point(dist_to_target);
+
+            let diff = end - start;
+            let diff = root_transform
+                .compute_affine()
+                .inverse()
+                .transform_vector3(diff);
+
+            let new_pos = Point::from(click_transform.translation + diff);
+            let new_uv = control_points.min_distance_to_point(new_pos);
+
+            surface_click.u = new_uv.params[0];
+            surface_click.v = new_uv.params[1];
+
+            ui_state_writer.write(UiStateChangeset {
+                u: Some(surface_click.u),
+                v: Some(surface_click.v),
+                ..default()
+            });
+        }
+    }
+}
+
+#[allow(clippy::complexity)]
+pub fn drag_surface_click3d(
+    trigger: Trigger<Pointer3d<picking3d::events::Drag>>,
+    mut surface_click: Query<
+        (&mut SurfaceClick, &Transform),
+        (Without<RenderPoint>, Without<RootTransform>),
+    >,
+    control_points: Query<(&Transform, &RenderPoint)>,
+    root: Query<&Transform, (With<RootTransform>, Without<RenderPoint>)>,
+    mut ui_state_writer: EventWriter<UiStateChangeset>,
+) {
+    let control_points: ControlPoints2D = control_points.to_control_points();
+    if let Ok(root_transform) = root.single()
+        && let Ok((mut surface_click, click_transform)) = surface_click.get_mut(trigger.target())
+    {
+        let diff = trigger.event.delta;
+        let diff = root_transform
+            .compute_affine()
+            .inverse()
+            .transform_vector3(diff);
+
+        let new_pos = Point::from(click_transform.translation + diff);
+        let new_uv = control_points.min_distance_to_point(new_pos);
+
+        surface_click.u = new_uv.params[0];
+        surface_click.v = new_uv.params[1];
+
+        ui_state_writer.write(UiStateChangeset {
+            u: Some(surface_click.u),
+            v: Some(surface_click.v),
+            ..default()
+        });
     }
 }

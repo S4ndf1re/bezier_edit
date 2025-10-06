@@ -1734,7 +1734,8 @@ fn update_snapped_points(
                 let p = *de_casteljau(curve, *snap_u).last().unwrap().last().unwrap();
                 transform.translation = p.into();
 
-                let deriv = derive_after_de_casteljau(&de_casteljau(curve, *snap_u), 1);
+                let deriv = curve.derive(&[*snap_u], 1)[0];
+
                 arrow.0 = Vec3::from(deriv).normalize();
                 t.look_to(Vec3::from(deriv), Vec3::Y);
             } else {

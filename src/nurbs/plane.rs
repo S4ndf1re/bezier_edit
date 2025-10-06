@@ -48,8 +48,8 @@ impl Parametric<1, Point> for Ray3d {
         self.origin + (ts[0] * self.direction)
     }
 
-    fn derive(&self, _: &[f64; 1], _: usize) -> Point {
-        self.direction
+    fn derive(&self, _: &[f64; 1], _: usize) -> [Point; 1] {
+        [self.direction]
     }
 
     fn range(&self) -> [[f64; 2]; 1] {
@@ -122,7 +122,7 @@ impl Parametric<2, Point> for Plane3d {
         ((self.u * ts[0]) + (self.v * ts[1])) + self.origin
     }
 
-    fn derive(&self, _: &[f64; 2], _: usize) -> Point {
+    fn derive(&self, _: &[f64; 2], _: usize) -> [Point; 2] {
         unimplemented!()
     }
 

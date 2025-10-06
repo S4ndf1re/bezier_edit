@@ -7,9 +7,8 @@ use bevy::{color::palettes::css::BLACK, prelude::*};
 use num::pow;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::nurbs::bezier_plane::{
-    ControlPoints2D, ToControlPoints2D, derive_2d, eval_2d_bezier_curves,
-};
+use crate::nurbs::bezier_plane::{ControlPoints2D, ToControlPoints2D, eval_2d_bezier_curves};
+use crate::nurbs::parametric::Parametric;
 use crate::nurbs::point::Point;
 
 use super::bezier_curve_renderer::Resolution;
@@ -45,10 +44,10 @@ pub fn compute_points(
 
     let resulting_point = eval_2d_bezier_curves(control_points, uvs[0], uvs[1]);
 
-    let (u_diff_1, v_diff_1) = derive_2d(control_points, uvs[0], uvs[1], 1);
+    let [u_diff_1, v_diff_1] = control_points.derive(&uvs, 1);
     let normal = u_diff_1.cross(&v_diff_1) * -1.0;
 
-    let (u_diff_2, v_diff_2) = derive_2d(control_points, uvs[0], uvs[1], 2);
+    let [u_diff_2, v_diff_2] = control_points.derive(&uvs, 2);
 
     let uvs = [uvs[0] as f32, uvs[1] as f32];
 

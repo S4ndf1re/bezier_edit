@@ -1,6 +1,6 @@
 use std::f64;
 
-use rand::Rng;
+use crate::nurbs::bezier_plane::{ControlPoints2D, derive_2d, eval_2d_bezier_curves};
 
 use super::{
     bezier::{de_casteljau, derive_after_de_casteljau},
@@ -26,10 +26,13 @@ pub trait Parametric<const PARAMS: usize, R> {
     /// Get the range that the parameter is contained in
     fn range(&self) -> [[f64; 2]; PARAMS];
 
-    fn derive(&self, ts: &[f64; PARAMS], r: usize) -> R;
+    fn derive(&self, ts: &[f64; PARAMS], r: usize) -> [R; PARAMS];
 }
 
-impl Parametric<1, Point> for &[Point] {
+impl<P> Parametric<1, Point> for P
+where
+    P: AsRef<[Point]>,
+{
     fn f(&self, ts: &[f64; 1]) -> Point {
         *de_casteljau(self, ts[0]).last().unwrap().last().unwrap()
     }
@@ -38,8 +41,23 @@ impl Parametric<1, Point> for &[Point] {
         [[0.0, 1.0]]
     }
 
-    fn derive(&self, ts: &[f64; 1], r: usize) -> Point {
-        derive_after_de_casteljau(&de_casteljau(self, ts[0]), r)
+    fn derive(&self, ts: &[f64; 1], r: usize) -> [Point; 1] {
+        [derive_after_de_casteljau(&de_casteljau(self, ts[0]), r)]
+    }
+}
+
+impl Parametric<2, Point> for ControlPoints2D {
+    fn f(&self, ts: &[f64; 2]) -> Point {
+        eval_2d_bezier_curves(self, ts[0], ts[1])
+    }
+
+    fn range(&self) -> [[f64; 2]; 2] {
+        [[0.0, 1.0], [0.0, 1.0]]
+    }
+
+    fn derive(&self, ts: &[f64; 2], r: usize) -> [Point; 2] {
+        let (u_deriv, v_deriv) = derive_2d(self, ts[0], ts[1], r);
+        [u_deriv, v_deriv]
     }
 }
 
