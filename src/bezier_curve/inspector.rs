@@ -27,8 +27,12 @@ pub struct SurfaceInspector {
 #[derive(Component)]
 pub struct SurfaceInspectorMesh;
 
+#[derive(Event)]
+pub struct UpdateSurfaceInspectorEvent;
+
 #[allow(clippy::complexity)]
 pub fn update_surface_inspector(
+    mut reader: EventReader<UpdateSurfaceInspectorEvent>,
     mut set: ParamSet<(
         Query<(&SurfaceInspector, &mut Transform, &Children), Without<SurfaceInspectorMesh>>,
         Query<(&Transform, &RenderPoint)>,
@@ -44,6 +48,11 @@ pub fn update_surface_inspector(
     mut meshes: ResMut<Assets<Mesh>>,
     scale_res: Res<RenderInformation>,
 ) {
+    if reader.is_empty() {
+        return;
+    }
+    reader.clear();
+
     let scale = scale_res.scale;
     let points = set.p1().to_control_points();
 
@@ -125,11 +134,18 @@ pub fn setup_surface_inspector(
 pub fn handle_inspector_change_event(
     mut reader: EventReader<SurfaceInspectorChangeset>,
     mut clicks: Query<&mut SurfaceInspector>,
+    mut update_writer: EventWriter<UpdateSurfaceInspectorEvent>,
 ) {
+    let mut update = false;
     for evt in reader.read() {
         for mut click in clicks.iter_mut() {
             click.apply(evt.clone());
+            update = true;
         }
+    }
+
+    if update {
+        update_writer.write(UpdateSurfaceInspectorEvent);
     }
 }
 
@@ -145,6 +161,7 @@ pub fn drag_surface_inspector(
     root: Query<&Transform, (With<RootTransform>, Without<RenderPoint>)>,
     global_transforms: Query<&GlobalTransform, Without<MainCamera>>,
     mut ui_state_writer: EventWriter<UiStateChangeset>,
+    mut update_writer: EventWriter<UpdateSurfaceInspectorEvent>,
 ) {
     let control_points: ControlPoints2D = control_points.to_control_points();
     if let Ok((camera_transform, camera)) = camera.single()
@@ -181,6 +198,8 @@ pub fn drag_surface_inspector(
                 v: Some(surface_click.v),
                 ..default()
             });
+
+            update_writer.write(UpdateSurfaceInspectorEvent);
         }
     }
 }
@@ -195,6 +214,7 @@ pub fn drag_surface_inspector3d(
     control_points: Query<(&Transform, &RenderPoint)>,
     root: Query<&Transform, (With<RootTransform>, Without<RenderPoint>)>,
     mut ui_state_writer: EventWriter<UiStateChangeset>,
+    mut update_writer: EventWriter<UpdateSurfaceInspectorEvent>,
 ) {
     let control_points: ControlPoints2D = control_points.to_control_points();
     if let Ok(root_transform) = root.single()
@@ -217,5 +237,7 @@ pub fn drag_surface_inspector3d(
             v: Some(surface_click.v),
             ..default()
         });
+
+        update_writer.write(UpdateSurfaceInspectorEvent);
     }
 }

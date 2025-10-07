@@ -36,7 +36,9 @@ use crate::bezier_curve::helper_curves::{
     AddPointToCurveEvent, RemovePointFromCurveEvent, add_point_to_curve_handler,
     remove_point_from_curve_handler, update_sphere_positions,
 };
-use crate::bezier_curve::inspector::{inspectors_exist, setup_surface_inspector};
+use crate::bezier_curve::inspector::{
+    UpdateSurfaceInspectorEvent, inspectors_exist, setup_surface_inspector,
+};
 use crate::custom_shapes::parallelogram::Parallelogram2d;
 use crate::history::plugin::HistoryUndoEvent;
 use crate::nurbs::bezier_plane::{ToControlPoints2D, eval_2d_bezier_curves};
@@ -222,11 +224,13 @@ pub fn distribute_redraw_event(
     mut redraw_boxes: EventWriter<RedrawBoxesEvent>,
     mut redraw_iso_lines: EventWriter<RedrawLinesEvent>,
     mut update_ortho_views: EventWriter<UpdateOrthoViews>,
+    mut update_inspector: EventWriter<UpdateSurfaceInspectorEvent>,
 ) {
     for event in redraw_event_reader.read() {
         redraw_boxes.write(RedrawBoxesEvent);
         redraw_iso_lines.write(RedrawLinesEvent::from(*event));
         update_ortho_views.write(UpdateOrthoViews);
+        update_inspector.write(UpdateSurfaceInspectorEvent);
     }
 }
 
@@ -807,7 +811,8 @@ impl Plugin for BezierRenderPlugin {
             (
                 (generate_pointcloud, distribute_redraw_event).run_if(on_event::<RedrawEvent>),
                 update_lines,
-                update_surface_inspector.run_if(inspectors_exist),
+                update_surface_inspector
+                    .run_if(inspectors_exist.and(on_event::<UpdateSurfaceInspectorEvent>)),
                 redraw_boxes.after(generate_pointcloud),
                 redraw_iso_lines.after(generate_pointcloud),
                 render_curves,
@@ -925,6 +930,7 @@ impl Plugin for BezierRenderPlugin {
         app.add_event::<ResetDefaultCurveEvent>();
         app.add_event::<RemovePointFromCurveEvent>();
         app.add_event::<AddPointToCurveEvent>();
+        app.add_event::<UpdateSurfaceInspectorEvent>();
         app.init_state::<ControlState>();
 
         app.add_plugins(EvaluationPlugin);
