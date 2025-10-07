@@ -456,9 +456,9 @@ pub fn redraw_boxes(
 
     let multi_curves = control_points.to_control_points();
     for (u, v) in scale_info.to_uv_sample() {
-        let point = eval_2d_bezier_curves(&multi_curves, u, v);
+        let point = multi_curves.f(&[u, v]);
         let [u_diff, v_diff] = multi_curves.derive(&[u, v], 1);
-        let normal = u_diff.cross(&v_diff) * -1.0;
+        let normal = u_diff.cross(&v_diff).normalize() * -1.0;
         let [u_diff_2, v_diff_2] = multi_curves.derive(&[u, v], 2);
 
         let color = if scale_info.curvature_mode == CurvatureDisplayMode::None {
@@ -587,7 +587,7 @@ pub fn redraw_boxes(
         commands.spawn((
             ChildOf(surface.single().unwrap()),
             Transform::from_translation(Vec3::from(point))
-                .looking_to(Vec3::from(v_diff).normalize_or_zero(), Vec3::Y),
+                .looking_to(Vec3::from(v_diff).normalize_or_zero(), Vec3::from(normal)),
             Name::new("Box"),
             CurveBox,
             Mesh3d(v_mesh.clone()),
@@ -597,7 +597,7 @@ pub fn redraw_boxes(
         commands.spawn((
             ChildOf(surface.single().unwrap()),
             Transform::from_translation(Vec3::from(point))
-                .looking_to(Vec3::from(u_diff).normalize_or_zero(), Vec3::Y),
+                .looking_to(Vec3::from(u_diff).normalize_or_zero(), Vec3::from(normal)),
             Name::new("Box"),
             CurveBox,
             Mesh3d(u_mesh.clone()),

@@ -1,8 +1,11 @@
-use bevy::{color::palettes::tailwind::RED_400, prelude::*};
+use std::os::unix::process::parent_id;
+
+use bevy::{color::palettes::tailwind::RED_400, prelude::*, render::mesh::VertexAttributeValues};
 use struct_patch::Patch;
 
 use crate::{
     MainCamera, RootTransform,
+    custom_shapes::parallelogram::Parallelogram2d,
     nurbs::{
         bezier_plane::{ControlPoints2D, ToControlPoints2D, eval_2d_bezier_curves},
         parametric::{MinDistanceToPoint, Parametric},
@@ -25,6 +28,15 @@ pub struct SurfaceInspector {
 }
 
 #[derive(Component)]
+pub struct InspectorUDiff;
+
+#[derive(Component)]
+pub struct InspectorVDiff;
+
+#[derive(Component)]
+pub struct InspectorNormal;
+
+#[derive(Component)]
 pub struct SurfaceInspectorMesh;
 
 #[derive(Event)]
@@ -38,14 +50,22 @@ pub fn update_surface_inspector(
         Query<(&Transform, &RenderPoint)>,
     )>,
     mut meshes_query: Query<
-        (&mut Mesh3d, &mut Transform),
+        (
+            &mut Mesh3d,
+            &mut MeshMaterial3d<StandardMaterial>,
+            &mut Transform,
+        ),
         (
             With<SurfaceInspectorMesh>,
             Without<SurfaceInspector>,
             Without<RenderPoint>,
         ),
     >,
+    normal_query: Query<&InspectorNormal>,
+    u_query: Query<&InspectorUDiff>,
+    v_query: Query<&InspectorVDiff>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     scale_res: Res<RenderInformation>,
 ) {
     if reader.is_empty() {
@@ -56,30 +76,101 @@ pub fn update_surface_inspector(
     let scale = scale_res.scale;
     let points = set.p1().to_control_points();
 
-    for (surface, mut transform, children) in set.p0() {
-        let point = eval_2d_bezier_curves(&points, surface.u, surface.v);
+    for (surface, mut parent_transform, children) in set.p0() {
+        let point = points.f(&[surface.u, surface.v]);
         let [u_diff, v_diff] = points.derive(&[surface.u, surface.v], 1);
 
-        let normal = u_diff.cross(&v_diff);
+        let normal = u_diff.cross(&v_diff).normalize() * -1.0;
 
-        transform.translation = Vec3::new(point.x as f32, point.y as f32, point.z as f32);
-        transform.look_to(Into::<Vec3>::into(-1.0 * normal), Vec3::Y);
+        parent_transform.translation = Vec3::new(point.x as f32, point.y as f32, point.z as f32);
+        parent_transform.look_to(Vec3::from(normal), Vec3::from(u_diff));
 
         for child in children {
-            if let Ok((mut mesh, mut transform)) = meshes_query.get_mut(*child) {
-                let normal_pointer = meshes.add(Cuboid::new(
-                    0.07 * scale,
-                    0.07 * scale,
-                    0.5 * scale,
-                    // (normal.magnitude() as f32) * scale,
-                ));
-                *mesh = Mesh3d(normal_pointer.clone());
-                *transform = Transform::from_xyz(
-                    0.0,
-                    0.0,
-                    -0.25 * scale,
-                    //-(normal.magnitude() as f32) / 2.0 * scale
-                );
+            if let Ok((mut mesh, mut color, mut transform)) = meshes_query.get_mut(*child) {
+                if normal_query.get(*child).is_ok() {
+                    let mut parallelogram_mesh = Extrusion::new(
+                        Parallelogram2d::new(
+                            Vec3::from(u_diff).angle_between(Vec3::from(v_diff)),
+                            0.07 * scale,
+                            0.07 * scale,
+                        ),
+                        0.5 * scale,
+                    )
+                    .mesh()
+                    .build();
+
+                    let quat = Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians());
+                    {
+                        let positions = parallelogram_mesh
+                            .attribute_mut(Mesh::ATTRIBUTE_POSITION)
+                            .expect("Otherwise, mesh is broken");
+                        if let VertexAttributeValues::Float32x3(inner) = positions {
+                            for pos in inner {
+                                let vec = Vec3::new(pos[0], pos[1], pos[2]);
+                                let vec = quat.mul_vec3(vec);
+                                pos[0] = vec.x;
+                                pos[1] = vec.y;
+                                pos[2] = vec.z;
+                            }
+                        }
+                    }
+
+                    let normals = parallelogram_mesh
+                        .attribute_mut(Mesh::ATTRIBUTE_NORMAL)
+                        .expect("Otherwise, mesh is broken");
+                    if let VertexAttributeValues::Float32x3(inner) = normals {
+                        for norm in inner {
+                            let vec = Vec3::new(norm[0], norm[1], norm[2]);
+                            let vec = quat.mul_vec3(vec);
+                            norm[0] = vec.x;
+                            norm[1] = vec.y;
+                            norm[2] = vec.z;
+                        }
+                    }
+
+                    let u_diff_vec = parent_transform
+                        .compute_affine()
+                        .inverse()
+                        .transform_vector3(Vec3::from(u_diff));
+                    let n_vec = parent_transform
+                        .compute_affine()
+                        .inverse()
+                        .transform_vector3(Vec3::from(normal));
+
+                    transform.align(Vec3::NEG_Z, u_diff_vec, Vec3::Y, n_vec);
+
+                    *mesh = Mesh3d(meshes.add(parallelogram_mesh));
+                } else if u_query.get(*child).is_ok() {
+                    let u_mesh = meshes.add(Cuboid::new(0.05 * scale, 0.05 * scale, 0.3 * scale));
+                    let u_color = materials.add(Color::from(Srgba::new(0.0, 1.0, 0.0, 1.0)));
+                    *mesh = Mesh3d(u_mesh);
+                    *color = MeshMaterial3d(u_color);
+                    let u_diff_vec = parent_transform
+                        .compute_affine()
+                        .inverse()
+                        .transform_vector3(Vec3::from(u_diff));
+
+                    let n_vec = parent_transform
+                        .compute_affine()
+                        .inverse()
+                        .transform_vector3(Vec3::from(normal));
+                    transform.look_to(u_diff_vec, Vec3::from(n_vec));
+                } else if v_query.get(*child).is_ok() {
+                    let v_mesh = meshes.add(Cuboid::new(0.05 * scale, 0.05 * scale, 0.3 * scale));
+                    let v_color = materials.add(Color::from(Srgba::new(0.0, 0.0, 1.0, 1.0)));
+                    *mesh = Mesh3d(v_mesh);
+                    *color = MeshMaterial3d(v_color);
+                    let v_diff_vec = parent_transform
+                        .compute_affine()
+                        .inverse()
+                        .transform_vector3(Vec3::from(v_diff));
+
+                    let n_vec = parent_transform
+                        .compute_affine()
+                        .inverse()
+                        .transform_vector3(Vec3::from(normal));
+                    transform.look_to(v_diff_vec, Vec3::from(n_vec));
+                }
             }
         }
     }
@@ -97,6 +188,7 @@ pub fn setup_surface_inspector(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     scale_res: Res<RenderInformation>,
+    mut update_writer: EventWriter<UpdateSurfaceInspectorEvent>,
 ) {
     let scale = scale_res.scale;
     let u = 0.5;
@@ -117,17 +209,40 @@ pub fn setup_surface_inspector(
             Mesh3d(sphere.clone()),
             Transform::default(),
             Visibility::Inherited,
-            children![(
-                Transform::from_xyz(0.0, 0.0, -0.25 * scale),
-                MeshMaterial3d(material.clone()),
-                Mesh3d(normal_pointer.clone()),
-                Visibility::Inherited,
-                Picking3dInteractable::default(),
-            )],
+            Picking3dInteractable::default(),
+            children![
+                (
+                    Transform::from_xyz(0.0, 0.0, -0.25 * scale),
+                    MeshMaterial3d(material.clone()),
+                    Mesh3d(normal_pointer.clone()),
+                    Visibility::Inherited,
+                    Picking3dInteractable::default(),
+                    SurfaceInspectorMesh,
+                    InspectorNormal,
+                ),
+                (
+                    Transform::from_xyz(0.0, 0.0, -0.25 * scale),
+                    MeshMaterial3d(material.clone()),
+                    Mesh3d(normal_pointer.clone()),
+                    Visibility::Inherited,
+                    SurfaceInspectorMesh,
+                    InspectorUDiff,
+                ),
+                (
+                    Transform::from_xyz(0.0, 0.0, -0.25 * scale),
+                    MeshMaterial3d(material.clone()),
+                    Mesh3d(normal_pointer.clone()),
+                    Visibility::Inherited,
+                    SurfaceInspectorMesh,
+                    InspectorVDiff,
+                ),
+            ],
         ))
         .observe(drag_surface_inspector)
         .observe(drag_surface_inspector3d);
     });
+
+    update_writer.write(UpdateSurfaceInspectorEvent);
 }
 
 #[allow(clippy::complexity)]
