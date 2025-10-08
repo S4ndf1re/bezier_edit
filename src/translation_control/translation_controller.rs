@@ -2,7 +2,6 @@ use crate::bezier_curve::bezier_curve_renderer::{RedrawEvent, hover_3d};
 use crate::bezier_curve::helper_curves::{CurveCollection, RedrawCurvesEvent};
 use crate::bezier_curve::render_info::RenderInformation;
 use crate::history::plugin::HistoryLogEvent;
-use crate::nurbs::bezier::{de_casteljau, derive_after_de_casteljau};
 use crate::nurbs::parametric::Parametric;
 use crate::picking3d::events::{MoveIn, MoveOut, Pointer3d};
 use crate::picking3d::picking_3d::{CustomPicking3dHitbox, Picking3dInteractable};
@@ -27,6 +26,12 @@ use std::sync::Arc;
 use super::accumulated::AccumulatedMovementStore;
 use super::control_storage::{ControlDirection, ControlPlane};
 use super::obligatory_drag_params::ObligatoryDragParams;
+
+#[derive(Event)]
+pub struct ToggleRobotVisibilityEvent;
+
+#[derive(Component)]
+pub struct TemporaryInvisible;
 
 #[derive(Component)]
 pub struct CoordinateTextMarker;
@@ -152,6 +157,7 @@ pub struct TranslationControllerState {
     pub curve_snapping: SnappingBehaviour,
     pub step_mode: StepMode,
     pub prism_mode: PrismMode,
+    pub invisible_robots: bool,
 }
 
 #[derive(Event)]
@@ -225,6 +231,7 @@ fn register_deletes(
             if contrl.0 == event {
                 *visibility = Visibility::Hidden;
                 commands.entity(entity).insert(Pickable::IGNORE);
+                commands.entity(entity).remove::<TemporaryInvisible>();
 
                 for child in children.iter_descendants(event) {
                     if let Ok(mut pickable) = picking3d_interactable.get_mut(child) {
@@ -413,6 +420,7 @@ fn show_transitional_controls(
     mut already_existing: Query<(&mut Visibility, &ControlParent)>,
     children: Query<&Children>,
     mut picking3d_interactable: Query<&mut Picking3dInteractable>,
+    state: Res<TranslationControllerState>,
 ) {
     let scale = scale.scale;
 
@@ -420,12 +428,25 @@ fn show_transitional_controls(
         let mut already_created = false;
         for (mut visibility, parent) in already_existing.iter_mut() {
             if parent.0 == entity {
-                *visibility = Visibility::Inherited;
                 already_created = true;
-                commands.entity(entity).remove::<Pickable>();
-                for child in children.iter_descendants(entity) {
-                    if let Ok(mut pickable3d) = picking3d_interactable.get_mut(child) {
-                        *pickable3d = Picking3dInteractable::Default;
+                // Match behaviour with toggle_visibility system
+                if state.invisible_robots {
+                    *visibility = Visibility::Hidden;
+                    commands
+                        .entity(entity)
+                        .insert((Pickable::IGNORE, TemporaryInvisible));
+                    for child in children.iter_descendants(entity) {
+                        if let Ok(mut pickable3d) = picking3d_interactable.get_mut(child) {
+                            *pickable3d = Picking3dInteractable::Ignore;
+                        }
+                    }
+                } else {
+                    *visibility = Visibility::Inherited;
+                    commands.entity(entity).remove::<Pickable>();
+                    for child in children.iter_descendants(entity) {
+                        if let Ok(mut pickable3d) = picking3d_interactable.get_mut(child) {
+                            *pickable3d = Picking3dInteractable::Default;
+                        }
                     }
                 }
                 break;
@@ -439,6 +460,7 @@ fn show_transitional_controls(
         let rotation_inverse = parent_transform.rotation.inverse();
 
         let transform = Transform::from_xyz(0.0, 0.0, 0.0).with_rotation(rotation_inverse);
+        // TODO: Add robot invisibility on spawn
 
         commands.get_entity(entity).unwrap().with_children(|cmd| {
             cmd.spawn((ControlParent(entity), transform, Visibility::default()))
@@ -1731,7 +1753,7 @@ fn update_snapped_points(
         )) = snapped.get_mut(control_parent.0)
         {
             if let Some(curve) = curves.get(snap_curve) {
-                let p = *de_casteljau(curve, *snap_u).last().unwrap().last().unwrap();
+                let p = curve.f(&[*snap_u]);
                 transform.translation = p.into();
 
                 let deriv = curve.derive(&[*snap_u], 1)[0];
@@ -1973,6 +1995,70 @@ fn update_texts(
     }
 }
 
+#[allow(clippy::complexity)]
+fn toggle_visibility(
+    mut reader: EventReader<ToggleRobotVisibilityEvent>,
+    mut state: ResMut<TranslationControllerState>,
+    mut control_parents: Query<
+        (Entity, &mut Visibility),
+        (With<ControlParent>, Without<TemporaryInvisible>),
+    >,
+    mut temporary_invisible: Query<
+        (Entity, &mut Visibility),
+        (With<ControlParent>, With<TemporaryInvisible>),
+    >,
+    mut commands: Commands,
+    children: Query<&Children>,
+    mut picking3d_interactable: Query<&mut Picking3dInteractable>,
+) {
+    if reader.is_empty() {
+        return;
+    }
+    reader.clear();
+
+    state.invisible_robots = !state.invisible_robots;
+
+    if state.invisible_robots {
+        for (parent_entity, mut visibility) in &mut control_parents {
+            if *visibility != Visibility::Hidden {
+                *visibility = Visibility::Hidden;
+
+                let _ = commands.get_entity(parent_entity).map(|mut e| {
+                    e.insert(TemporaryInvisible);
+                    e.insert(Pickable::IGNORE);
+                });
+
+                if let Ok(children) = children.get(parent_entity) {
+                    for child in children {
+                        if let Ok(mut picking3d) = picking3d_interactable.get_mut(*child) {
+                            *picking3d = Picking3dInteractable::Ignore;
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        for (parent_entity, mut visibility) in &mut temporary_invisible {
+            if *visibility == Visibility::Hidden {
+                *visibility = Visibility::Inherited;
+
+                let _ = commands.get_entity(parent_entity).map(|mut e| {
+                    e.remove::<TemporaryInvisible>();
+                    e.remove::<Pickable>();
+                });
+
+                if let Ok(children) = children.get(parent_entity) {
+                    for child in children {
+                        if let Ok(mut picking3d) = picking3d_interactable.get_mut(*child) {
+                            *picking3d = Picking3dInteractable::Default;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub struct TranslationController;
 
 impl Plugin for TranslationController {
@@ -1989,6 +2075,7 @@ impl Plugin for TranslationController {
                 handle_translate_by_delta_event,
                 update_texts,
                 update_boxes,
+                toggle_visibility.run_if(on_event::<ToggleRobotVisibilityEvent>),
             ),
         );
         app.init_resource::<ControlStorage>();
@@ -1999,5 +2086,6 @@ impl Plugin for TranslationController {
         app.add_event::<MovedEntityEvent>();
         app.add_event::<MoveEntityByDeltaEvent>();
         app.add_event::<SetPrismMode>();
+        app.add_event::<ToggleRobotVisibilityEvent>();
     }
 }

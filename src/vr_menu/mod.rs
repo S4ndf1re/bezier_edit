@@ -3,7 +3,7 @@ use crate::bezier_curve::test_mode::{NextEvaluationEvent, handle_next_eval_event
 use crate::picking3d::events::HoveredBy;
 use crate::picking3d::picking_3d::{self, Picking3dTranslation};
 use crate::translation_control::translation_controller::{
-    SetPrismMode, handle_set_prism_mode, handle_toggle_snapping,
+    SetPrismMode, ToggleRobotVisibilityEvent, handle_set_prism_mode, handle_toggle_snapping,
 };
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
 use crate::vr_control::{AimLeft, AimRight};
@@ -113,6 +113,10 @@ struct MM5;
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 struct MM10;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct GizmoMode;
 
 #[derive(Component)]
 pub struct VrMenuRoot;
@@ -664,6 +668,60 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
                 entities_to_hide.push(child);
             }
         }
+
+        if components.contains(&world.component_id::<GizmoMode>().unwrap()) {
+            let scale = {
+                let info = world.resource_mut::<RenderInformation>();
+                info.scale
+            };
+            let mesh = {
+                let mut meshes = world.resource_mut::<Assets<Mesh>>();
+                meshes.add(Sphere::new(1.0))
+            };
+
+            let material = {
+                let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
+                materials.add(StandardMaterial {
+                    alpha_mode: AlphaMode::Mask(0.5),
+                    base_color: Color::NONE,
+                    ..default()
+                })
+            };
+
+            world
+                .commands()
+                .entity(child)
+                .remove::<Picking3dInteractable>()
+                .with_child((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(material),
+                    Transform::default(),
+                    Visibility::Inherited,
+                    Picking3dInteractable::Default,
+                    ColorChangeIgnoreMarker,
+                ))
+                .observe(handle_hover_out)
+                .observe(handle_hover_out3d)
+                .observe(handle_hover_over)
+                .observe(handle_hover_over3d)
+                .observe(hover_3d)
+                .observe(
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut toggle_gizmo_visibility: EventWriter<ToggleRobotVisibilityEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        toggle_gizmo_visibility.write(ToggleRobotVisibilityEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                )
+                .observe(
+                    move |_: Trigger<Pointer<Click>>,
+                          mut toggle_gizmo_visibility: EventWriter<ToggleRobotVisibilityEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        toggle_gizmo_visibility.write(ToggleRobotVisibilityEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                );
+        }
     }
 
     for entity in entities_to_hide {
@@ -831,5 +889,6 @@ impl Plugin for VrMenuPlugin {
         app.register_type::<MM1>();
         app.register_type::<MM5>();
         app.register_type::<MM10>();
+        app.register_type::<GizmoMode>();
     }
 }
