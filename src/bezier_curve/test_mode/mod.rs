@@ -3,15 +3,21 @@ use std::{
     fs::File,
     io::{Read, Write},
     path::PathBuf,
+    sync::Arc,
 };
 
 use bevy::{color::palettes::css::BLACK, prelude::*};
 use bevy::{ecs::resource::Resource, math::Vec3};
+use bevy_lunex::prelude::{Text3d, Text3dStyling, TextAlign, TextAtlas, Weight};
+#[cfg(feature = "vr_enable")]
+use bevy_xr_utils::tracking_utils::XrTrackedView;
 use chrono::{Datelike, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::path::Path;
 
+#[cfg(not(feature = "vr_enable"))]
+use crate::MainCamera;
 use crate::{
     RootTransform,
     bezier_curve::{
@@ -326,6 +332,9 @@ pub struct EvaluationPointComponent;
 #[derive(Component)]
 pub struct OriginalControlPointMarker;
 
+#[derive(Component)]
+pub struct EvalTextMarker;
+
 #[derive(Event)]
 pub struct NextEvaluationEvent;
 
@@ -352,6 +361,7 @@ fn on_enter_eval_state(
     evaluation_surfaces: Query<Entity, With<EvaluationSurfaceComponent>>,
     evaluation_points: Query<Entity, With<EvaluationPointComponent>>,
     original_points: Query<Entity, With<OriginalControlPointMarker>>,
+    texts: Query<Entity, With<EvalTextMarker>>,
     root: Query<Entity, With<RootTransform>>,
     images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -378,6 +388,10 @@ fn on_enter_eval_state(
 
     for point_entity in original_points {
         let _ = commands.get_entity(point_entity).map(|mut e| e.despawn());
+    }
+
+    for text_entity in texts {
+        let _ = commands.get_entity(text_entity).map(|mut e| e.despawn());
     }
 
     // Display next surface, if present
@@ -475,6 +489,10 @@ fn on_enter_result_state(
     >,
     control_points: Query<(&Transform, &RenderPoint)>,
     mut next_state_res: ResMut<NextState<EvaluationFlowState>>,
+    mut commands: Commands,
+    root: Query<Entity, With<RootTransform>>,
+    info: Res<RenderInformation>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     info!("In result state");
     let mut points = Vec::new();
@@ -482,9 +500,39 @@ fn on_enter_result_state(
         points.push((*y, *x, vec.translation).into());
     }
 
-    if evaluation.can_evaluate_further() {
-        evaluation.end_evaluation(points);
-    } else {
+    if evaluation.can_evaluate_further()
+        && let Some(eval_info) = evaluation.end_evaluation(points.clone())
+    {
+        let root = root.single().unwrap();
+
+        commands.spawn((
+            ChildOf(root),
+            Transform::from_xyz(0.0, 1.0 * info.scale, 0.0)
+                .with_scale(Vec3::ONE * 0.0025 * info.scale),
+            EvalTextMarker,
+            Name::new("Evaluation Text Marker"),
+            Text3d::new(format!(
+                "Average Distance: {:.3}\nMin. Distance: {:.3}\nMax. Distance: {:.3}",
+                eval_info.average_dist, eval_info.min_dist, eval_info.max_dist,
+            )),
+            Text3dStyling {
+                size: 64.0,
+                color: Srgba::new(0., 0., 0., 1.),
+                align: TextAlign::Center,
+                font: Arc::from("Rajdhani"),
+                weight: Weight::BOLD,
+                ..Default::default()
+            },
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
+                alpha_mode: AlphaMode::Blend,
+                unlit: true,
+                ..Default::default()
+            })),
+            Mesh3d::default(),
+            Visibility::Inherited,
+        ));
+    } else if !evaluation.can_evaluate_further() {
         evaluation.add_reference_surface(points);
         next_state_res.set(EvaluationFlowState::Eval);
     }
@@ -495,6 +543,81 @@ fn on_enter_result_state(
 
     for mut point_entity in &mut original_points {
         *point_entity = Visibility::Inherited;
+    }
+}
+
+#[cfg(not(feature = "vr_enable"))]
+#[allow(clippy::complexity)]
+fn follow_camera(
+    camera: Query<
+        &GlobalTransform,
+        (
+            With<MainCamera>,
+            Without<RootTransform>,
+            Without<EvalTextMarker>,
+        ),
+    >,
+    root: Query<
+        &Transform,
+        (
+            With<RootTransform>,
+            Without<MainCamera>,
+            Without<EvalTextMarker>,
+        ),
+    >,
+    mut texts: Query<
+        (&mut Transform, &GlobalTransform),
+        (
+            With<EvalTextMarker>,
+            Without<MainCamera>,
+            Without<RootTransform>,
+        ),
+    >,
+) {
+    if let Ok(camera) = camera.single()
+        && let Ok(root) = root.single()
+    {
+        for (mut text, global_text) in texts.iter_mut() {
+            let diff = global_text.translation() - camera.translation();
+            let diff = root.compute_affine().inverse().transform_vector3(diff);
+            text.look_to(diff, Vec3::Y);
+        }
+    }
+}
+
+#[cfg(feature = "vr_enable")]
+fn follow_camera(
+    camera: Query<
+        &GlobalTransform,
+        (
+            With<XrTrackedView>,
+            Without<EvalTextMarker>,
+            Without<RootTransform>,
+        ),
+    >,
+    root: Query<
+        &Transform,
+        (
+            With<RootTransform>,
+            Without<XrTrackedView>,
+            Without<EvalTextMarker>,
+        ),
+    >,
+    mut texts: Query<
+        (&mut Transform, &GlobalTransform),
+        (
+            With<EvalTextMarker>,
+            Without<XrTrackedView>,
+            Without<RootTransform>,
+        ),
+    >,
+) {
+    if let Ok(camera) = camera.single() {
+        for (mut text, global_text) in texts.iter_mut() {
+            let diff = global_text.translation() - camera.translation();
+            let diff = root.compute_affine().inverse().transform_vector3(diff);
+            text.look_to(diff, Vec3::Y);
+        }
     }
 }
 
@@ -511,6 +634,7 @@ impl Plugin for EvaluationPlugin {
         app.add_systems(OnEnter(EvaluationFlowState::Eval), on_enter_eval_state);
         app.add_systems(OnEnter(EvaluationFlowState::Result), on_enter_result_state);
         app.add_systems(Last, handle_state_change_event);
+        app.add_systems(Update, follow_camera);
 
         app.add_event::<NextEvaluationEvent>();
 
