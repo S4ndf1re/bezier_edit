@@ -19,10 +19,10 @@ use super::picking_state::VectorState;
 const MIN_V: f32 = 0.05;
 
 /// PRISM Constant SC
-const SC: f32 = 0.20;
+const SC: f32 = 0.30;
 
 /// PRISM Constant maximum velocity
-const MAX_V: f32 = 0.25;
+const MAX_V: f32 = 0.55;
 
 #[derive(Component)]
 pub struct AimLineMarker(HoveredBy);
