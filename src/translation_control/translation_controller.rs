@@ -225,6 +225,7 @@ fn register_deletes(
     mut controls: Query<(Entity, &mut Visibility, &ControlParent)>,
     children: Query<&Children>,
     mut picking3d_interactable: Query<&mut Picking3dInteractable>,
+    mut pickables: Query<&mut Pickable>,
 ) {
     for event in deleted.read() {
         for (entity, mut visibility, contrl) in controls.iter_mut() {
@@ -236,6 +237,10 @@ fn register_deletes(
                 for child in children.iter_descendants(event) {
                     if let Ok(mut pickable) = picking3d_interactable.get_mut(child) {
                         *pickable = Picking3dInteractable::Ignore;
+                    }
+
+                    if let Ok(mut pickable) = pickables.get_mut(child) {
+                        *pickable = Pickable::IGNORE;
                     }
                 }
             }
@@ -249,6 +254,8 @@ pub fn draw_plane(
     mat_hover: Handle<StandardMaterial>,
     meshes: &mut ResMut<Assets<Mesh>>,
     scale: f32,
+    picking3d: Picking3dInteractable,
+    picking: Pickable,
 ) {
     let plane = meshes.add(Cuboid::new(0.24 * scale, 0.24 * scale, 0.01 * scale));
 
@@ -256,7 +263,8 @@ pub fn draw_plane(
         Transform::from_xyz(0.0, 0.0, 0.0),
         MeshMaterial3d(mat.clone()),
         Mesh3d(plane.clone()),
-        Picking3dInteractable::Default,
+        picking3d,
+        picking,
         Visibility::Inherited,
     ));
     obj.observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
@@ -266,6 +274,7 @@ pub fn draw_plane(
         .observe(hover_3d);
 }
 
+#[allow(clippy::complexity)]
 pub fn draw_arrow(
     child_builder: &mut RelatedSpawnerCommands<ChildOf>,
     mat: Handle<StandardMaterial>,
@@ -273,6 +282,8 @@ pub fn draw_arrow(
     meshes: &mut ResMut<Assets<Mesh>>,
     scale: f32,
     is_shadow: bool,
+    picking3d: Picking3dInteractable,
+    picking: Pickable,
 ) {
     let cuboid = meshes.add(Cuboid::new(0.07 * scale, 0.07 * scale, 0.4 * scale));
     let line = meshes.add(Cuboid::new(0.02 * scale, 0.02 * scale, 0.8 * scale));
@@ -283,7 +294,8 @@ pub fn draw_arrow(
         Transform::from_xyz(0.0, 0.0, -0.4 * scale),
         MeshMaterial3d(mat.clone()),
         Mesh3d(cuboid.clone()),
-        Picking3dInteractable::Default,
+        picking3d,
+        picking.clone(),
         Visibility::Inherited,
     ));
     obj.observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
@@ -300,6 +312,7 @@ pub fn draw_arrow(
             MeshMaterial3d(mat.clone()),
             Mesh3d(line.clone()),
             Visibility::Inherited,
+            picking.clone(),
         ))
         .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()));
@@ -312,6 +325,7 @@ pub fn draw_arrow(
             MeshMaterial3d(mat.clone()),
             Mesh3d(arrow.clone()),
             Visibility::Inherited,
+            picking.clone(),
         ))
         .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()));
@@ -323,6 +337,7 @@ pub fn draw_arrow(
             MeshMaterial3d(mat.clone()),
             Visibility::Inherited,
             Mesh3d(thin_line.clone()),
+            picking,
         ));
     }
 }
@@ -333,6 +348,8 @@ fn draw_ring(
     mat_hover: Handle<StandardMaterial>,
     meshes: &mut ResMut<Assets<Mesh>>,
     scale: f32,
+    picking3d: Picking3dInteractable,
+    picking: Pickable,
 ) {
     // this is a little smaller then the arrow
     let torus = meshes.add(Torus::new(0.38 * scale, 0.42 * scale));
@@ -357,6 +374,7 @@ fn draw_ring(
             Mesh3d(torus),
             MeshMaterial3d(mat.clone()),
             Visibility::Inherited,
+            picking.clone(),
         ))
         .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()));
@@ -372,7 +390,8 @@ fn draw_ring(
                 Mesh3d(ball.clone()),
                 MeshMaterial3d(mat.clone()),
                 CustomPicking3dHitbox::Sphere(0.035 * scale),
-                Picking3dInteractable::Default,
+                picking3d,
+                picking.clone(),
                 Visibility::Inherited,
             ))
             .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
@@ -389,6 +408,8 @@ fn draw_sphere(
     mat_hover: Handle<StandardMaterial>,
     meshes: &mut ResMut<Assets<Mesh>>,
     scale: f32,
+    picking3d: Picking3dInteractable,
+    picking: Pickable,
 ) {
     // NOTE: This should be slightly larger than the original
     let sphere = meshes.add(Sphere::new(0.105 * scale));
@@ -397,7 +418,8 @@ fn draw_sphere(
         .spawn((
             Transform::default(),
             Visibility::Inherited,
-            Picking3dInteractable::Default,
+            picking3d,
+            picking,
             Mesh3d(sphere),
             MeshMaterial3d(mat.clone()),
         ))
@@ -417,35 +439,44 @@ fn show_transitional_controls(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     scale: Res<RenderInformation>,
-    mut already_existing: Query<(&mut Visibility, &ControlParent)>,
+    mut already_existing: Query<(Entity, &mut Visibility, &ControlParent)>,
     children: Query<&Children>,
     mut picking3d_interactable: Query<&mut Picking3dInteractable>,
+    mut pickables: Query<&mut Pickable>,
     state: Res<TranslationControllerState>,
 ) {
     let scale = scale.scale;
 
     for (entity, enabled_control) in to_enable.iter() {
         let mut already_created = false;
-        for (mut visibility, parent) in already_existing.iter_mut() {
+        for (parent_entity, mut visibility, parent) in already_existing.iter_mut() {
             if parent.0 == entity {
                 already_created = true;
                 // Match behaviour with toggle_visibility system
                 if state.invisible_robots {
                     *visibility = Visibility::Hidden;
                     commands
-                        .entity(entity)
+                        .entity(parent_entity)
                         .insert((Pickable::IGNORE, TemporaryInvisible));
-                    for child in children.iter_descendants(entity) {
+                    for child in children.iter_descendants(parent_entity) {
                         if let Ok(mut pickable3d) = picking3d_interactable.get_mut(child) {
                             *pickable3d = Picking3dInteractable::Ignore;
+                        }
+
+                        if let Ok(mut pickable) = pickables.get_mut(child) {
+                            *pickable = Pickable::IGNORE;
                         }
                     }
                 } else {
                     *visibility = Visibility::Inherited;
-                    commands.entity(entity).remove::<Pickable>();
-                    for child in children.iter_descendants(entity) {
+                    commands.entity(parent_entity).remove::<Pickable>();
+                    for child in children.iter_descendants(parent_entity) {
                         if let Ok(mut pickable3d) = picking3d_interactable.get_mut(child) {
                             *pickable3d = Picking3dInteractable::Default;
+                        }
+
+                        if let Ok(mut pickable) = pickables.get_mut(child) {
+                            *pickable = Pickable::default();
                         }
                     }
                 }
@@ -461,174 +492,111 @@ fn show_transitional_controls(
 
         let transform = Transform::from_xyz(0.0, 0.0, 0.0).with_rotation(rotation_inverse);
         // TODO: Add robot invisibility on spawn
+        let (pickable3d, pickable) = if state.invisible_robots {
+            (Picking3dInteractable::Ignore, Pickable::IGNORE)
+        } else {
+            (Picking3dInteractable::Default, Pickable::default())
+        };
 
         commands.get_entity(entity).unwrap().with_children(|cmd| {
-            cmd.spawn((ControlParent(entity), transform, Visibility::default()))
-                .with_children(|parent| {
-                    if *enabled_control == EnableTranslationControl::OnlyTranslation
-                        || *enabled_control == EnableTranslationControl::WithRotation
-                    {
+            let mut parent = cmd.spawn((
+                ControlParent(entity),
+                Name::new("Control Parent"),
+                transform,
+                if state.invisible_robots {
+                    Visibility::Hidden
+                } else {
+                    Visibility::Inherited
+                },
+            ));
+            parent.with_children(|parent| {
+                if *enabled_control == EnableTranslationControl::OnlyTranslation
+                    || *enabled_control == EnableTranslationControl::WithRotation
+                {
+                    parent
+                        .spawn((
+                            Transform::default(),
+                            ControlSphere,
+                            Visibility::Inherited,
+                            Control(Vec3::ONE),
+                        ))
+                        .with_children(|parent| {
+                            draw_sphere(
+                                parent,
+                                materials.add(Color::from(GRAY_400)),
+                                materials.add(Color::from(GRAY_500)),
+                                &mut meshes,
+                                scale,
+                                pickable3d,
+                                pickable.clone(),
+                            );
+                        })
+                        .observe(drag_sphere_controller)
+                        .observe(drag_sphere_controller3d)
+                        .observe(drag_start)
+                        .observe(drag_start3d)
+                        .observe(drag_end_trigger_redraw)
+                        .observe(drag_end3d_trigger_redraw);
+
+                    for arrow in arrows.as_ref().iter_arrows() {
                         parent
                             .spawn((
-                                Transform::default(),
-                                ControlSphere,
+                                Transform::default().looking_to(arrow.normalized, Vec3::Y),
+                                Control(arrow.normalized),
                                 Visibility::default(),
-                                Control(Vec3::ONE),
                             ))
                             .with_children(|parent| {
-                                draw_sphere(
+                                draw_arrow(
                                     parent,
-                                    materials.add(Color::from(GRAY_400)),
-                                    materials.add(Color::from(GRAY_500)),
+                                    materials.add(arrow.color),
+                                    materials.add(arrow.hover_color),
                                     &mut meshes,
                                     scale,
+                                    false,
+                                    pickable3d,
+                                    pickable.clone(),
                                 );
                             })
-                            .observe(drag_sphere_controller)
-                            .observe(drag_sphere_controller3d)
+                            .observe(drag_controller)
+                            .observe(drag_controller3d)
                             .observe(drag_start)
                             .observe(drag_start3d)
                             .observe(drag_end_trigger_redraw)
                             .observe(drag_end3d_trigger_redraw);
 
-                        for arrow in arrows.as_ref().iter_arrows() {
-                            parent
-                                .spawn((
-                                    Transform::default().looking_to(arrow.normalized, Vec3::Y),
-                                    Control(arrow.normalized),
-                                    Visibility::default(),
-                                ))
-                                .with_children(|parent| {
-                                    draw_arrow(
-                                        parent,
-                                        materials.add(arrow.color),
-                                        materials.add(arrow.hover_color),
-                                        &mut meshes,
-                                        scale,
-                                        false,
-                                    );
-                                })
-                                .observe(drag_controller)
-                                .observe(drag_controller3d)
-                                .observe(drag_start)
-                                .observe(drag_start3d)
-                                .observe(drag_end_trigger_redraw)
-                                .observe(drag_end3d_trigger_redraw);
-
-                            if *enabled_control == EnableTranslationControl::WithRotation {
-                                parent
-                                    .spawn((
-                                        Transform::from_xyz(0.0, 0.0, 0.0)
-                                            .looking_to(arrow.normalized, Vec3::Y),
-                                        ControlRotation {
-                                            normal: arrow.normalized,
-                                            radius: 0.4 * scale as f64,
-                                            last_vector: Vec3::ZERO,
-                                        },
-                                        Visibility::default(),
-                                    ))
-                                    .with_children(|parent| {
-                                        draw_ring(
-                                            parent,
-                                            materials.add(arrow.color),
-                                            materials.add(arrow.hover_color),
-                                            &mut meshes,
-                                            scale,
-                                        );
-                                    })
-                                    .observe(rotate_start)
-                                    .observe(rotate_start3d)
-                                    .observe(rotate_controller)
-                                    .observe(rotate_controller3d)
-                                    .observe(rotate_end_trigger_redraw)
-                                    .observe(rotate_end_trigger_redraw3d);
-                            }
-                        }
-
-                        for plane in arrows.iter_planes() {
-                            parent
-                                .spawn((
-                                    Transform::from_translation((plane.axis / 3.0) * scale)
-                                        .looking_to(plane.normal, Vec3::Y),
-                                    Control(plane.axis),
-                                    Visibility::default(),
-                                ))
-                                .with_children(|parent| {
-                                    draw_plane(
-                                        parent,
-                                        materials.add(plane.color),
-                                        materials.add(plane.hover_color),
-                                        &mut meshes,
-                                        scale,
-                                    );
-                                })
-                                .observe(drag_plane)
-                                .observe(drag_plane3d)
-                                .observe(drag_start)
-                                .observe(drag_start3d)
-                                .observe(drag_end_trigger_redraw)
-                                .observe(drag_end3d_trigger_redraw);
-                        }
-                    } else if let EnableTranslationControl::OnlyOnPlane(plane_entity) =
-                        *enabled_control
-                        && let Ok(plane_transform) = transforms.get(plane_entity)
-                    {
-                        let up_direction = ControlDirection::new(
-                            plane_transform.up().as_vec3().normalize_or_zero(),
-                            Color::from(BLUE_600),
-                            Color::from(BLUE_800),
-                            Color::from(GRAY_500),
-                            false,
-                        );
-
-                        let left_direction = ControlDirection::new(
-                            plane_transform.left().as_vec3().normalize_or_zero(),
-                            Color::from(RED_600),
-                            Color::from(RED_800),
-                            Color::from(GRAY_500),
-                            false,
-                        );
-
-                        let plane = ControlPlane::new(
-                            plane_transform.up().as_vec3().normalize_or_zero()
-                                + plane_transform.left().as_vec3().normalize_or_zero(),
-                            plane_transform.forward().normalize_or_zero(),
-                            PURPLE_600.into(),
-                            PURPLE_800.into(),
-                        );
-
-                        for (arrow, direction) in [
-                            (up_direction, ArrowDirection::Up),
-                            (left_direction, ArrowDirection::Left),
-                        ] {
+                        if *enabled_control == EnableTranslationControl::WithRotation {
                             parent
                                 .spawn((
                                     Transform::from_xyz(0.0, 0.0, 0.0)
                                         .looking_to(arrow.normalized, Vec3::Y),
-                                    Control(arrow.normalized),
-                                    Visibility::default(),
-                                    OnPlaneMovableMarker {
-                                        plane: plane_entity,
-                                        arrow_direction: direction,
+                                    ControlRotation {
+                                        normal: arrow.normalized,
+                                        radius: 0.4 * scale as f64,
+                                        last_vector: Vec3::ZERO,
                                     },
+                                    Visibility::default(),
                                 ))
                                 .with_children(|parent| {
-                                    draw_arrow(
+                                    draw_ring(
                                         parent,
                                         materials.add(arrow.color),
                                         materials.add(arrow.hover_color),
                                         &mut meshes,
                                         scale,
-                                        false,
+                                        pickable3d,
+                                        pickable.clone(),
                                     );
                                 })
-                                .observe(drag_controller)
-                                .observe(drag_controller3d)
-                                .observe(drag_start)
-                                .observe(drag_start3d)
-                                .observe(drag_end_trigger_redraw)
-                                .observe(drag_end3d_trigger_redraw);
+                                .observe(rotate_start)
+                                .observe(rotate_start3d)
+                                .observe(rotate_controller)
+                                .observe(rotate_controller3d)
+                                .observe(rotate_end_trigger_redraw)
+                                .observe(rotate_end_trigger_redraw3d);
                         }
+                    }
+
+                    for plane in arrows.iter_planes() {
                         parent
                             .spawn((
                                 Transform::from_translation((plane.axis / 3.0) * scale)
@@ -643,6 +611,8 @@ fn show_transitional_controls(
                                     materials.add(plane.hover_color),
                                     &mut meshes,
                                     scale,
+                                    pickable3d,
+                                    pickable.clone(),
                                 );
                             })
                             .observe(drag_plane)
@@ -652,7 +622,96 @@ fn show_transitional_controls(
                             .observe(drag_end_trigger_redraw)
                             .observe(drag_end3d_trigger_redraw);
                     }
-                });
+                } else if let EnableTranslationControl::OnlyOnPlane(plane_entity) = *enabled_control
+                    && let Ok(plane_transform) = transforms.get(plane_entity)
+                {
+                    let up_direction = ControlDirection::new(
+                        plane_transform.up().as_vec3().normalize_or_zero(),
+                        Color::from(BLUE_600),
+                        Color::from(BLUE_800),
+                        Color::from(GRAY_500),
+                        false,
+                    );
+
+                    let left_direction = ControlDirection::new(
+                        plane_transform.left().as_vec3().normalize_or_zero(),
+                        Color::from(RED_600),
+                        Color::from(RED_800),
+                        Color::from(GRAY_500),
+                        false,
+                    );
+
+                    let plane = ControlPlane::new(
+                        plane_transform.up().as_vec3().normalize_or_zero()
+                            + plane_transform.left().as_vec3().normalize_or_zero(),
+                        plane_transform.forward().normalize_or_zero(),
+                        PURPLE_600.into(),
+                        PURPLE_800.into(),
+                    );
+
+                    for (arrow, direction) in [
+                        (up_direction, ArrowDirection::Up),
+                        (left_direction, ArrowDirection::Left),
+                    ] {
+                        parent
+                            .spawn((
+                                Transform::from_xyz(0.0, 0.0, 0.0)
+                                    .looking_to(arrow.normalized, Vec3::Y),
+                                Control(arrow.normalized),
+                                Visibility::default(),
+                                OnPlaneMovableMarker {
+                                    plane: plane_entity,
+                                    arrow_direction: direction,
+                                },
+                            ))
+                            .with_children(|parent| {
+                                draw_arrow(
+                                    parent,
+                                    materials.add(arrow.color),
+                                    materials.add(arrow.hover_color),
+                                    &mut meshes,
+                                    scale,
+                                    false,
+                                    pickable3d,
+                                    pickable.clone(),
+                                );
+                            })
+                            .observe(drag_controller)
+                            .observe(drag_controller3d)
+                            .observe(drag_start)
+                            .observe(drag_start3d)
+                            .observe(drag_end_trigger_redraw)
+                            .observe(drag_end3d_trigger_redraw);
+                    }
+                    parent
+                        .spawn((
+                            Transform::from_translation((plane.axis / 3.0) * scale)
+                                .looking_to(plane.normal, Vec3::Y),
+                            Control(plane.axis),
+                            Visibility::default(),
+                        ))
+                        .with_children(|parent| {
+                            draw_plane(
+                                parent,
+                                materials.add(plane.color),
+                                materials.add(plane.hover_color),
+                                &mut meshes,
+                                scale,
+                                pickable3d,
+                                pickable.clone(),
+                            );
+                        })
+                        .observe(drag_plane)
+                        .observe(drag_plane3d)
+                        .observe(drag_start)
+                        .observe(drag_start3d)
+                        .observe(drag_end_trigger_redraw)
+                        .observe(drag_end3d_trigger_redraw);
+                }
+            });
+            if state.invisible_robots {
+                parent.insert((TemporaryInvisible, Pickable::IGNORE));
+            }
         });
     }
 }
@@ -712,6 +771,8 @@ fn drag_start(
                             &mut meshes,
                             scale,
                             true,
+                            Picking3dInteractable::Ignore,
+                            Pickable::IGNORE,
                         );
                     });
             }
@@ -863,6 +924,8 @@ fn drag_start3d(
                             &mut meshes,
                             scale,
                             true,
+                            Picking3dInteractable::Ignore,
+                            Pickable::IGNORE,
                         );
                     });
             }
@@ -2010,6 +2073,7 @@ fn toggle_visibility(
     mut commands: Commands,
     children: Query<&Children>,
     mut picking3d_interactable: Query<&mut Picking3dInteractable>,
+    mut pickables: Query<&mut Pickable>,
 ) {
     if reader.is_empty() {
         return;
@@ -2033,6 +2097,10 @@ fn toggle_visibility(
                         if let Ok(mut picking3d) = picking3d_interactable.get_mut(*child) {
                             *picking3d = Picking3dInteractable::Ignore;
                         }
+
+                        if let Ok(mut pickable) = pickables.get_mut(*child) {
+                            *pickable = Pickable::IGNORE;
+                        }
                     }
                 }
             }
@@ -2051,6 +2119,10 @@ fn toggle_visibility(
                     for child in children {
                         if let Ok(mut picking3d) = picking3d_interactable.get_mut(*child) {
                             *picking3d = Picking3dInteractable::Default;
+                        }
+
+                        if let Ok(mut pickable) = pickables.get_mut(*child) {
+                            *pickable = Pickable::default();
                         }
                     }
                 }

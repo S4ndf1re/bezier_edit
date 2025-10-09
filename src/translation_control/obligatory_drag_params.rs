@@ -18,6 +18,7 @@ use crate::{
         parametric::Parametric,
         point::Point,
     },
+    picking3d::picking_3d::Picking3dInteractable,
     projection::ProjectedSnappingDetector,
 };
 
@@ -230,6 +231,8 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                             &mut self.meshes,
                             self.info.scale,
                             false,
+                            Picking3dInteractable::Default,
+                            Pickable::default(),
                         );
                     })
                     .observe(drag_controller)

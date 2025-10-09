@@ -511,9 +511,6 @@ pub fn redraw_boxes(
                 ))
             }
             CoordinateMode::NUV => {
-                // TODO: Ask Kerstin how to conform to this. The edges are simple, if u == 0 or
-                // u == 1 or v == 0 or v == 1, one can set the exact u, v orientation. However this is not
-                // possible for in surface points
                 let mut mesh = Extrusion::new(
                     Parallelogram2d::new(
                         Vec3::from(u_diff).angle_between(Vec3::from(v_diff)),
