@@ -10,6 +10,8 @@ use bevy::{
     render::view::RenderLayers, sprite::Anchor,
 };
 use bevy_lunex::{UiStateTrait, prelude::*};
+
+#[cfg(feature = "vr_enable")]
 use bevy_xr_utils::tracking_utils::XrTrackedView;
 use button::{ButtonClickedEvent, ButtonPlugin, ChangeTextEvent, UiButton};
 use slider::{ChangeSliderValueEvent, SliderPlugin, SliderValueChangedEvent, UiSlider};
