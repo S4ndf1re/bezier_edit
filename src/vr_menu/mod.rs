@@ -1,5 +1,5 @@
 use crate::bezier_curve::bezier_curve_renderer::{MinusModeEvent, PlusModeEvent, hover_3d};
-use crate::bezier_curve::test_mode::{NextEvaluationEvent, handle_next_eval_event};
+use crate::bezier_curve::test_mode::NextEvaluationEvent;
 use crate::picking3d::events::HoveredBy;
 use crate::picking3d::picking_3d::{self, Picking3dTranslation};
 use crate::translation_control::translation_controller::{

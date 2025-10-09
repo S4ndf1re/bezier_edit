@@ -30,6 +30,14 @@ use crate::{
 
 use super::{bezier_curve_renderer::ResetDefaultCurveEvent, components::RenderPoint};
 
+#[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord, States, Default, Hash, Debug)]
+enum EvaluationFlowState {
+    #[default]
+    Idle,
+    Eval,
+    Result,
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct TestControlPoint {
     y_idx: usize,
@@ -95,6 +103,13 @@ pub struct PointEvaluation {
     dist: f64,
 }
 
+#[derive(Clone, Copy)]
+pub struct BasicSurfaceEvaluationData {
+    average_dist: f64,
+    max_dist: f64,
+    min_dist: f64,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SingleSurfaceEvaluation {
     average_dist: f64,
@@ -122,7 +137,10 @@ impl SingleSurfaceEvaluation {
     }
 
     /// Evaluate single surface
-    pub fn evaluate(&mut self, control_points: Vec<TestControlPoint>) {
+    pub fn evaluate(
+        &mut self,
+        control_points: Vec<TestControlPoint>,
+    ) -> BasicSurfaceEvaluationData {
         self.test_control_points = control_points;
         let collected_test = self.test_control_points.to_control_points();
         let collected_reference = self.reference_control_points.to_control_points();
@@ -155,6 +173,11 @@ impl SingleSurfaceEvaluation {
 
         self.average_dist = avg_dist;
         self.evaluated = true;
+        BasicSurfaceEvaluationData {
+            average_dist: self.average_dist,
+            max_dist: self.max_dist,
+            min_dist: self.min_dist,
+        }
     }
 }
 
@@ -173,6 +196,8 @@ impl From<EvaluationSurface> for SingleSurfaceEvaluation {
 pub struct Evaluation {
     #[serde(skip)]
     counter: usize,
+    #[serde(skip)]
+    start_counter: usize,
 
     #[serde(skip)]
     reference_surfaces: Vec<EvaluationSurface>,
@@ -199,6 +224,7 @@ impl Evaluation {
 
         Ok(Self {
             evaluations: Vec::new(),
+            start_counter: reference_surfaces.len(),
             reference_surfaces,
             counter: 0,
             pathbuf_references: PathBuf::from(path),
@@ -229,12 +255,18 @@ impl Evaluation {
     }
 
     /// End evaluation and make state ready for next evaluation
-    pub fn end_evaluation(&mut self, control_points: Vec<TestControlPoint>) {
-        if let Some(last) = self.evaluations.last_mut()
-            && !last.evaluated
-        {
-            last.evaluate(control_points);
+    pub fn end_evaluation(
+        &mut self,
+        control_points: Vec<TestControlPoint>,
+    ) -> Option<BasicSurfaceEvaluationData> {
+        let last = self.evaluations.last_mut()?;
+
+        if !last.evaluated {
+            let basic = last.evaluate(control_points);
             self.counter += 1;
+            Some(basic)
+        } else {
+            None
         }
     }
 
@@ -268,7 +300,7 @@ impl Evaluation {
     }
 
     pub fn can_evaluate_further(&self) -> bool {
-        self.counter < self.reference_surfaces.len()
+        self.counter < self.start_counter
     }
 }
 
@@ -291,62 +323,64 @@ pub struct EvaluationSurfaceComponent;
 #[derive(Component)]
 pub struct EvaluationPointComponent;
 
+#[derive(Component)]
+pub struct OriginalControlPointMarker;
+
 #[derive(Event)]
 pub struct NextEvaluationEvent;
 
-#[allow(clippy::complexity)]
-pub fn handle_next_eval_event(
+fn handle_state_change_event(
     mut reader: EventReader<NextEvaluationEvent>,
+    current_state: Res<State<EvaluationFlowState>>,
+    mut next_state_res: ResMut<NextState<EvaluationFlowState>>,
+) {
+    for _ in reader.read() {
+        let next_state = match **current_state {
+            EvaluationFlowState::Idle => EvaluationFlowState::Eval,
+            EvaluationFlowState::Eval => EvaluationFlowState::Result,
+            EvaluationFlowState::Result => EvaluationFlowState::Eval,
+        };
+
+        next_state_res.set(next_state);
+    }
+}
+
+#[allow(clippy::complexity)]
+fn on_enter_eval_state(
     mut evaluation: ResMut<Evaluation>,
     mut commands: Commands,
     evaluation_surfaces: Query<Entity, With<EvaluationSurfaceComponent>>,
     evaluation_points: Query<Entity, With<EvaluationPointComponent>>,
+    original_points: Query<Entity, With<OriginalControlPointMarker>>,
     root: Query<Entity, With<RootTransform>>,
     images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    control_points: Query<(&Transform, &RenderPoint)>,
     mut reset_default_curve: EventWriter<ResetDefaultCurveEvent>,
     info: Res<RenderInformation>,
 ) {
     let mut next_surface = None;
-    let mut reset_curve = false;
+    info!("In eval state");
 
-    for _ in reader.read() {
-        if evaluation.can_evaluate_further() {
-            let mut points = Vec::new();
-            for (vec, RenderPoint(y, x)) in control_points {
-                points.push((*y, *x, vec.translation).into());
-            }
+    if let Some(points) = evaluation.start_next_evaluation() {
+        next_surface = Some(points);
+    }
+    // Reset surface
+    reset_default_curve.write(ResetDefaultCurveEvent);
 
-            evaluation.end_evaluation(points);
-
-            if let Some(points) = evaluation.start_next_evaluation() {
-                next_surface = Some(points);
-            }
-        } else {
-            let mut points = Vec::new();
-            for (vec, RenderPoint(y, x)) in control_points {
-                points.push((*y, *x, vec.translation).into());
-            }
-            evaluation.add_reference_surface(points);
-        }
-
-        reset_curve = true;
+    for surface in evaluation_surfaces {
+        let _ = commands.get_entity(surface).map(|mut e| e.despawn());
     }
 
-    if reset_curve {
-        reset_default_curve.write(ResetDefaultCurveEvent);
-
-        for surface in evaluation_surfaces {
-            let _ = commands.get_entity(surface).map(|mut e| e.despawn());
-        }
-
-        for point_entity in evaluation_points {
-            let _ = commands.get_entity(point_entity).map(|mut e| e.despawn());
-        }
+    for point_entity in evaluation_points {
+        let _ = commands.get_entity(point_entity).map(|mut e| e.despawn());
     }
 
+    for point_entity in original_points {
+        let _ = commands.get_entity(point_entity).map(|mut e| e.despawn());
+    }
+
+    // Display next surface, if present
     if let Some(points) = next_surface {
         let root = root
             .single()
@@ -400,11 +434,67 @@ pub fn handle_next_eval_event(
                         Mesh3d(small_sphere.clone()),
                         MeshMaterial3d(light_red.clone()),
                         EvaluationPointComponent,
+                        Visibility::Inherited,
                         Snappable,
                     ));
                 }
             }
         }
+
+        for points in points {
+            for p in points {
+                commands.spawn((
+                    ChildOf(root),
+                    Transform::from_translation(Vec3::from(p)),
+                    Mesh3d(small_sphere.clone()),
+                    MeshMaterial3d(light_red.clone()),
+                    OriginalControlPointMarker,
+                    Visibility::Hidden,
+                ));
+            }
+        }
+    }
+}
+
+#[allow(clippy::complexity)]
+fn on_enter_result_state(
+    mut evaluation: ResMut<Evaluation>,
+    mut evaluation_points: Query<
+        &mut Visibility,
+        (
+            With<EvaluationPointComponent>,
+            Without<OriginalControlPointMarker>,
+        ),
+    >,
+    mut original_points: Query<
+        &mut Visibility,
+        (
+            With<OriginalControlPointMarker>,
+            Without<EvaluationPointComponent>,
+        ),
+    >,
+    control_points: Query<(&Transform, &RenderPoint)>,
+    mut next_state_res: ResMut<NextState<EvaluationFlowState>>,
+) {
+    info!("In result state");
+    let mut points = Vec::new();
+    for (vec, RenderPoint(y, x)) in control_points {
+        points.push((*y, *x, vec.translation).into());
+    }
+
+    if evaluation.can_evaluate_further() {
+        evaluation.end_evaluation(points);
+    } else {
+        evaluation.add_reference_surface(points);
+        next_state_res.set(EvaluationFlowState::Eval);
+    }
+
+    for mut point_entity in &mut evaluation_points {
+        *point_entity = Visibility::Hidden;
+    }
+
+    for mut point_entity in &mut original_points {
+        *point_entity = Visibility::Inherited;
     }
 }
 
@@ -418,8 +508,12 @@ impl Plugin for EvaluationPlugin {
                 .expect("This must be here, in order to start evaluation"),
         );
 
-        app.add_systems(Last, handle_next_eval_event);
+        app.add_systems(OnEnter(EvaluationFlowState::Eval), on_enter_eval_state);
+        app.add_systems(OnEnter(EvaluationFlowState::Result), on_enter_result_state);
+        app.add_systems(Last, handle_state_change_event);
 
         app.add_event::<NextEvaluationEvent>();
+
+        app.insert_state(EvaluationFlowState::default());
     }
 }
