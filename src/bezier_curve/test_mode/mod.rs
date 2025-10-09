@@ -11,7 +11,7 @@ use bevy::{ecs::resource::Resource, math::Vec3};
 use bevy_lunex::prelude::{Text3d, Text3dStyling, TextAlign, TextAtlas, Weight};
 #[cfg(feature = "vr_enable")]
 use bevy_xr_utils::tracking_utils::XrTrackedView;
-use chrono::{Datelike, Timelike, Utc};
+use chrono::{Datelike, Timelike};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::path::Path;
@@ -283,7 +283,7 @@ impl Evaluation {
         // consolidate evaluations
         std::fs::create_dir_all(path.as_path())?;
 
-        let timestamp = Utc::now();
+        let timestamp = chrono::Local::now();
         path.push(format!(
             "{}_{}_{}_{}_{}.json",
             timestamp.year(),
