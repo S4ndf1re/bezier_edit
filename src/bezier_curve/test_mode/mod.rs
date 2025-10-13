@@ -612,7 +612,9 @@ fn follow_camera(
         ),
     >,
 ) {
-    if let Ok(camera) = camera.single() {
+    if let Ok(camera) = camera.single()
+        && let Ok(root) = root.single()
+    {
         for (mut text, global_text) in texts.iter_mut() {
             let diff = global_text.translation() - camera.translation();
             let diff = root.compute_affine().inverse().transform_vector3(diff);

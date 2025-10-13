@@ -49,6 +49,7 @@ struct MoveMarker {
     current_position: Vec3,
     actual_position: Vec3,
     timer: Option<Timer>,
+    hover_by: HoveredBy,
 }
 
 #[derive(Component)]
@@ -444,8 +445,10 @@ fn handle_input_grab(
 
             picking_state.set_dragging(false, &hover_by);
 
-            for (_, _, entity) in moved_marked_query.iter() {
-                let _ = commands.get_entity(entity).map(|mut e| e.despawn());
+            for (_, marker, entity) in moved_marked_query.iter() {
+                if marker.hover_by == hover_by {
+                    let _ = commands.get_entity(entity).map(|mut e| e.despawn());
+                }
             }
         } else if current_state
             && pointer_state.is_grabbing(&hover_by)
@@ -522,6 +525,7 @@ fn handle_input_grab(
                             current_position: tracked.0.transform_point(dist),
                             actual_position: transform.translation(),
                             timer: None,
+                            hover_by: hover_by,
                         },
                     ));
 
