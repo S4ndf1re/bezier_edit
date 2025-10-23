@@ -1,9 +1,13 @@
 use crate::bezier_curve::bezier_curve_renderer::{MinusModeEvent, PlusModeEvent, hover_3d};
+use crate::bezier_curve::components::ControlState;
+use crate::bezier_curve::curvature_display_mode::CurvatureDisplayMode;
+use crate::bezier_curve::render_info::SurfaceMeshMode;
 use crate::bezier_curve::test_mode::NextEvaluationEvent;
 use crate::picking3d::events::HoveredBy;
 use crate::picking3d::picking_3d::{self, Picking3dTranslation};
 use crate::translation_control::translation_controller::{
-    SetPrismMode, ToggleRobotVisibilityEvent, handle_set_prism_mode, handle_toggle_snapping,
+    SetPrismMode, SnappingBehaviour, ToggleRobotVisibilityEvent, handle_set_prism_mode,
+    handle_toggle_snapping,
 };
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
 use crate::vr_control::{AimLeft, AimRight};
@@ -48,6 +52,26 @@ struct GltfAssets {
 
 #[derive(Component, Reflect)]
 #[reflect(Component)]
+struct PencilModeOn;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct CameraModeOn;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct TrashcanModeOn;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct PlusModeOn;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct MinusModeOn;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct TrashcanMode;
 
 #[derive(Component, Reflect)]
@@ -56,7 +80,31 @@ struct MagnetMode;
 
 #[derive(Component, Reflect)]
 #[reflect(Component)]
+struct MagnetModeOn;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct MagnetModeOff;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct CurvatureMode;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct CurvatureModeU;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct CurvatureModeV;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct CurvatureModeUV;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct CurvatureModeNone;
 
 #[derive(Component, Reflect)]
 #[reflect(Component)]
@@ -65,6 +113,14 @@ struct CameraMode;
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 struct BlocksMode;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct BlocksModeOn;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct BlocksModeOff;
 
 #[derive(Component, Reflect)]
 #[reflect(Component)]
@@ -89,6 +145,14 @@ struct StepMode;
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 struct PrismMode;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct PrismModeOn;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct PrismModeOff;
 
 #[derive(Component, Reflect)]
 #[reflect(Component)]
@@ -117,6 +181,14 @@ struct MM10;
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 struct GizmoMode;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct GizmoModeOn;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct GizmoModeOff;
 
 #[derive(Component)]
 pub struct VrMenuRoot;
@@ -251,6 +323,27 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
         *root
     };
 
+    let current_mode = {
+        world
+            .get_resource::<State<ControlState>>()
+            .map(|s| **s)
+            .expect("Must be present")
+    };
+
+    let translation_state = {
+        world
+            .get_resource::<TranslationControllerState>()
+            .cloned()
+            .expect("Must be present")
+    };
+
+    let render_info = {
+        world
+            .get_resource::<RenderInformation>()
+            .cloned()
+            .expect("Must be present")
+    };
+
     // if components.contains(&world.component_id::<MagnetMode>().unwrap())
     //     && translation_state.curve_snapping == SnappingBehaviour::NoSnap
     // {
@@ -313,6 +406,17 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
                 );
         }
 
+        if components.contains(&world.component_id::<MagnetModeOn>().unwrap())
+            && translation_state.curve_snapping != SnappingBehaviour::Snap
+        {
+            entities_to_hide.push(child);
+        }
+        if components.contains(&world.component_id::<MagnetModeOff>().unwrap())
+            && translation_state.curve_snapping != SnappingBehaviour::NoSnap
+        {
+            entities_to_hide.push(child);
+        }
+
         if components.contains(&world.component_id::<TrashcanMode>().unwrap()) {
             world
                 .commands()
@@ -340,11 +444,13 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
                 );
         }
 
+        if components.contains(&world.component_id::<TrashcanModeOn>().unwrap())
+            && current_mode != ControlState::Delete
+        {
+            entities_to_hide.push(child);
+        }
+
         if components.contains(&world.component_id::<CurvatureMode>().unwrap()) {
-            let scale = {
-                let info = world.resource_mut::<RenderInformation>();
-                info.scale
-            };
             let mesh = {
                 let mut meshes = world.resource_mut::<Assets<Mesh>>();
                 meshes.add(Sphere::new(1.0))
@@ -401,6 +507,26 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
                     },
                 );
         }
+        if components.contains(&world.component_id::<CurvatureModeU>().unwrap())
+            && render_info.curvature_mode != CurvatureDisplayMode::U
+        {
+            entities_to_hide.push(child);
+        }
+        if components.contains(&world.component_id::<CurvatureModeV>().unwrap())
+            && render_info.curvature_mode != CurvatureDisplayMode::V
+        {
+            entities_to_hide.push(child);
+        }
+        if components.contains(&world.component_id::<CurvatureModeUV>().unwrap())
+            && render_info.curvature_mode != CurvatureDisplayMode::Both
+        {
+            entities_to_hide.push(child);
+        }
+        if components.contains(&world.component_id::<CurvatureModeNone>().unwrap())
+            && render_info.curvature_mode != CurvatureDisplayMode::None
+        {
+            entities_to_hide.push(child);
+        }
 
         if components.contains(&world.component_id::<CameraMode>().unwrap()) {
             world
@@ -427,6 +553,12 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
                         respawn_menu.write(RedrawMenuEvent(root));
                     },
                 );
+        }
+
+        if components.contains(&world.component_id::<CameraModeOn>().unwrap())
+            && current_mode != ControlState::CreateOrthoCamera
+        {
+            entities_to_hide.push(child);
         }
 
         if components.contains(&world.component_id::<CheckmarkMode>().unwrap()) {
@@ -483,6 +615,12 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
                 );
         }
 
+        if components.contains(&world.component_id::<PencilModeOn>().unwrap())
+            && current_mode != ControlState::CreateCurve
+        {
+            entities_to_hide.push(child);
+        }
+
         if components.contains(&world.component_id::<BlocksMode>().unwrap()) {
             world
                 .commands()
@@ -514,6 +652,17 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
                 );
         }
 
+        if components.contains(&world.component_id::<BlocksModeOn>().unwrap())
+            && render_info.surface_mesh_mode != SurfaceMeshMode::Mesh
+        {
+            entities_to_hide.push(child)
+        }
+        if components.contains(&world.component_id::<BlocksModeOff>().unwrap())
+            && render_info.surface_mesh_mode != SurfaceMeshMode::Lines
+        {
+            entities_to_hide.push(child)
+        }
+
         if components.contains(&world.component_id::<MinusMode>().unwrap()) {
             world
                 .commands()
@@ -539,6 +688,12 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
                         respawn_menu.write(RedrawMenuEvent(root));
                     },
                 );
+        }
+
+        if components.contains(&world.component_id::<MinusModeOn>().unwrap())
+            && current_mode != ControlState::Minus
+        {
+            entities_to_hide.push(child);
         }
 
         if components.contains(&world.component_id::<PlusMode>().unwrap()) {
@@ -568,6 +723,12 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
                 );
         }
 
+        if components.contains(&world.component_id::<PlusModeOn>().unwrap())
+            && current_mode != ControlState::Plus
+        {
+            entities_to_hide.push(child);
+        }
+
         if components.contains(&world.component_id::<PrismMode>().unwrap()) {
             world
                 .commands()
@@ -595,6 +756,17 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
                         respawn_menu.write(RedrawMenuEvent(root));
                     },
                 );
+        }
+
+        if components.contains(&world.component_id::<PrismModeOn>().unwrap())
+            && translation_state.prism_mode != translation_controller::PrismMode::Prism
+        {
+            entities_to_hide.push(child);
+        }
+        if components.contains(&world.component_id::<PrismModeOff>().unwrap())
+            && translation_state.prism_mode != translation_controller::PrismMode::None
+        {
+            entities_to_hide.push(child);
         }
 
         if components.contains(&world.component_id::<EvaluationMode>().unwrap()) {
@@ -670,10 +842,6 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
         }
 
         if components.contains(&world.component_id::<GizmoMode>().unwrap()) {
-            let scale = {
-                let info = world.resource_mut::<RenderInformation>();
-                info.scale
-            };
             let mesh = {
                 let mut meshes = world.resource_mut::<Assets<Mesh>>();
                 meshes.add(Sphere::new(1.0))
@@ -721,6 +889,17 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
                         respawn_menu.write(RedrawMenuEvent(root));
                     },
                 );
+        }
+
+        if components.contains(&world.component_id::<GizmoModeOn>().unwrap())
+            && !translation_state.invisible_robots
+        {
+            entities_to_hide.push(child);
+        }
+        if components.contains(&world.component_id::<GizmoModeOff>().unwrap())
+            && translation_state.invisible_robots
+        {
+            entities_to_hide.push(child);
         }
     }
 
@@ -890,5 +1069,29 @@ impl Plugin for VrMenuPlugin {
         app.register_type::<MM5>();
         app.register_type::<MM10>();
         app.register_type::<GizmoMode>();
+
+        // Status types
+        app.register_type::<PencilModeOn>();
+        app.register_type::<CameraModeOn>();
+        app.register_type::<TrashcanModeOn>();
+        app.register_type::<PlusModeOn>();
+        app.register_type::<MinusModeOn>();
+
+        app.register_type::<MagnetModeOn>();
+        app.register_type::<MagnetModeOff>();
+
+        app.register_type::<CurvatureModeU>();
+        app.register_type::<CurvatureModeV>();
+        app.register_type::<CurvatureModeUV>();
+        app.register_type::<CurvatureModeNone>();
+
+        app.register_type::<PrismModeOn>();
+        app.register_type::<PrismModeOff>();
+
+        app.register_type::<GizmoModeOn>();
+        app.register_type::<GizmoModeOff>();
+
+        app.register_type::<BlocksModeOn>();
+        app.register_type::<BlocksModeOff>();
     }
 }

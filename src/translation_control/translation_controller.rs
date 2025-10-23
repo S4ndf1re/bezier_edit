@@ -152,7 +152,7 @@ impl PrismMode {
     }
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Clone)]
 pub struct TranslationControllerState {
     pub curve_snapping: SnappingBehaviour,
     pub step_mode: StepMode,

@@ -88,7 +88,7 @@ pub enum UVEither {
     V(f64),
 }
 
-#[derive(Resource)]
+#[derive(Resource, Clone)]
 pub struct RenderInformation {
     pub scale: f32,
     pub height: f32,
