@@ -12,6 +12,7 @@ pub enum ControlState {
     CreateOrthoCamera,
     Minus,
     Plus,
+    Align,
 }
 
 #[derive(Component)]

@@ -1,0 +1,11 @@
+Model Information:
+* title:	3D Icon: Home
+* source:	https://sketchfab.com/3d-models/3d-icon-home-cdd3391779dc4c0098bce5b0d7c0699b
+* author:	aldo.rivaldi (https://sketchfab.com/aldo.rivaldi)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "3D Icon: Home" (https://sketchfab.com/3d-models/3d-icon-home-cdd3391779dc4c0098bce5b0d7c0699b) by aldo.rivaldi (https://sketchfab.com/aldo.rivaldi) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

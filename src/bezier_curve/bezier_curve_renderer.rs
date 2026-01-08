@@ -32,6 +32,10 @@ use super::util::{
     SurfaceRenderMode, compute_point_by_params, create_mesh_from_control_points, curvature_to_color,
 };
 use crate::bezier_curve::EntityDeletedEvent;
+use crate::bezier_curve::align_mode::{
+    RecreateAlignmentChildren, create_alignment_sphere, delete_alignment_sphere,
+    update_cross_bridge,
+};
 use crate::bezier_curve::helper_curves::{
     AddPointToCurveEvent, RemovePointFromCurveEvent, add_point_to_curve_handler,
     remove_point_from_curve_handler, update_sphere_positions,
@@ -41,7 +45,7 @@ use crate::bezier_curve::inspector::{
 };
 use crate::custom_shapes::parallelogram::Parallelogram2d;
 use crate::history::plugin::HistoryUndoEvent;
-use crate::nurbs::bezier_plane::{ToControlPoints2D, eval_2d_bezier_curves};
+use crate::nurbs::bezier_plane::ToControlPoints2D;
 use crate::nurbs::parametric::Parametric;
 use crate::picking3d::events::{HoveredBy, Pointer3d};
 use crate::picking3d::picking_3d::Picking3dInteractable;
@@ -116,6 +120,9 @@ pub struct MinusModeEvent;
 
 #[derive(Event)]
 pub struct PlusModeEvent;
+
+#[derive(Event)]
+pub struct AlignModeEvent;
 
 pub fn generic_on_despawn_trigger(mut world: DeferredWorld, context: HookContext) {
     let mut writer = world.resource_mut::<Events<EntityDeletedEvent>>();
@@ -206,6 +213,18 @@ fn handle_plus_mode_event(
     reader.clear();
 
     next_state.set(ControlState::Plus);
+}
+
+fn handle_align_mode_event(
+    mut reader: EventReader<AlignModeEvent>,
+    mut next_state: ResMut<NextState<ControlState>>,
+) {
+    if reader.is_empty() {
+        return;
+    }
+    reader.clear();
+
+    next_state.set(ControlState::Align);
 }
 
 fn handle_end_mode(
@@ -840,6 +859,7 @@ impl Plugin for BezierRenderPlugin {
                 handle_delete_mode_event.run_if(in_state(ControlState::Main)),
                 handle_minus_mode_event.run_if(in_state(ControlState::Main)),
                 handle_plus_mode_event.run_if(in_state(ControlState::Main)),
+                handle_align_mode_event.run_if(in_state(ControlState::Main)),
                 create_camera_on_click.run_if(in_state(ControlState::CreateOrthoCamera)),
                 #[cfg(feature = "vr_enable")]
                 create_camera_on_click3d.run_if(in_state(ControlState::CreateOrthoCamera)),
@@ -849,6 +869,7 @@ impl Plugin for BezierRenderPlugin {
                         .or(in_state(ControlState::Delete))
                         .or(in_state(ControlState::Minus))
                         .or(in_state(ControlState::Plus))
+                        .or(in_state(ControlState::Align))
                         .or(in_state(ControlState::CreateOrthoCamera)),
                 ),
             ),
@@ -857,6 +878,14 @@ impl Plugin for BezierRenderPlugin {
         // Systems for snapping curves creation
         app.add_systems(OnEnter(ControlState::CreateCurve), enter_create_curve_mode);
         app.add_systems(OnExit(ControlState::CreateCurve), commit_curve);
+
+        // Align Mode Enter and Exit, and Updates
+        app.add_systems(OnEnter(ControlState::Align), create_alignment_sphere);
+        app.add_systems(OnExit(ControlState::Align), delete_alignment_sphere);
+        app.add_systems(
+            Update,
+            update_cross_bridge.run_if(in_state(ControlState::Align)),
+        );
 
         #[cfg(feature = "vr_enable")]
         app.add_systems(
@@ -928,6 +957,8 @@ impl Plugin for BezierRenderPlugin {
         app.add_event::<RemovePointFromCurveEvent>();
         app.add_event::<AddPointToCurveEvent>();
         app.add_event::<UpdateSurfaceInspectorEvent>();
+        app.add_event::<AlignModeEvent>();
+        app.add_event::<RecreateAlignmentChildren>();
         app.init_state::<ControlState>();
 
         app.add_plugins(EvaluationPlugin);

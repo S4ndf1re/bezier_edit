@@ -2135,11 +2135,11 @@ pub struct TranslationController;
 
 impl Plugin for TranslationController {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, show_transitional_controls);
         app.add_systems(
             PostUpdate,
             (
-                register_deletes,
+                show_transitional_controls,
+                register_deletes.before(show_transitional_controls),
                 handle_toggle_snapping.run_if(on_event::<ToggleSnappingBehaviour>),
                 handle_set_prism_mode.run_if(on_event::<SetPrismMode>),
                 update_snapped_points,

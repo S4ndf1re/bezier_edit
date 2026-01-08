@@ -1,0 +1,11 @@
+Model Information:
+* title:	VRKSpace-Tag: Smarthome
+* source:	https://sketchfab.com/3d-models/vrkspace-tag-smarthome-77b50892dcf34a5396b4e5329bdd43f3
+* author:	cybergaukler (https://sketchfab.com/craylon)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "VRKSpace-Tag: Smarthome" (https://sketchfab.com/3d-models/vrkspace-tag-smarthome-77b50892dcf34a5396b4e5329bdd43f3) by cybergaukler (https://sketchfab.com/craylon) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

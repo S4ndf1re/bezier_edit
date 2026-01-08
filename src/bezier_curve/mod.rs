@@ -1,3 +1,4 @@
+pub mod align_mode;
 pub mod bezier_curve_renderer;
 pub mod bridges;
 pub mod components;

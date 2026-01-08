@@ -1,4 +1,6 @@
-use crate::bezier_curve::bezier_curve_renderer::{MinusModeEvent, PlusModeEvent, hover_3d};
+use crate::bezier_curve::bezier_curve_renderer::{
+    AlignModeEvent, MinusModeEvent, PlusModeEvent, hover_3d,
+};
 use crate::bezier_curve::components::ControlState;
 use crate::bezier_curve::curvature_display_mode::CurvatureDisplayMode;
 use crate::bezier_curve::render_info::SurfaceMeshMode;
@@ -192,6 +194,14 @@ struct GizmoModeOff;
 
 #[derive(Component)]
 pub struct VrMenuRoot;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+pub struct AlignRoot;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+pub struct AlignRootOn;
 
 #[derive(Resource, Default)]
 struct VrMenuState {
@@ -841,6 +851,39 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
             }
         }
 
+        if components.contains(&world.component_id::<AlignRoot>().unwrap()) {
+            world
+                .commands()
+                .entity(child)
+                .observe(handle_hover_out)
+                .observe(handle_hover_out3d)
+                .observe(handle_hover_over)
+                .observe(handle_hover_over3d)
+                .observe(hover_3d)
+                .observe(
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut align_mode: EventWriter<AlignModeEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        align_mode.write(AlignModeEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                )
+                .observe(
+                    move |_: Trigger<Pointer<Click>>,
+                          mut align_mode: EventWriter<AlignModeEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        align_mode.write(AlignModeEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                );
+        }
+
+        if components.contains(&world.component_id::<AlignRootOn>().unwrap())
+            && current_mode != ControlState::Align
+        {
+            entities_to_hide.push(child);
+        }
+
         if components.contains(&world.component_id::<GizmoMode>().unwrap()) {
             let mesh = {
                 let mut meshes = world.resource_mut::<Assets<Mesh>>();
@@ -1093,5 +1136,8 @@ impl Plugin for VrMenuPlugin {
 
         app.register_type::<BlocksModeOn>();
         app.register_type::<BlocksModeOff>();
+
+        app.register_type::<AlignRoot>();
+        app.register_type::<AlignRootOn>();
     }
 }
