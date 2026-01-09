@@ -1,20 +1,13 @@
 use crate::{
     RootTransform,
-    bezier_curve::{bridges::Bridge, render_info::RenderInformation},
+    bezier_curve::render_info::RenderInformation,
     picking3d::{self, events::Pointer3d, picking_3d::Picking3dInteractable},
-    translation_control::{
-        proximity_detector::Snappable,
-        translation_controller::{
-            CantSnapToCurve, CantSnapToEntities, EnableTranslationControl,
-            EnableTranslationControlType, MovedEntityEvent, SnappingBehaviour, draw_arrow,
-        },
+    translation_control::translation_controller::{
+        CantSnapToCurve, CantSnapToEntities, EnableTranslationControl,
+        EnableTranslationControlType, MovedEntityEvent,
     },
 };
-use bevy::{
-    color::palettes::tailwind::{BLUE_600, BLUE_800, GREEN_600, GREEN_800, RED_600, RED_800},
-    math::VectorSpace,
-    prelude::*,
-};
+use bevy::prelude::*;
 
 #[derive(Component)]
 pub struct AlignmentCenterMarker;

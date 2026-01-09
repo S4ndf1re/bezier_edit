@@ -5,7 +5,7 @@ use crate::{
     MainCamera, RootTransform,
     custom_shapes::parallelogram::Parallelogram2d,
     nurbs::{
-        bezier_plane::{ControlPoints2D, ToControlPoints2D, eval_2d_bezier_curves},
+        bezier_plane::{ControlPoints2D, ToControlPoints2D},
         parametric::{MinDistanceToPoint, Parametric},
         point::Point,
     },
