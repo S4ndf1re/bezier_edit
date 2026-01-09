@@ -7,8 +7,7 @@ use crate::{
     translation_control::{
         enable_gizmo, enable_gizmo3d,
         translation_controller::{
-            CantSnapToCurve, CantSnapToEntities, EnableTranslationControl, MovedEntityEvent,
-            SnappedPoint,
+            CantSnapToCurve, CantSnapToEntities, EnableTranslationControl, EnableTranslationControlType, MovedEntityEvent, SnappedPoint
         },
     },
     util::update_material_on,
@@ -345,8 +344,8 @@ impl<'w, 's> BridgeSpawner<'w, 's> {
                             Picking3dInteractable::default(),
                             CantSnapToEntities::All,
                         ))
-                        .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
-                        .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
+                        .observe(enable_gizmo(EnableTranslationControl::new_with_root(EnableTranslationControlType::OnlyTranslation)))
+                        .observe(enable_gizmo3d(EnableTranslationControl::new_with_root(EnableTranslationControlType::OnlyTranslation)))
                         .observe(update_material_on::<
                             Pointer3d<crate::picking3d::events::MoveIn>,
                         >(material_hover.clone()))
@@ -416,8 +415,8 @@ impl<'w, 's> BridgeSpawner<'w, 's> {
                             CantSnapToEntities::All,
                             CantSnapToCurve::Single(parent),
                         ))
-                        .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
-                        .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
+                        .observe(enable_gizmo(EnableTranslationControl::new_with_root(EnableTranslationControlType::OnlyTranslation)))
+                        .observe(enable_gizmo3d(EnableTranslationControl::new_with_root(EnableTranslationControlType::OnlyTranslation)))
                         .observe(update_material_on::<
                             Pointer3d<crate::picking3d::events::MoveIn>,
                         >(material_hover.clone()))
@@ -512,8 +511,8 @@ impl<'w, 's> BridgeSpawner<'w, 's> {
                         CantSnapToCurve::Single(parent),
                         CantSnapToEntities::All,
                     ))
-                    .observe(enable_gizmo(EnableTranslationControl::OnlyTranslation))
-                    .observe(enable_gizmo3d(EnableTranslationControl::OnlyTranslation))
+                    .observe(enable_gizmo(EnableTranslationControl::new_with_root(EnableTranslationControlType::OnlyTranslation)))
+                    .observe(enable_gizmo3d(EnableTranslationControl::new_with_root(EnableTranslationControlType::OnlyTranslation)))
                     .observe(update_material_on::<
                         Pointer3d<crate::picking3d::events::MoveIn>,
                     >(material_hover.clone()))

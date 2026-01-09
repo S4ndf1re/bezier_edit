@@ -63,6 +63,7 @@ fn setup(mut commands: Commands) {
         MainCamera,
     ));
 
+
     commands.spawn((
         DirectionalLight {
             shadows_enabled: true,

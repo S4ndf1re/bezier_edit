@@ -72,7 +72,29 @@ impl AssignedShadowMarkers {
 }
 
 #[derive(Component, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Default)]
-pub enum EnableTranslationControl {
+pub struct EnableTranslationControl {
+    type_of: EnableTranslationControlType,
+    use_root: bool,
+}
+
+impl EnableTranslationControl {
+    pub fn new_without_root(type_of: EnableTranslationControlType) -> Self {
+        Self {
+            type_of,
+            use_root: false,
+        }
+    }
+
+    pub fn new_with_root(type_of: EnableTranslationControlType) -> Self {
+        Self {
+            type_of,
+            use_root: true,
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Default)]
+pub enum EnableTranslationControlType {
     #[default]
     OnlyTranslation,
     WithRotation,
@@ -94,7 +116,7 @@ pub struct OnPlaneMovableMarker {
 pub struct SnappedArrow;
 
 #[derive(Component)]
-pub struct ControlParent(pub Entity);
+pub struct ControlParent(pub Entity, bool);
 
 #[derive(Component)]
 pub struct ControlSphere;
@@ -500,7 +522,7 @@ fn show_transitional_controls(
 
         commands.get_entity(entity).unwrap().with_children(|cmd| {
             let mut parent = cmd.spawn((
-                ControlParent(entity),
+                ControlParent(entity, enabled_control.use_root),
                 Name::new("Control Parent"),
                 transform,
                 if state.invisible_robots {
@@ -510,8 +532,8 @@ fn show_transitional_controls(
                 },
             ));
             parent.with_children(|parent| {
-                if *enabled_control == EnableTranslationControl::OnlyTranslation
-                    || *enabled_control == EnableTranslationControl::WithRotation
+                if enabled_control.type_of == EnableTranslationControlType::OnlyTranslation
+                    || enabled_control.type_of == EnableTranslationControlType::WithRotation
                 {
                     parent
                         .spawn((
@@ -564,7 +586,7 @@ fn show_transitional_controls(
                             .observe(drag_end_trigger_redraw)
                             .observe(drag_end3d_trigger_redraw);
 
-                        if *enabled_control == EnableTranslationControl::WithRotation {
+                        if enabled_control.type_of == EnableTranslationControlType::WithRotation {
                             parent
                                 .spawn((
                                     Transform::from_xyz(0.0, 0.0, 0.0)
@@ -622,7 +644,8 @@ fn show_transitional_controls(
                             .observe(drag_end_trigger_redraw)
                             .observe(drag_end3d_trigger_redraw);
                     }
-                } else if let EnableTranslationControl::OnlyOnPlane(plane_entity) = *enabled_control
+                } else if let EnableTranslationControlType::OnlyOnPlane(plane_entity) =
+                    enabled_control.type_of
                     && let Ok(plane_transform) = transforms.get(plane_entity)
                 {
                     let up_direction = ControlDirection::new(
@@ -746,37 +769,40 @@ fn drag_start(
 
     let scale = scale.scale;
 
-    commands
-        .spawn((
-            ShadowMarker(control_parent.0),
-            start_transform,
-            Visibility::default(),
-            ChildOf(root),
-            Snappable,
-        ))
-        .with_children(|parent| {
-            for arrow in arrows.as_ref().iter_arrows() {
-                parent
-                    .spawn((
-                        Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.normalized, Vec3::Y),
-                        Control(arrow.normalized),
-                        Picking3dInteractable::default(),
-                        Visibility::default(),
-                    ))
-                    .with_children(|parent| {
-                        draw_arrow(
-                            parent,
-                            materials.add(arrow.shadow_color),
-                            materials.add(arrow.shadow_color),
-                            &mut meshes,
-                            scale,
-                            true,
-                            Picking3dInteractable::Ignore,
-                            Pickable::IGNORE,
-                        );
-                    });
-            }
-        });
+    let mut entity_commands = commands.spawn((
+        ShadowMarker(control_parent.0),
+        start_transform,
+        Visibility::default(),
+        Snappable,
+    ));
+
+    entity_commands.with_children(|parent| {
+        for arrow in arrows.as_ref().iter_arrows() {
+            parent
+                .spawn((
+                    Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.normalized, Vec3::Y),
+                    Control(arrow.normalized),
+                    Picking3dInteractable::default(),
+                    Visibility::default(),
+                ))
+                .with_children(|parent| {
+                    draw_arrow(
+                        parent,
+                        materials.add(arrow.shadow_color),
+                        materials.add(arrow.shadow_color),
+                        &mut meshes,
+                        scale,
+                        true,
+                        Picking3dInteractable::Ignore,
+                        Pickable::IGNORE,
+                    );
+                });
+        }
+    });
+
+    if control_parent.1 {
+        entity_commands.insert(ChildOf(root));
+    }
 
     // Spawn box
     let diff = Vec3::new(0.0, 0.0, 0.0);
@@ -1195,11 +1221,15 @@ pub fn drag_plane(
 
             let start = mouse_start.get_point(dist);
             let end = mouse_end.get_point(dist);
-            root.single()
-                .unwrap()
-                .affine()
-                .inverse()
-                .transform_vector3(end - start)
+            if control_parent.1 {
+                root.single()
+                    .unwrap()
+                    .affine()
+                    .inverse()
+                    .transform_vector3(end - start)
+            } else {
+                end - start
+            }
         };
 
         let axis = control.0;
@@ -1234,12 +1264,16 @@ pub fn drag_plane3d(
     } else {
         trigger.event.real_delta
     };
-    let diff = root
-        .single()
-        .unwrap()
-        .affine()
-        .inverse()
-        .transform_vector3(diff);
+
+    let diff = if control_parent.1 {
+        root.single()
+            .unwrap()
+            .affine()
+            .inverse()
+            .transform_vector3(diff)
+    } else {
+        diff
+    };
 
     let axis = control.0;
     let translation = axis * diff;
@@ -1280,11 +1314,15 @@ pub fn drag_sphere_controller(
 
             let start = mouse_start.get_point(dist);
             let end = mouse_end.get_point(dist);
-            root.single()
-                .unwrap()
-                .affine()
-                .inverse()
-                .transform_vector3(end - start)
+            if control_parent.1 {
+                root.single()
+                    .unwrap()
+                    .affine()
+                    .inverse()
+                    .transform_vector3(end - start)
+            } else {
+                end - start
+            }
         };
 
         params
@@ -1314,12 +1352,15 @@ pub fn drag_sphere_controller3d(
     } else {
         trigger.event.real_delta
     };
-    let diff = root
-        .single()
-        .unwrap()
-        .affine()
-        .inverse()
-        .transform_vector3(diff);
+    let diff = if control_parent.1 {
+        root.single()
+            .unwrap()
+            .affine()
+            .inverse()
+            .transform_vector3(diff)
+    } else {
+        diff
+    };
 
     params.update_position_drag_universal((parent, control_parent), diff, control_entity);
 }
@@ -1357,11 +1398,15 @@ pub fn drag_controller(
 
             let start = mouse_start.get_point(dist);
             let end = mouse_end.get_point(dist);
-            root.single()
-                .unwrap()
-                .affine()
-                .inverse()
-                .transform_vector3(end - start)
+            if control_parent.1 {
+                root.single()
+                    .unwrap()
+                    .affine()
+                    .inverse()
+                    .transform_vector3(end - start)
+            } else {
+                end - start
+            }
         };
 
         let axis = control.0;
@@ -1397,12 +1442,15 @@ pub fn drag_controller3d(
     } else {
         trigger.event.real_delta
     };
-    let diff = root
-        .single()
-        .unwrap()
-        .affine()
-        .inverse()
-        .transform_vector3(diff);
+    let diff = if control_parent.1 {
+        root.single()
+            .unwrap()
+            .affine()
+            .inverse()
+            .transform_vector3(diff)
+    } else {
+        diff
+    };
 
     let axis = control.0.normalize_or_zero();
     let direction = axis.dot(diff.normalize_or_zero());
@@ -1431,9 +1479,15 @@ fn rotate_start(
         && let Ok(ray) =
             camera.viewport_to_world(camera_transform, trigger.pointer_location.position)
     {
-        let inverse = root.compute_affine().inverse();
-        let new_origin = inverse.transform_point3(ray.origin);
-        let new_direction = inverse.transform_vector3(ray.direction.as_vec3());
+        let (new_origin, new_direction) = if control_parent.1 {
+            let inverse = root.compute_affine().inverse();
+            (
+                inverse.transform_point3(ray.origin),
+                inverse.transform_vector3(ray.direction.as_vec3()),
+            )
+        } else {
+            (ray.origin, ray.direction.as_vec3())
+        };
 
         // Use custom ray implementation
         let ray = crate::nurbs::plane::Ray3d::new(new_origin.into(), new_direction.into());
@@ -1472,7 +1526,11 @@ fn rotate_start3d(
 
     let origin = trigger.event().position;
     let inverse = root.compute_affine().inverse();
-    let new_origin = inverse.transform_point3(origin);
+    let new_origin = if control_parent.1 {
+        inverse.transform_point3(origin)
+    } else {
+        origin
+    };
     let new_direction = -control_rotation.normal;
 
     // Use custom ray implementation
@@ -1586,9 +1644,15 @@ fn rotate_controller(
         && let Ok(ray) =
             camera.viewport_to_world(camera_transform, trigger.pointer_location.position)
     {
-        let inverse = root.compute_affine().inverse();
-        let new_origin = inverse.transform_point3(ray.origin);
-        let new_direction = inverse.transform_vector3(ray.direction.as_vec3());
+        let (new_origin, new_direction) = if control_parent.1 {
+            let inverse = root.compute_affine().inverse();
+            (
+                inverse.transform_point3(ray.origin),
+                inverse.transform_vector3(ray.direction.as_vec3()),
+            )
+        } else {
+            (ray.origin, ray.direction.as_vec3())
+        };
 
         // Use custom ray implementation
         let ray = crate::nurbs::plane::Ray3d::new(new_origin.into(), new_direction.into());
@@ -1687,7 +1751,11 @@ fn rotate_controller3d(
         trigger.event().event.real_current_entity_position
     };
     let inverse = root.compute_affine().inverse();
-    let new_origin = inverse.transform_point3(origin);
+    let new_origin = if control_parent.1 {
+        inverse.transform_point3(origin)
+    } else {
+        origin
+    };
     let new_direction = -control_rotation.normal;
 
     // Use custom ray implementation

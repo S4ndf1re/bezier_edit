@@ -12,7 +12,6 @@ use bevy::{
     },
 };
 
-use crate::bezier_curve::bezier_curve_renderer::hover_3d;
 use crate::{
     RootTransform,
     bezier_curve::{
@@ -28,6 +27,10 @@ use crate::{
     translation_control::{
         enable_gizmo, enable_gizmo3d, translation_controller::EnableTranslationControl,
     },
+};
+use crate::{
+    bezier_curve::bezier_curve_renderer::hover_3d,
+    translation_control::translation_controller::EnableTranslationControlType,
 };
 use crate::{
     picking3d::events::Pointer3d, translation_control::translation_controller::CantSnapToEntities,
@@ -275,8 +278,12 @@ fn handle_enable_ortho_camera(
                     })
                     .observe(handle_disable_ortho_camera)
                     .observe(handle_disable_ortho_camera3d)
-                    .observe(enable_gizmo(EnableTranslationControl::WithRotation))
-                    .observe(enable_gizmo3d(EnableTranslationControl::WithRotation))
+                    .observe(enable_gizmo(EnableTranslationControl::new_with_root(
+                        EnableTranslationControlType::WithRotation,
+                    )))
+                    .observe(enable_gizmo3d(EnableTranslationControl::new_with_root(
+                        EnableTranslationControlType::WithRotation,
+                    )))
                     .observe(hover_3d)
                     .id(),
                 );

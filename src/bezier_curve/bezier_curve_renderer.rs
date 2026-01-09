@@ -53,7 +53,9 @@ use crate::projection::{
     AddBoundingEntityEvent, DisplayIn, UpdateOrthoViews, handle_add_bounding_entity_event,
 };
 use crate::translation_control::proximity_detector::Snappable;
-use crate::translation_control::translation_controller::EnableTranslationControl;
+use crate::translation_control::translation_controller::{
+    EnableTranslationControl, EnableTranslationControlType,
+};
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::util::update_material_on;
 use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
@@ -262,12 +264,9 @@ fn click_on_control_point(
     mut increase_degree: EventWriter<IncreaseDegreeEvent>,
 ) {
     if *state == ControlState::Main {
-        enable_gizmo(EnableTranslationControl::OnlyTranslation)(
-            trigger,
-            commands,
-            enable_translation_control,
-            state,
-        );
+        enable_gizmo(EnableTranslationControl::new_with_root(
+            EnableTranslationControlType::OnlyTranslation,
+        ))(trigger, commands, enable_translation_control, state);
     } else if *state == ControlState::Minus {
         decrease_degree.write(DecreaseDegreeEvent);
     } else if *state == ControlState::Plus {
@@ -284,12 +283,9 @@ fn click_on_control_point3d(
     mut increase_degree: EventWriter<IncreaseDegreeEvent>,
 ) {
     if *state == ControlState::Main {
-        enable_gizmo3d(EnableTranslationControl::OnlyTranslation)(
-            trigger,
-            commands,
-            enable_translation_control,
-            state,
-        );
+        enable_gizmo3d(EnableTranslationControl::new_with_root(
+            EnableTranslationControlType::OnlyTranslation,
+        ))(trigger, commands, enable_translation_control, state);
     } else if *state == ControlState::Minus {
         decrease_degree.write(DecreaseDegreeEvent);
     } else if *state == ControlState::Plus {

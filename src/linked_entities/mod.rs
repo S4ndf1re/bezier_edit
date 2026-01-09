@@ -7,7 +7,6 @@ use bevy::{
 };
 use std::slice::Iter;
 
-use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::{
     nurbs::{parametric::Parametric, plane::Plane3d},
     translation_control::{
@@ -16,6 +15,10 @@ use crate::{
             CantSnapToCurve, EnableTranslationControl, MoveEntityByDeltaEvent, MovedEntityEvent,
         },
     },
+};
+use crate::{
+    picking3d::picking_3d::Picking3dInteractable,
+    translation_control::translation_controller::EnableTranslationControlType,
 };
 
 pub enum ReversePositioningType {
@@ -110,7 +113,9 @@ fn sync_enable_translation_controls(
                         ReversePositioningType::OrthoProjectedOntoPlane(plane) => {
                             commands
                                 .entity(*link)
-                                .insert(EnableTranslationControl::OnlyOnPlane(plane))
+                                .insert(EnableTranslationControl::new_with_root(
+                                    EnableTranslationControlType::OnlyOnPlane(plane),
+                                ))
                                 .insert(CantSnapToCurve::All);
                         }
                         ReversePositioningType::OneToOne(_) => {
@@ -127,7 +132,9 @@ fn sync_enable_translation_controls(
         if let Ok(target) = link_targets.get(added) {
             commands
                 .entity(target.parent)
-                .insert(EnableTranslationControl::OnlyTranslation);
+                .insert(EnableTranslationControl::new_with_root(
+                    EnableTranslationControlType::OnlyTranslation,
+                ));
         }
     }
 
@@ -180,13 +187,21 @@ impl<'w, 's> SpawnLinkedEntities<'w, 's> {
     ) {
         if let Ok((transform, mesh, material)) = self.set.p0().get(entity) {
             let transform_control = match positioning_type {
-                ReversePositioningType::OrthoProjectedOntoPlane(plane) => {
-                    (*transform, EnableTranslationControl::OnlyOnPlane(plane))
-                }
+                ReversePositioningType::OrthoProjectedOntoPlane(plane) => (
+                    *transform,
+                    EnableTranslationControl::new_with_root(
+                        EnableTranslationControlType::OnlyOnPlane(plane),
+                    ),
+                ),
                 ReversePositioningType::OneToOne(offset) => {
                     let mut transform = *transform;
                     transform.translation += offset;
-                    (transform, EnableTranslationControl::OnlyTranslation)
+                    (
+                        transform,
+                        EnableTranslationControl::new_with_root(
+                            EnableTranslationControlType::OnlyTranslation,
+                        ),
+                    )
                 }
             };
 

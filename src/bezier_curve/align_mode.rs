@@ -2,12 +2,17 @@ use crate::{
     RootTransform,
     bezier_curve::{bridges::Bridge, render_info::RenderInformation},
     picking3d::{self, events::Pointer3d, picking_3d::Picking3dInteractable},
-    translation_control::translation_controller::{
-        EnableTranslationControl, MovedEntityEvent, draw_arrow,
+    translation_control::{
+        proximity_detector::Snappable,
+        translation_controller::{
+            CantSnapToCurve, CantSnapToEntities, EnableTranslationControl,
+            EnableTranslationControlType, MovedEntityEvent, SnappingBehaviour, draw_arrow,
+        },
     },
 };
 use bevy::{
     color::palettes::tailwind::{BLUE_600, BLUE_800, GREEN_600, GREEN_800, RED_600, RED_800},
+    math::VectorSpace,
     prelude::*,
 };
 
@@ -27,22 +32,21 @@ pub struct RecreateAlignmentChildren;
 pub struct CrossManipulatorMarker;
 
 #[derive(Component)]
-pub struct CrossOriginMarker;
-
-#[derive(Component)]
-pub struct CrossArrow(Vec3);
+pub struct CrossOriginMarker {
+    actual_origin: Entity,
+}
 
 #[derive(Component)]
 pub struct CrossBridge(Entity, Entity);
 
 pub fn create_alignment_sphere(
     mut commands: Commands,
-    root_transform: Query<&Transform, With<RootTransform>>,
+    root_transform: Query<Entity, With<RootTransform>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     render_info: Res<RenderInformation>,
 ) {
-    if let Ok(root) = root_transform.single() {
+    if let Ok(root_entity) = root_transform.single() {
         let mut mat: StandardMaterial = Color::Srgba(Srgba {
             red: 206.0 / 255.0,
             green: 132.0 / 255.0,
@@ -58,13 +62,18 @@ pub fn create_alignment_sphere(
 
         commands
             .spawn((
-                *root,
+                Transform::default(),
+                ChildOf(root_entity),
                 AlignmentCenterMarker,
                 MeshMaterial3d(mat_handle),
                 Mesh3d(mesh_handle),
                 Picking3dInteractable::default(),
                 EnabledAlignmentMode::Move,
-                EnableTranslationControl::OnlyTranslation,
+                EnableTranslationControl::new_with_root(
+                    EnableTranslationControlType::OnlyTranslation,
+                ),
+                CantSnapToEntities::All,
+                CantSnapToCurve::All,
             ))
             .observe(handle_click_on_alignment)
             .observe(handle_click_on_alignment3d)
@@ -79,7 +88,10 @@ pub fn delete_alignment_sphere(
         &mut Transform,
         (With<RootTransform>, Without<AlignmentCenterMarker>),
     >,
-    spheres: Query<(Entity, &Transform), (With<AlignmentCenterMarker>, Without<RootTransform>)>,
+    spheres: Query<
+        (Entity, &GlobalTransform),
+        (With<AlignmentCenterMarker>, Without<RootTransform>),
+    >,
 ) {
     let Ok(mut root) = root_transform.single_mut() else {
         return;
@@ -90,7 +102,7 @@ pub fn delete_alignment_sphere(
             .get_entity(sphere.0)
             .map(|mut entity| entity.despawn());
 
-        *root = *sphere.1;
+        *root = sphere.1.compute_transform();
     }
 }
 
@@ -149,7 +161,9 @@ fn handle_rebuild(
         if let Ok(mut entity_cmds) = commands.get_entity(trigger.target()) {
             match alignment {
                 EnabledAlignmentMode::Move => {
-                    entity_cmds.insert(EnableTranslationControl::OnlyTranslation);
+                    entity_cmds.insert(EnableTranslationControl::new_with_root(
+                        EnableTranslationControlType::OnlyTranslation,
+                    ));
                 }
                 EnabledAlignmentMode::Rotate => {
                     entity_cmds.remove::<EnableTranslationControl>();
@@ -170,13 +184,18 @@ fn handle_rebuild(
                                         .spawn((
                                             Name::new("CrossOriginMarker"),
                                             Transform::from_xyz(0.0, 0.0, 1.0),
-                                            CrossOriginMarker,
+                                            CrossOriginMarker {
+                                                actual_origin: actual_origin
+                                                    .expect("must be present"),
+                                            },
                                             Visibility::Inherited,
-                                            EnableTranslationControl::OnlyTranslation,
+                                            CantSnapToEntities::All,
+                                            CantSnapToCurve::All,
+                                            EnableTranslationControl::new_with_root(
+                                                EnableTranslationControlType::OnlyTranslation,
+                                            ),
                                         ))
-                                        .observe(|trigger: Trigger<MovedEntityEvent>| {
-                                            debug!("{}", trigger.delta);
-                                        })
+                                        .observe(handle_moved_trigger)
                                         .id(),
                                 );
 
@@ -227,4 +246,59 @@ pub fn update_cross_bridge(
             mesh3d.0 = mesh;
         }
     }
+}
+
+pub fn handle_moved_trigger(
+    trigger: Trigger<MovedEntityEvent>,
+    child_of: Query<&ChildOf>,
+    mut transforms: Query<&mut Transform>,
+    cross_origin_markers: Query<&CrossOriginMarker>,
+) {
+    let cross_origin_maker_entity = trigger.target();
+
+    let Ok(cross_origin_marker) = cross_origin_markers.get(trigger.target()) else {
+        return;
+    };
+    let Ok(cross_manipulator_marker) = child_of.get(cross_origin_maker_entity).map(|e| e.parent())
+    else {
+        return;
+    };
+    let Ok(alignment_manipulator) = child_of.get(cross_manipulator_marker).map(|e| e.parent())
+    else {
+        return;
+    };
+
+    let delta = trigger.delta;
+    let mut origin = Vec3::ZERO;
+    let mut old_pos = Vec3::ZERO;
+    let mut new_pos = Vec3::ZERO;
+
+    let _ = transforms
+        .get_mut(cross_origin_maker_entity)
+        .map(|mut trans| {
+            trans.translation -= delta; // Reset transform
+            old_pos = trans.translation;
+            new_pos = trans.translation + delta;
+            trans.translation.z += delta.z;
+        });
+
+    let _ = transforms
+        .get(cross_origin_marker.actual_origin)
+        .map(|trans| {
+            origin = trans.translation;
+        });
+
+    let _ = transforms.get_mut(alignment_manipulator).map(|mut trans| {
+        let diff_old_pos = old_pos - origin;
+        let diff_new_pos = new_pos - origin;
+
+        let angle = diff_old_pos.angle_between(diff_new_pos);
+        let normal = diff_old_pos.cross(diff_new_pos).normalize_or_zero();
+        info!("old: {origin}, new: {new_pos}");
+        info!("diff_old: {diff_old_pos}, diff_new: {diff_new_pos}");
+        info!("angle: {angle}, normal: {normal}");
+        if !angle.is_nan() {
+            trans.rotation *= Quat::from_axis_angle(normal, angle);
+        }
+    });
 }

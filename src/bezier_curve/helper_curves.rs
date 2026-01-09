@@ -7,7 +7,9 @@ use crate::bezier_curve::bridges::BridgeDespawner;
 use crate::nurbs::bezier::{de_casteljau, increase_degree};
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::projection::{AddBoundingEntityEvent, BoundingEntitiesManager, DisplayIn};
-use crate::translation_control::translation_controller::CantSnapToCurve;
+use crate::translation_control::translation_controller::{
+    CantSnapToCurve, EnableTranslationControlType,
+};
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 use crate::vr_menu::VrMenuRoot;
 use crate::{MainCamera, picking3d};
@@ -211,9 +213,9 @@ fn handle_click_on_curve_point3d(
     mut add_point_writer: EventWriter<AddPointToCurveEvent>,
 ) {
     if *state == ControlState::Main {
-        enable_gizmo3d(EnableTranslationControl::OnlyTranslation)(
-            trigger, commands, enabled, state,
-        );
+        enable_gizmo3d(EnableTranslationControl::new_with_root(
+            EnableTranslationControlType::OnlyTranslation,
+        ))(trigger, commands, enabled, state);
     } else if *state == ControlState::Minus
         && let Ok(point) = points.get(trigger.target())
     {
@@ -241,7 +243,9 @@ fn handle_click_on_curve_point(
     mut add_point_writer: EventWriter<AddPointToCurveEvent>,
 ) {
     if *state == ControlState::Main {
-        enable_gizmo(EnableTranslationControl::OnlyTranslation)(trigger, commands, enabled, state);
+        enable_gizmo(EnableTranslationControl::new_with_root(
+            EnableTranslationControlType::OnlyTranslation,
+        ))(trigger, commands, enabled, state);
     } else if *state == ControlState::Minus
         && let Ok(point) = points.get(trigger.target())
     {
