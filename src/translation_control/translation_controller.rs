@@ -34,10 +34,10 @@ pub struct ToggleRobotVisibilityEvent;
 pub struct TemporaryInvisible;
 
 #[derive(Component)]
-pub struct CoordinateTextMarker;
+pub struct CoordinateTextMarker(bool);
 
 #[derive(Component)]
-pub struct DistanceTextMarker;
+pub struct DistanceTextMarker(bool);
 
 #[derive(Event)]
 pub struct MovedEntityEvent {
@@ -75,6 +75,8 @@ impl AssignedShadowMarkers {
 pub struct EnableTranslationControl {
     type_of: EnableTranslationControlType,
     use_root: bool,
+    invert: bool,
+    hide_lines: bool,
 }
 
 impl EnableTranslationControl {
@@ -82,6 +84,8 @@ impl EnableTranslationControl {
         Self {
             type_of,
             use_root: false,
+            invert: false,
+            hide_lines: false,
         }
     }
 
@@ -89,7 +93,19 @@ impl EnableTranslationControl {
         Self {
             type_of,
             use_root: true,
+            invert: false,
+            hide_lines: false,
         }
+    }
+
+    pub fn invert(mut self) -> Self {
+        self.invert = true;
+        self
+    }
+
+    pub fn hide_lines(mut self) -> Self {
+        self.hide_lines = true;
+        self
     }
 }
 
@@ -306,6 +322,7 @@ pub fn draw_arrow(
     is_shadow: bool,
     picking3d: Picking3dInteractable,
     picking: Pickable,
+    hide_lines: bool,
 ) {
     let cuboid = meshes.add(Cuboid::new(0.07 * scale, 0.07 * scale, 0.4 * scale));
     let line = meshes.add(Cuboid::new(0.02 * scale, 0.02 * scale, 0.8 * scale));
@@ -352,7 +369,7 @@ pub fn draw_arrow(
         .observe(update_material_on::<Pointer<Over>>(mat_hover.clone()))
         .observe(update_material_on::<Pointer<Out>>(mat.clone()));
 
-    if !is_shadow {
+    if !is_shadow && !hide_lines {
         child_builder.spawn((
             Transform::default()
                 .with_rotation(Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians())),
@@ -470,6 +487,7 @@ fn show_transitional_controls(
     let scale = scale.scale;
 
     for (entity, enabled_control) in to_enable.iter() {
+        let multiplier: f32 = if enabled_control.invert { -1.0 } else { 1.0 };
         let mut already_created = false;
         for (parent_entity, mut visibility, parent) in already_existing.iter_mut() {
             if parent.0 == entity {
@@ -563,8 +581,9 @@ fn show_transitional_controls(
                     for arrow in arrows.as_ref().iter_arrows() {
                         parent
                             .spawn((
-                                Transform::default().looking_to(arrow.normalized, Vec3::Y),
-                                Control(arrow.normalized),
+                                Transform::default()
+                                    .looking_to(arrow.normalized * multiplier, Vec3::Y),
+                                Control(arrow.normalized * multiplier),
                                 Visibility::default(),
                             ))
                             .with_children(|parent| {
@@ -577,6 +596,7 @@ fn show_transitional_controls(
                                     false,
                                     pickable3d,
                                     pickable.clone(),
+                                    enabled_control.hide_lines
                                 );
                             })
                             .observe(drag_controller)
@@ -621,9 +641,11 @@ fn show_transitional_controls(
                     for plane in arrows.iter_planes() {
                         parent
                             .spawn((
-                                Transform::from_translation((plane.axis / 3.0) * scale)
-                                    .looking_to(plane.normal, Vec3::Y),
-                                Control(plane.axis),
+                                Transform::from_translation(
+                                    (plane.axis / 3.0) * scale * multiplier,
+                                )
+                                .looking_to(plane.normal * multiplier, Vec3::Y),
+                                Control(plane.axis * multiplier),
                                 Visibility::default(),
                             ))
                             .with_children(|parent| {
@@ -679,8 +701,8 @@ fn show_transitional_controls(
                         parent
                             .spawn((
                                 Transform::from_xyz(0.0, 0.0, 0.0)
-                                    .looking_to(arrow.normalized, Vec3::Y),
-                                Control(arrow.normalized),
+                                    .looking_to(arrow.normalized * multiplier, Vec3::Y),
+                                Control(arrow.normalized * multiplier),
                                 Visibility::default(),
                                 OnPlaneMovableMarker {
                                     plane: plane_entity,
@@ -697,6 +719,7 @@ fn show_transitional_controls(
                                     false,
                                     pickable3d,
                                     pickable.clone(),
+                                    enabled_control.hide_lines
                                 );
                             })
                             .observe(drag_controller)
@@ -708,9 +731,9 @@ fn show_transitional_controls(
                     }
                     parent
                         .spawn((
-                            Transform::from_translation((plane.axis / 3.0) * scale)
-                                .looking_to(plane.normal, Vec3::Y),
-                            Control(plane.axis),
+                            Transform::from_translation((plane.axis / 3.0) * multiplier * scale)
+                                .looking_to(plane.normal * multiplier, Vec3::Y),
+                            Control(plane.axis * multiplier),
                             Visibility::default(),
                         ))
                         .with_children(|parent| {
@@ -795,7 +818,8 @@ fn drag_start(
                         true,
                         Picking3dInteractable::Ignore,
                         Pickable::IGNORE,
-                    );
+                        true,
+                   );
                 });
         }
     });
@@ -825,7 +849,7 @@ fn drag_start(
     commands.spawn((
         ChildOf(control_parent.0),
         Transform::from_rotation(start_transform.rotation.inverse()),
-        CoordinateTextMarker,
+        CoordinateTextMarker(control_parent.1),
         Visibility::Inherited,
         children![(
             Transform::from_translation(-camera_forward * 1.0 * scale + Vec3::Y * scale)
@@ -859,7 +883,7 @@ fn drag_start(
     commands.spawn((
         ChildOf(control_parent.0),
         Transform::from_rotation(start_transform.rotation.inverse()),
-        DistanceTextMarker,
+        DistanceTextMarker(control_parent.1),
         Visibility::Inherited,
         children![(
             Transform::from_translation(-camera_forward * 1.0 * scale - Vec3::Y * scale)
@@ -926,36 +950,41 @@ fn drag_start3d(
 
     let scale = scale.scale;
 
-    commands
-        .spawn((
-            ShadowMarker(control_parent.0),
-            start_transform,
-            Visibility::default(),
-            ChildOf(root),
-            Snappable,
-        ))
-        .with_children(|parent| {
-            for arrow in arrows.as_ref().iter_arrows() {
-                parent
-                    .spawn((
-                        Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.normalized, Vec3::Y),
-                        Control(arrow.normalized),
-                        Visibility::default(),
-                    ))
-                    .with_children(|parent| {
-                        draw_arrow(
-                            parent,
-                            materials.add(arrow.shadow_color),
-                            materials.add(arrow.shadow_color),
-                            &mut meshes,
-                            scale,
-                            true,
-                            Picking3dInteractable::Ignore,
-                            Pickable::IGNORE,
-                        );
-                    });
-            }
-        });
+    let mut entity_commands = commands.spawn((
+        ShadowMarker(control_parent.0),
+        start_transform,
+        Visibility::default(),
+        ChildOf(root),
+        Snappable,
+    ));
+
+    entity_commands.with_children(|parent| {
+        for arrow in arrows.as_ref().iter_arrows() {
+            parent
+                .spawn((
+                    Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.normalized, Vec3::Y),
+                    Control(arrow.normalized),
+                    Visibility::default(),
+                ))
+                .with_children(|parent| {
+                    draw_arrow(
+                        parent,
+                        materials.add(arrow.shadow_color),
+                        materials.add(arrow.shadow_color),
+                        &mut meshes,
+                        scale,
+                        true,
+                        Picking3dInteractable::Ignore,
+                        Pickable::IGNORE,
+                        true,
+                    );
+                });
+        }
+    });
+
+    if control_parent.1 {
+        entity_commands.insert(ChildOf(root));
+    }
 
     // Spawn box
     let diff = Vec3::new(0.0, 0.0, 0.0);
@@ -978,7 +1007,7 @@ fn drag_start3d(
     commands.spawn((
         ChildOf(control_parent.0),
         Transform::from_rotation(start_transform.rotation.inverse()),
-        CoordinateTextMarker,
+        CoordinateTextMarker(control_parent.1),
         Visibility::Inherited,
         children![(
             Transform::from_translation(-camera_forward * 1.0 * scale + Vec3::Y * scale)
@@ -1012,7 +1041,7 @@ fn drag_start3d(
     commands.spawn((
         ChildOf(control_parent.0),
         Transform::from_rotation(start_transform.rotation.inverse()),
-        DistanceTextMarker,
+        DistanceTextMarker(control_parent.1),
         Visibility::Inherited,
         children![(
             Transform::from_translation(-camera_forward * 1.0 * scale - Vec3::Y * scale)
@@ -1944,12 +1973,12 @@ fn update_texts(
     mut transforms: Query<&mut Transform>,
     root: Query<Entity, With<RootTransform>>,
     coordinate_texts: Query<
-        (Entity, &ChildOf, &Children),
-        (With<CoordinateTextMarker>, Without<DistanceTextMarker>),
+        (Entity, &ChildOf, &Children, &CoordinateTextMarker),
+        Without<DistanceTextMarker>,
     >,
     distance_texts: Query<
-        (Entity, &ChildOf, &Children),
-        (With<DistanceTextMarker>, Without<CoordinateTextMarker>),
+        (Entity, &ChildOf, &Children, &DistanceTextMarker),
+        Without<CoordinateTextMarker>,
     >,
     mut text3d: Query<&mut Text3d>,
     markers: Query<&AssignedShadowMarkers>,
@@ -1961,13 +1990,17 @@ fn update_texts(
     let camera_transform = camera.single().unwrap();
     let scale = info.scale;
 
-    for (text_entity, &ChildOf(parent), children) in coordinate_texts {
+    for (text_entity, &ChildOf(parent), children, marker) in coordinate_texts {
         let start_transform = *transforms.get(parent).unwrap();
 
-        let camera_forward = root_transform
-            .compute_affine()
-            .inverse()
-            .transform_vector3(camera_transform.forward().normalize_or_zero());
+        let camera_forward = if marker.0 {
+            root_transform
+                .compute_affine()
+                .inverse()
+                .transform_vector3(camera_transform.forward().normalize_or_zero())
+        } else {
+            camera_transform.forward().as_vec3()
+        };
 
         {
             let mut transform = transforms.get_mut(text_entity).unwrap();
@@ -1989,7 +2022,7 @@ fn update_texts(
         }
     }
 
-    for (text_entity, &ChildOf(parent), children) in distance_texts {
+    for (text_entity, &ChildOf(parent), children, text_marker) in distance_texts {
         let start_transform = *transforms.get(parent).unwrap();
         if let Ok(markers) = markers.get(parent) {
             let marker = *markers
@@ -2003,10 +2036,14 @@ fn update_texts(
 
             let diff = start_transform.translation - shadow_position.translation;
 
-            let camera_forward = root_transform
-                .compute_affine()
-                .inverse()
-                .transform_vector3(camera_transform.forward().normalize_or_zero());
+            let camera_forward = if text_marker.0 {
+                root_transform
+                    .compute_affine()
+                    .inverse()
+                    .transform_vector3(camera_transform.forward().normalize_or_zero())
+            } else {
+                camera_transform.forward().as_vec3()
+            };
 
             {
                 let mut transform = transforms.get_mut(text_entity).unwrap();
@@ -2036,12 +2073,12 @@ fn update_texts(
     mut transforms: Query<&mut Transform>,
     root: Query<Entity, With<RootTransform>>,
     coordinate_texts: Query<
-        (Entity, &ChildOf, &Children),
-        (With<CoordinateTextMarker>, Without<DistanceTextMarker>),
+        (Entity, &ChildOf, &Children, &CoordinateTextMarker),
+        Without<DistanceTextMarker>,
     >,
     distance_texts: Query<
-        (Entity, &ChildOf, &Children),
-        (With<DistanceTextMarker>, Without<CoordinateTextMarker>),
+        (Entity, &ChildOf, &Children, &DistanceTextMarker),
+        Without<CoordinateTextMarker>,
     >,
     mut text3d: Query<&mut Text3d>,
     markers: Query<&AssignedShadowMarkers>,
@@ -2056,13 +2093,17 @@ fn update_texts(
     };
     let scale = info.scale;
 
-    for (text_entity, &ChildOf(parent), children) in coordinate_texts {
+    for (text_entity, &ChildOf(parent), children, marker) in coordinate_texts {
         let start_transform = *transforms.get(parent).unwrap();
 
-        let camera_forward = root_transform
-            .compute_affine()
-            .inverse()
-            .transform_vector3(camera_transform.forward().normalize_or_zero());
+        let camera_forward = if marker.0 {
+            root_transform
+                .compute_affine()
+                .inverse()
+                .transform_vector3(camera_transform.forward().normalize_or_zero())
+        } else {
+            camera_transform.forward().as_vec3()
+        };
 
         {
             let mut transform = transforms.get_mut(text_entity).unwrap();
@@ -2084,7 +2125,7 @@ fn update_texts(
         }
     }
 
-    for (text_entity, &ChildOf(parent), children) in distance_texts {
+    for (text_entity, &ChildOf(parent), children, text_marker) in distance_texts {
         let start_transform = *transforms.get(parent).unwrap();
 
         if let Ok(markers) = markers.get(parent) {
@@ -2099,10 +2140,14 @@ fn update_texts(
 
             let diff = start_transform.translation - shadow_position.translation;
 
-            let camera_forward = root_transform
-                .compute_affine()
-                .inverse()
-                .transform_vector3(camera_transform.forward().normalize_or_zero());
+            let camera_forward = if text_marker.0 {
+                root_transform
+                    .compute_affine()
+                    .inverse()
+                    .transform_vector3(camera_transform.forward().normalize_or_zero())
+            } else {
+                camera_transform.forward().as_vec3()
+            };
 
             {
                 let mut transform = transforms.get_mut(text_entity).unwrap();

@@ -56,13 +56,13 @@ pub fn create_alignment_sphere(
         commands
             .spawn((
                 Transform::default(),
-                ChildOf(root_entity),
+                // ChildOf(root_entity),
                 AlignmentCenterMarker,
                 MeshMaterial3d(mat_handle),
                 Mesh3d(mesh_handle),
                 Picking3dInteractable::default(),
                 EnabledAlignmentMode::Move,
-                EnableTranslationControl::new_with_root(
+                EnableTranslationControl::new_without_root(
                     EnableTranslationControlType::OnlyTranslation,
                 ),
                 CantSnapToEntities::All,
@@ -154,14 +154,12 @@ fn handle_rebuild(
         if let Ok(mut entity_cmds) = commands.get_entity(trigger.target()) {
             match alignment {
                 EnabledAlignmentMode::Move => {
-                    entity_cmds.insert(EnableTranslationControl::new_with_root(
+                    entity_cmds.insert(EnableTranslationControl::new_without_root(
                         EnableTranslationControlType::OnlyTranslation,
                     ));
                 }
                 EnabledAlignmentMode::Rotate => {
                     entity_cmds.remove::<EnableTranslationControl>();
-                    let mut cross_origin = None;
-                    let mut actual_origin = None;
                     entity_cmds.with_children(|spawner| {
                         spawner
                             .spawn((
@@ -171,40 +169,114 @@ fn handle_rebuild(
                                 Visibility::Inherited,
                             ))
                             .with_children(|spawner| {
-                                actual_origin = Some(spawner.spawn(Transform::default()).id());
-                                cross_origin = Some(
-                                    spawner
-                                        .spawn((
-                                            Name::new("CrossOriginMarker"),
-                                            Transform::from_xyz(0.0, 0.0, 1.0),
-                                            CrossOriginMarker {
-                                                actual_origin: actual_origin
-                                                    .expect("must be present"),
-                                            },
-                                            Visibility::Inherited,
-                                            CantSnapToEntities::All,
-                                            CantSnapToCurve::All,
-                                            EnableTranslationControl::new_with_root(
-                                                EnableTranslationControlType::OnlyTranslation,
-                                            ),
-                                        ))
-                                        .observe(handle_moved_trigger)
-                                        .id(),
-                                );
+                                let actual_origin = spawner.spawn(Transform::default()).id();
+                                let cross_origin = spawner
+                                    .spawn((
+                                        Name::new("CrossOriginMarker"),
+                                        Transform::from_xyz(0.0, 0.0, 1.0),
+                                        CrossOriginMarker { actual_origin },
+                                        Visibility::Inherited,
+                                        CantSnapToEntities::All,
+                                        CantSnapToCurve::All,
+                                        EnableTranslationControl::new_without_root(
+                                            EnableTranslationControlType::OnlyTranslation,
+                                        ),
+                                    ))
+                                    .observe(handle_moved_trigger)
+                                    .id();
 
-                                if let Some(cross_origin) = cross_origin
-                                    && let Some(actual_origin) = actual_origin
-                                {
-                                    let black = materials.add(Color::BLACK);
-                                    let cylinder =
-                                        meshes.add(Cylinder::new(0.05 * render_info.scale, 1.0));
-                                    spawner.spawn((
-                                        Transform::default(),
-                                        CrossBridge(actual_origin, cross_origin),
-                                        Mesh3d(cylinder),
-                                        MeshMaterial3d(black),
-                                    ));
-                                }
+                                let black = materials.add(Color::BLACK);
+                                let cylinder =
+                                    meshes.add(Cylinder::new(0.05 * render_info.scale, 1.0));
+                                spawner.spawn((
+                                    Transform::default(),
+                                    CrossBridge(actual_origin, cross_origin),
+                                    Mesh3d(cylinder),
+                                    MeshMaterial3d(black),
+                                ));
+
+                                // Inverse direction
+                                let actual_origin = spawner.spawn(Transform::default()).id();
+                                let cross_origin = spawner
+                                    .spawn((
+                                        Name::new("CrossOriginMarker"),
+                                        Transform::from_xyz(0.0, 0.0, -1.0),
+                                        CrossOriginMarker { actual_origin },
+                                        Visibility::Inherited,
+                                        CantSnapToEntities::All,
+                                        CantSnapToCurve::All,
+                                        EnableTranslationControl::new_without_root(
+                                            EnableTranslationControlType::OnlyTranslation,
+                                        )
+                                        .invert(),
+                                    ))
+                                    .observe(handle_moved_trigger)
+                                    .id();
+
+                                let black = materials.add(Color::BLACK);
+                                let cylinder =
+                                    meshes.add(Cylinder::new(0.05 * render_info.scale, 1.0));
+                                spawner.spawn((
+                                    Transform::default(),
+                                    CrossBridge(actual_origin, cross_origin),
+                                    Mesh3d(cylinder),
+                                    MeshMaterial3d(black),
+                                ));
+
+                                // Inverse direction
+                                let actual_origin = spawner.spawn(Transform::default()).id();
+                                let cross_origin = spawner
+                                    .spawn((
+                                        Name::new("CrossOriginMarker"),
+                                        Transform::from_xyz(1.0, 0.0, 0.0),
+                                        CrossOriginMarker { actual_origin },
+                                        Visibility::Inherited,
+                                        CantSnapToEntities::All,
+                                        CantSnapToCurve::All,
+                                        EnableTranslationControl::new_without_root(
+                                            EnableTranslationControlType::OnlyTranslation,
+                                        ),
+                                    ))
+                                    .observe(handle_moved_trigger)
+                                    .id();
+
+                                let black = materials.add(Color::BLACK);
+                                let cylinder =
+                                    meshes.add(Cylinder::new(0.05 * render_info.scale, 1.0));
+                                spawner.spawn((
+                                    Transform::default(),
+                                    CrossBridge(actual_origin, cross_origin),
+                                    Mesh3d(cylinder),
+                                    MeshMaterial3d(black),
+                                ));
+
+                                // Inverse direction
+                                let actual_origin = spawner.spawn(Transform::default()).id();
+                                let cross_origin = spawner
+                                    .spawn((
+                                        Name::new("CrossOriginMarker"),
+                                        Transform::from_xyz(-1.0, 0.0, 0.0),
+                                        CrossOriginMarker { actual_origin },
+                                        Visibility::Inherited,
+                                        CantSnapToEntities::All,
+                                        CantSnapToCurve::All,
+                                        EnableTranslationControl::new_without_root(
+                                            EnableTranslationControlType::OnlyTranslation,
+                                        )
+                                        .invert(),
+                                    ))
+                                    .observe(handle_moved_trigger)
+                                    .id();
+
+                                let black = materials.add(Color::BLACK);
+                                let cylinder =
+                                    meshes.add(Cylinder::new(0.05 * render_info.scale, 1.0));
+                                spawner.spawn((
+                                    Transform::default(),
+                                    CrossBridge(actual_origin, cross_origin),
+                                    Mesh3d(cylinder),
+                                    MeshMaterial3d(black),
+                                ));
                             });
                     });
                 }
