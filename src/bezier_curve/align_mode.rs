@@ -180,7 +180,8 @@ fn handle_rebuild(
                                         CantSnapToCurve::All,
                                         EnableTranslationControl::new_without_root(
                                             EnableTranslationControlType::OnlyTranslation,
-                                        ),
+                                        )
+                                        .hide_lines(),
                                     ))
                                     .observe(handle_moved_trigger)
                                     .id();
@@ -208,7 +209,8 @@ fn handle_rebuild(
                                         EnableTranslationControl::new_without_root(
                                             EnableTranslationControlType::OnlyTranslation,
                                         )
-                                        .invert(),
+                                        .invert()
+                                        .hide_lines(),
                                     ))
                                     .observe(handle_moved_trigger)
                                     .id();
@@ -235,7 +237,8 @@ fn handle_rebuild(
                                         CantSnapToCurve::All,
                                         EnableTranslationControl::new_without_root(
                                             EnableTranslationControlType::OnlyTranslation,
-                                        ),
+                                        )
+                                        .hide_lines(),
                                     ))
                                     .observe(handle_moved_trigger)
                                     .id();
@@ -263,7 +266,8 @@ fn handle_rebuild(
                                         EnableTranslationControl::new_without_root(
                                             EnableTranslationControlType::OnlyTranslation,
                                         )
-                                        .invert(),
+                                        .invert()
+                                        .hide_lines(),
                                     ))
                                     .observe(handle_moved_trigger)
                                     .id();
