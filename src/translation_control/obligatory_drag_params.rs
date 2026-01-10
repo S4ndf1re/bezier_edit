@@ -233,6 +233,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                             false,
                             Picking3dInteractable::Default,
                             Pickable::default(),
+                            false,
                         );
                     })
                     .observe(drag_controller)
