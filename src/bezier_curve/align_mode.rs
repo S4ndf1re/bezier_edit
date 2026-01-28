@@ -375,8 +375,10 @@ pub fn handle_moved_trigger(
 #[derive(Event)]
 pub struct HomeRootTransformEvent;
 
-pub fn handle_home_root_transform(mut reader: EventReader<HomeRootTransformEvent>, mut roots: Query<&mut Transform, With<RootTransform>>) {
-
+pub fn handle_home_root_transform(
+    mut reader: EventReader<HomeRootTransformEvent>,
+    mut roots: Query<&mut Transform, With<RootTransform>>,
+) {
     if reader.is_empty() {
         return;
     }
