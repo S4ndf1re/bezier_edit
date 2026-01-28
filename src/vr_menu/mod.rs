@@ -1,3 +1,4 @@
+use crate::bezier_curve::align_mode::HomeRootTransformEvent;
 use crate::bezier_curve::bezier_curve_renderer::{
     AlignModeEvent, MinusModeEvent, PlusModeEvent, hover_3d,
 };
@@ -202,6 +203,10 @@ pub struct AlignRoot;
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 pub struct AlignRootOn;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+pub struct HomeButton;
 
 #[derive(Resource, Default)]
 struct VrMenuState {
@@ -852,9 +857,31 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
         }
 
         if components.contains(&world.component_id::<AlignRoot>().unwrap()) {
+            let mesh = {
+                let mut meshes = world.resource_mut::<Assets<Mesh>>();
+                meshes.add(Sphere::new(1.0))
+            };
+
+            let material = {
+                let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
+                materials.add(StandardMaterial {
+                    alpha_mode: AlphaMode::Mask(0.5),
+                    base_color: Color::NONE,
+                    ..default()
+                })
+            };
+
             world
                 .commands()
                 .entity(child)
+                .with_child((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(material),
+                    Transform::default(),
+                    Visibility::Inherited,
+                    Picking3dInteractable::Default,
+                    ColorChangeIgnoreMarker,
+                ))
                 .observe(handle_hover_out)
                 .observe(handle_hover_out3d)
                 .observe(handle_hover_over)
@@ -882,6 +909,33 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
             && current_mode != ControlState::Align
         {
             entities_to_hide.push(child);
+        }
+
+        if components.contains(&world.component_id::<HomeButton>().unwrap()) {
+            world
+                .commands()
+                .entity(child)
+                .observe(handle_hover_out)
+                .observe(handle_hover_out3d)
+                .observe(handle_hover_over)
+                .observe(handle_hover_over3d)
+                .observe(hover_3d)
+                .observe(
+                    move |_: Trigger<Pointer3d<picking3d::events::Click>>,
+                          mut align_mode: EventWriter<HomeRootTransformEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        align_mode.write(HomeRootTransformEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                )
+                .observe(
+                    move |_: Trigger<Pointer<Click>>,
+                          mut home_root: EventWriter<HomeRootTransformEvent>,
+                          mut respawn_menu: EventWriter<RedrawMenuEvent>| {
+                        home_root.write(HomeRootTransformEvent);
+                        respawn_menu.write(RedrawMenuEvent(root));
+                    },
+                );
         }
 
         if components.contains(&world.component_id::<GizmoMode>().unwrap()) {
@@ -1139,5 +1193,7 @@ impl Plugin for VrMenuPlugin {
 
         app.register_type::<AlignRoot>();
         app.register_type::<AlignRootOn>();
+
+        app.register_type::<HomeButton>();
     }
 }

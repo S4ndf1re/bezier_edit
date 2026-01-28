@@ -1,0 +1,11 @@
+Model Information:
+* title:	Origin for Blender coordinates
+* source:	https://sketchfab.com/3d-models/origin-for-blender-coordinates-9dd93f675607483eb5984281c4a10cfa
+* author:	Atle (https://sketchfab.com/atlemgw)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Origin for Blender coordinates" (https://sketchfab.com/3d-models/origin-for-blender-coordinates-9dd93f675607483eb5984281c4a10cfa) by Atle (https://sketchfab.com/atlemgw) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

@@ -371,3 +371,18 @@ pub fn handle_moved_trigger(
         }
     });
 }
+
+#[derive(Event)]
+pub struct HomeRootTransformEvent;
+
+pub fn handle_home_root_transform(mut reader: EventReader<HomeRootTransformEvent>, mut roots: Query<&mut Transform, With<RootTransform>>) {
+
+    if reader.is_empty() {
+        return;
+    }
+    reader.clear();
+
+    for mut root in roots.iter_mut() {
+        *root = Transform::default();
+    }
+}

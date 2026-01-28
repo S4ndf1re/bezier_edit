@@ -33,8 +33,8 @@ use super::util::{
 };
 use crate::bezier_curve::EntityDeletedEvent;
 use crate::bezier_curve::align_mode::{
-    RecreateAlignmentChildren, create_alignment_sphere, delete_alignment_sphere,
-    update_cross_bridge,
+    HomeRootTransformEvent, RecreateAlignmentChildren, create_alignment_sphere,
+    delete_alignment_sphere, handle_home_root_transform, update_cross_bridge,
 };
 use crate::bezier_curve::helper_curves::{
     AddPointToCurveEvent, RemovePointFromCurveEvent, add_point_to_curve_handler,
@@ -922,6 +922,11 @@ impl Plugin for BezierRenderPlugin {
             ),
         );
 
+        app.add_systems(
+            PostUpdate,
+            handle_home_root_transform.run_if(on_event::<HomeRootTransformEvent>),
+        );
+
         app.add_systems(PostUpdate, handle_generic_deleted_event);
 
         // app.init_resource::<ConstraintState>();
@@ -955,6 +960,7 @@ impl Plugin for BezierRenderPlugin {
         app.add_event::<UpdateSurfaceInspectorEvent>();
         app.add_event::<AlignModeEvent>();
         app.add_event::<RecreateAlignmentChildren>();
+        app.add_event::<HomeRootTransformEvent>();
         app.init_state::<ControlState>();
 
         app.add_plugins(EvaluationPlugin);
