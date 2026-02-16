@@ -131,6 +131,6 @@ fn move_root(
 impl Plugin for AdvancedOrbitControls {
     fn build(&self, app: &mut App) {
         app.init_resource::<CameraSettings>();
-        app.add_systems(Update, (orbit, move_root));
+        // app.add_systems(Update, (orbit, move_root));
     }
 }
