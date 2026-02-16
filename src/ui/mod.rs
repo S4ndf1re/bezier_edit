@@ -372,6 +372,8 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<Ui
             );
         });
     });
+    // TODO(Jan): Spawn evaluation mode ui here. For that, add 5 buttons, "Next", "Surface", "Curves", "Line", "Point".
+    // For the "Curves" and "Point" mode, add a slider to create up to 5 and 10 points respectiveley
 }
 
 fn build_ui(

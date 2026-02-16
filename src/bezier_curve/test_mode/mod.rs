@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use bevy::{color::palettes::css::BLACK, prelude::*};
+use bevy::prelude::*;
 use bevy::{ecs::resource::Resource, math::Vec3};
 use bevy_lunex::prelude::{Text3d, Text3dStyling, TextAlign, TextAtlas, Weight};
 #[cfg(feature = "vr_enable")]
@@ -16,25 +16,24 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::path::Path;
 
+pub mod eval_types;
+pub use eval_types::*;
+
+pub mod single_eval;
+pub use single_eval::*;
+
 #[cfg(not(feature = "vr_enable"))]
 use crate::MainCamera;
-use crate::{
-    RootTransform,
-    bezier_curve::{
-        curvature_display_mode::CurvatureDisplayMode,
-        render_info::RenderInformation,
-        util::{SurfaceRenderMode, create_mesh_from_control_points},
-    },
-    nurbs::{
-        bezier_plane::{
-            ControlPoints2D, ToControlPoints2D, eval_2d_bezier_curves, transpose_control_points,
-        },
-        point::Point,
-    },
-    translation_control::proximity_detector::Snappable,
-};
 
 use super::{bezier_curve_renderer::ResetDefaultCurveEvent, components::RenderPoint};
+use crate::{
+    RootTransform,
+    bezier_curve::render_info::RenderInformation,
+    nurbs::{
+        bezier_plane::{ControlPoints2D, ToControlPoints2D},
+        point::Point,
+    },
+};
 
 #[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord, States, Default, Hash, Debug)]
 enum EvaluationFlowState {
@@ -46,9 +45,9 @@ enum EvaluationFlowState {
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct TestControlPoint {
-    y_idx: usize,
-    x_idx: usize,
-    point: (f64, f64, f64),
+    pub y_idx: usize,
+    pub x_idx: usize,
+    pub point: (f64, f64, f64),
 }
 
 impl From<(usize, usize, Vec3)> for TestControlPoint {
@@ -86,13 +85,13 @@ impl ToControlPoints2D for &Vec<TestControlPoint> {
         // First get all points in order for each sub curve
         let mut multi_curves = Vec::<(usize, Vec<Point>)>::new();
         for (i, points) in points.iter_mut() {
-            points.sort_by(|a, b| a.0.cmp(&b.0));
+            points.sort_by_key(|a| a.0);
             let points = points.iter().map(|p| p.1).collect::<Vec<_>>();
             multi_curves.push((*i, points));
         }
 
         // Then order the subcurves by index
-        multi_curves.sort_by(|a, b| a.0.cmp(&b.0));
+        multi_curves.sort_by_key(|a| a.0);
         let multi_curves: Vec<Vec<Point>> =
             multi_curves.iter().map(|p| p.1.clone()).collect::<Vec<_>>();
 
@@ -109,95 +108,6 @@ pub struct PointEvaluation {
     dist: f64,
 }
 
-#[derive(Clone, Copy)]
-pub struct BasicSurfaceEvaluationData {
-    average_dist: f64,
-    max_dist: f64,
-    min_dist: f64,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct SingleSurfaceEvaluation {
-    average_dist: f64,
-    max_dist: f64,
-    min_dist: f64,
-    reference_control_points: Vec<TestControlPoint>,
-    test_control_points: Vec<TestControlPoint>,
-    resolution: usize,
-    evaluations: Vec<PointEvaluation>,
-    evaluated: bool,
-}
-
-impl SingleSurfaceEvaluation {
-    pub fn new_unevaluated(reference: Vec<TestControlPoint>, resolution: usize) -> Self {
-        Self {
-            reference_control_points: reference,
-            resolution,
-            test_control_points: Vec::new(),
-            evaluations: Vec::new(),
-            average_dist: 0.0,
-            max_dist: f64::MIN,
-            min_dist: f64::MAX,
-            evaluated: false,
-        }
-    }
-
-    /// Evaluate single surface
-    pub fn evaluate(
-        &mut self,
-        control_points: Vec<TestControlPoint>,
-    ) -> BasicSurfaceEvaluationData {
-        self.test_control_points = control_points;
-        let collected_test = self.test_control_points.to_control_points();
-        let collected_reference = self.reference_control_points.to_control_points();
-        let mut avg_dist = 0.0;
-        let n = (self.resolution + 1).pow(2) as f64;
-
-        for u in 0..=self.resolution {
-            let u = u as f64 / self.resolution as f64;
-            for v in 0..=self.resolution {
-                let v = v as f64 / self.resolution as f64;
-
-                let test_point = eval_2d_bezier_curves(&collected_test, u, v);
-                let reference_point = eval_2d_bezier_curves(&collected_reference, u, v);
-
-                let dist = (reference_point - test_point).magnitude();
-
-                self.evaluations.push(PointEvaluation {
-                    u,
-                    v,
-                    reference: reference_point.into(),
-                    surface_point: test_point.into(),
-                    dist,
-                });
-
-                avg_dist += dist / n;
-                self.max_dist = self.max_dist.max(dist);
-                self.min_dist = self.min_dist.min(dist);
-            }
-        }
-
-        self.average_dist = avg_dist;
-        self.evaluated = true;
-        BasicSurfaceEvaluationData {
-            average_dist: self.average_dist,
-            max_dist: self.max_dist,
-            min_dist: self.min_dist,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct EvaluationSurface {
-    control_points: Vec<TestControlPoint>,
-}
-
-impl From<EvaluationSurface> for SingleSurfaceEvaluation {
-    fn from(value: EvaluationSurface) -> Self {
-        Self::new_unevaluated(value.control_points, 100)
-    }
-}
-
 #[derive(Serialize, Resource)]
 pub struct Evaluation {
     #[serde(skip)]
@@ -206,11 +116,14 @@ pub struct Evaluation {
     start_counter: usize,
 
     #[serde(skip)]
-    reference_surfaces: Vec<EvaluationSurface>,
+    reference_surfaces: Vec<EvaluationType>,
     #[serde(skip)]
     pathbuf_references: PathBuf,
 
-    evaluations: Vec<SingleSurfaceEvaluation>,
+    evaluations: Vec<SingleEvaluation>,
+
+    #[serde(skip)]
+    current_creation_type: Option<EnterEvalState>,
 }
 
 impl Evaluation {
@@ -226,7 +139,7 @@ impl Evaluation {
         let mut content = String::new();
         file.read_to_string(&mut content)?;
 
-        let reference_surfaces: Vec<EvaluationSurface> = serde_json::from_str(&content)?;
+        let reference_surfaces: Vec<EvaluationType> = serde_json::from_str(&content)?;
 
         Ok(Self {
             evaluations: Vec::new(),
@@ -234,19 +147,21 @@ impl Evaluation {
             reference_surfaces,
             counter: 0,
             pathbuf_references: PathBuf::from(path),
+            current_creation_type: default(),
         })
     }
 
-    pub fn add_reference_surface(&mut self, control_points: Vec<TestControlPoint>) {
-        self.reference_surfaces
-            .push(EvaluationSurface { control_points });
+    pub fn add_reference_surface(&mut self, type_of_eval: EvaluationType) {
+        self.reference_surfaces.push(type_of_eval);
     }
 
     /// Start e new evaluation, if possible
-    pub fn start_next_evaluation(&mut self) -> Option<Vec<TestControlPoint>> {
+    pub fn start_next_evaluation(&mut self) -> Option<EvaluationType> {
         if self.can_evaluate_further() {
-            self.evaluations
-                .push(self.reference_surfaces[self.counter].clone().into());
+            let mut eval: SingleEvaluation = self.reference_surfaces[self.counter].clone().into();
+            eval.start();
+
+            self.evaluations.push(eval);
 
             Some(
                 self.evaluations
@@ -324,6 +239,9 @@ impl Drop for Evaluation {
 }
 
 #[derive(Component)]
+pub struct EvaluationMarker;
+
+#[derive(Component)]
 pub struct EvaluationSurfaceComponent;
 
 #[derive(Component)]
@@ -354,40 +272,166 @@ fn handle_state_change_event(
     }
 }
 
+#[derive(Default, Clone, Debug, Event)]
+pub enum EnterEvalState {
+    #[default]
+    Next,
+    Surface,
+    Curves(usize),
+    Linear(usize),
+    Precision(usize),
+}
+
+impl From<EnterEvalState> for ResetDefaultCurveEvent {
+    fn from(value: EnterEvalState) -> Self {
+        match value {
+            EnterEvalState::Next => ResetDefaultCurveEvent::Surface,
+            EnterEvalState::Surface => ResetDefaultCurveEvent::Surface,
+            EnterEvalState::Curves(n) => ResetDefaultCurveEvent::Curves(n),
+            EnterEvalState::Linear(n) => todo!("Generate default line and points here"),
+            EnterEvalState::Precision(n) => todo!("Generate default points here"),
+        }
+    }
+}
+
+impl TryFrom<(EnterEvalState, Vec<TestControlPoint>)> for EvaluationType {
+    type Error = String;
+    fn try_from(
+        value: (EnterEvalState, Vec<TestControlPoint>),
+    ) -> std::result::Result<Self, Self::Error> {
+        match value.0 {
+            EnterEvalState::Next => Err("next cannot be converted".to_owned()),
+            EnterEvalState::Curves(_) => {
+                let points = value.1.to_control_points();
+
+                let curves: Vec<Vec<TestControlPoint>> = points
+                    .into_iter()
+                    .enumerate()
+                    .map(|inner| {
+                        inner
+                            .1
+                            .into_iter()
+                            .enumerate()
+                            .map(|v| TestControlPoint {
+                                y_idx: inner.0,
+                                x_idx: v.0,
+                                point: v.1.into(),
+                            })
+                            .collect()
+                    })
+                    .collect();
+                Ok(EvaluationType::Curve(EvaluationCurves { curves }))
+            }
+            EnterEvalState::Surface => Ok(EvaluationType::Surface(EvaluationSurface {
+                control_points: value.1,
+            })),
+            EnterEvalState::Linear(n) => {
+                let points = value.1.to_control_points();
+
+                let curves: Vec<Vec<TestControlPoint>> = points
+                    .into_iter()
+                    .enumerate()
+                    .map(|inner| {
+                        inner
+                            .1
+                            .into_iter()
+                            .enumerate()
+                            .map(|v| TestControlPoint {
+                                y_idx: inner.0,
+                                x_idx: v.0,
+                                point: v.1.into(),
+                            })
+                            .collect()
+                    })
+                    .collect();
+
+                // Assertions for form of control points
+                assert!(curves.len() == 2);
+                assert!(curves[0].len() == 2);
+                assert!(curves[1].len() == n);
+
+                let start = curves[0][0];
+                let end = curves[0][1];
+                let start_points = curves[1].clone();
+
+                Ok(EvaluationType::LinearPlacement(EvaluationLinearPlacement {
+                    start,
+                    end,
+                    start_points,
+                }))
+            }
+            EnterEvalState::Precision(n) => {
+                let points = value.1.to_control_points();
+
+                let curves: Vec<Vec<TestControlPoint>> = points
+                    .into_iter()
+                    .enumerate()
+                    .map(|inner| {
+                        inner
+                            .1
+                            .into_iter()
+                            .enumerate()
+                            .map(|v| TestControlPoint {
+                                y_idx: inner.0,
+                                x_idx: v.0,
+                                point: v.1.into(),
+                            })
+                            .collect()
+                    })
+                    .collect();
+
+                // Assertions for form of control points
+                assert!(curves.len() == 2);
+                assert!(curves[0].len() == 1);
+                assert!(curves[1].len() == n);
+
+                let end = curves[0][0];
+                let start_points = curves[1].clone();
+
+                Ok(EvaluationType::PrecisionMovement(
+                    EvaluationPrecisionMovement {
+                        start: start_points,
+                        end,
+                    },
+                ))
+            }
+        }
+    }
+}
+
 #[allow(clippy::complexity)]
 fn on_enter_eval_state(
+    mut eval_state_reader: EventReader<EnterEvalState>,
     mut evaluation: ResMut<Evaluation>,
     mut commands: Commands,
-    evaluation_surfaces: Query<Entity, With<EvaluationSurfaceComponent>>,
-    evaluation_points: Query<Entity, With<EvaluationPointComponent>>,
-    original_points: Query<Entity, With<OriginalControlPointMarker>>,
+    evaluation_parents: Query<Entity, With<EvaluationMarker>>,
     texts: Query<Entity, With<EvalTextMarker>>,
     root: Query<Entity, With<RootTransform>>,
     images: ResMut<Assets<Image>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    meshes: ResMut<Assets<Mesh>>,
+    materials: ResMut<Assets<StandardMaterial>>,
     mut reset_default_curve: EventWriter<ResetDefaultCurveEvent>,
     info: Res<RenderInformation>,
 ) {
+    if eval_state_reader.is_empty() {
+        return;
+    }
+
+    // Set the current evaluation state, in case this is not an evaluation
+    evaluation.current_creation_type =
+        Some(eval_state_reader.read().collect::<Vec<_>>()[0].clone());
+    eval_state_reader.clear();
+
     let mut next_surface = None;
     info!("In eval state");
 
     if let Some(points) = evaluation.start_next_evaluation() {
         next_surface = Some(points);
     }
-    // Reset surface
-    reset_default_curve.write(ResetDefaultCurveEvent);
 
-    for surface in evaluation_surfaces {
-        let _ = commands.get_entity(surface).map(|mut e| e.despawn());
-    }
-
-    for point_entity in evaluation_points {
-        let _ = commands.get_entity(point_entity).map(|mut e| e.despawn());
-    }
-
-    for point_entity in original_points {
-        let _ = commands.get_entity(point_entity).map(|mut e| e.despawn());
+    // NOTE(Kleinmann): Assume that each evaluation has a parent
+    for parent in evaluation_parents {
+        let _ = commands.get_entity(parent).map(|mut e| e.despawn());
     }
 
     for text_entity in texts {
@@ -400,73 +444,24 @@ fn on_enter_eval_state(
             .single()
             .expect("Initialization error. Root Transform must be present at all times");
 
-        let (mesh, texture) = create_mesh_from_control_points(
-            &points,
-            (30, 30),
-            &CurvatureDisplayMode::CustomColor(BLACK.into()),
-            images,
-            info.scale as f64,
-            SurfaceRenderMode::Triangles,
-        );
+        // Spawn parent, that is a child of root. This parent will get deleted, once a new evaluation starts
+        let parent = commands
+            .spawn((
+                EvaluationMarker,
+                ChildOf(root),
+                Transform::default(),
+                Visibility::Inherited,
+            ))
+            .id();
 
-        let mat = StandardMaterial {
-            base_color_texture: Some(texture),
-            double_sided: true,
-            cull_mode: None,
-            ..Default::default()
-        };
+        // Spawn shape
+        points.to_render_commands(&mut commands, parent, images, materials, meshes, info);
 
-        commands.spawn((
-            ChildOf(root),
-            Transform::default(),
-            Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(materials.add(mat)),
-            EvaluationSurfaceComponent,
-        ));
-
-        let points = points.to_control_points();
-        let edge_1 = points.first();
-        let edge_3 = points.last();
-        let transposed_points = transpose_control_points(&points);
-        let edge_2 = transposed_points.last();
-        let edge_4 = transposed_points.first();
-
-        let small_sphere = meshes.add(Sphere::new(0.05 * info.scale));
-        let light_red = materials.add(StandardMaterial::from_color(Srgba::new(
-            230.0 / 255.0,
-            121.0 / 255.0,
-            135.0 / 255.0,
-            1.0,
-        )));
-
-        for edge in [edge_1, edge_2, edge_3, edge_4] {
-            if let Some(edge) = edge {
-                for point in edge {
-                    commands.spawn((
-                        ChildOf(root),
-                        Transform::from_translation(Vec3::from(*point)),
-                        Mesh3d(small_sphere.clone()),
-                        MeshMaterial3d(light_red.clone()),
-                        EvaluationPointComponent,
-                        Visibility::Inherited,
-                        Snappable,
-                    ));
-                }
-            }
-        }
-
-        for points in points {
-            for p in points {
-                commands.spawn((
-                    ChildOf(root),
-                    Transform::from_translation(Vec3::from(p)),
-                    Mesh3d(small_sphere.clone()),
-                    MeshMaterial3d(light_red.clone()),
-                    OriginalControlPointMarker,
-                    Visibility::Hidden,
-                ));
-            }
-        }
+        reset_default_curve.write(points.to_redraw_event());
+    } else {
+        // Reset surface
+        // TODO(Kleinmann): Make sure to somehow configure this, for example using states or whatever
+        reset_default_curve.write(ResetDefaultCurveEvent::Surface);
     }
 }
 
@@ -512,8 +507,8 @@ fn on_enter_result_state(
             EvalTextMarker,
             Name::new("Evaluation Text Marker"),
             Text3d::new(format!(
-                "Average Distance: {:.3}\nMin. Distance: {:.3}\nMax. Distance: {:.3}",
-                eval_info.average_dist, eval_info.min_dist, eval_info.max_dist,
+                "Average Distance: {:.3}\nMin. Distance: {:.3}\nMax. Distance: {:.3}\nTime (s): {:.3}",
+                eval_info.average_dist, eval_info.min_dist, eval_info.max_dist, eval_info.time as f64 / 1000.0
             )),
             Text3dStyling {
                 size: 64.0,
@@ -532,8 +527,15 @@ fn on_enter_result_state(
             Mesh3d::default(),
             Visibility::Inherited,
         ));
-    } else if !evaluation.can_evaluate_further() {
-        evaluation.add_reference_surface(points);
+    } else if !evaluation.can_evaluate_further()
+        && let Some(eval_type) = evaluation.current_creation_type.clone()
+        && !matches!(eval_type, EnterEvalState::Next)
+    {
+        evaluation.add_reference_surface(
+            (eval_type, points)
+                .try_into()
+                .expect("Critical error, this should never trigger out of the 'next' eval type"),
+        );
         next_state_res.set(EvaluationFlowState::Eval);
     }
 
@@ -544,6 +546,9 @@ fn on_enter_result_state(
     for mut point_entity in &mut original_points {
         *point_entity = Visibility::Inherited;
     }
+
+    // Reset current creation type here
+    evaluation.current_creation_type = None;
 }
 
 #[cfg(not(feature = "vr_enable"))]
@@ -633,7 +638,10 @@ impl Plugin for EvaluationPlugin {
                 .expect("This must be here, in order to start evaluation"),
         );
 
-        app.add_systems(OnEnter(EvaluationFlowState::Eval), on_enter_eval_state);
+        app.add_systems(
+            Update,
+            on_enter_eval_state.run_if(on_event::<EnterEvalState>),
+        );
         app.add_systems(OnEnter(EvaluationFlowState::Result), on_enter_result_state);
         app.add_systems(Last, handle_state_change_event);
         app.add_systems(Update, follow_camera);

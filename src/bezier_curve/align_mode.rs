@@ -39,7 +39,7 @@ pub fn create_alignment_sphere(
     mut meshes: ResMut<Assets<Mesh>>,
     render_info: Res<RenderInformation>,
 ) {
-    if let Ok(root_entity) = root_transform.single() {
+    if let Ok(_root_entity) = root_transform.single() {
         let mut mat: StandardMaterial = Color::Srgba(Srgba {
             red: 206.0 / 255.0,
             green: 132.0 / 255.0,
@@ -363,9 +363,6 @@ pub fn handle_moved_trigger(
 
         let angle = diff_old_pos.angle_between(diff_new_pos);
         let normal = diff_old_pos.cross(diff_new_pos).normalize_or_zero();
-        info!("old: {origin}, new: {new_pos}");
-        info!("diff_old: {diff_old_pos}, diff_new: {diff_new_pos}");
-        info!("angle: {angle}, normal: {normal}");
         if !angle.is_nan() {
             trans.rotation *= Quat::from_axis_angle(normal, angle);
         }

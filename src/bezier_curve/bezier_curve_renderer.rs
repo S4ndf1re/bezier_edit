@@ -726,8 +726,13 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
     }
 }
 
-#[derive(Event)]
-pub struct ResetDefaultCurveEvent;
+#[derive(Event, Clone)]
+pub enum ResetDefaultCurveEvent {
+    Surface,
+    Curves(usize),
+    Line { start: Vec3, end: Vec3 },
+    Point { target: Vec3, starts: Vec<Vec3> },
+}
 
 pub fn generate_default_curve(
     mut reader: EventReader<ResetDefaultCurveEvent>,
@@ -736,39 +741,45 @@ pub fn generate_default_curve(
     if reader.is_empty() {
         return;
     }
+    let event = reader.read().collect::<Vec<_>>()[0].clone();
     reader.clear();
 
-    let (w, h): (usize, usize) = (2, 2);
-    let surface_width = 5.0;
-    let surface_height = 5.0;
-    let step_x = surface_width / (w as f32 - 1.0);
-    let step_y = surface_height / (h as f32 - 1.0);
+    match event {
+        ResetDefaultCurveEvent::Surface => {
+            let (w, h): (usize, usize) = (2, 2);
+            let surface_width = 5.0;
+            let surface_height = 5.0;
+            let step_x = surface_width / (w as f32 - 1.0);
+            let step_y = surface_height / (h as f32 - 1.0);
 
-    let min_x = -surface_width / 2.0;
-    let min_y = -surface_height / 2.0;
+            let min_x = -surface_width / 2.0;
+            let min_y = -surface_height / 2.0;
 
-    let mut points = vec![];
-    let mut curr_x = min_x;
-    let mut curr_y = min_y;
-    for y in 0..h as i32 {
-        for x in 0..w as i32 {
-            points.push((
-                y as usize,
-                x as usize,
-                Vec3::new(curr_x, 0.0, curr_y) * surface_creator.get_scale()
-                    + surface_creator.get_height(),
-            ));
-            curr_x += step_x;
+            let mut points = vec![];
+            let mut curr_x = min_x;
+            let mut curr_y = min_y;
+            for y in 0..h as i32 {
+                for x in 0..w as i32 {
+                    points.push((
+                        y as usize,
+                        x as usize,
+                        Vec3::new(curr_x, 0.0, curr_y) * surface_creator.get_scale()
+                            + surface_creator.get_height(),
+                    ));
+                    curr_x += step_x;
+                }
+                curr_x = min_x;
+                curr_y += step_y;
+            }
+
+            surface_creator.create_surface_from_points(points, w, h);
         }
-        curr_x = min_x;
-        curr_y += step_y;
+        _ => todo!(""),
     }
-
-    surface_creator.create_surface_from_points(points, w, h);
 }
 
 fn startup(mut writer: EventWriter<ResetDefaultCurveEvent>) {
-    writer.write(ResetDefaultCurveEvent);
+    writer.write(ResetDefaultCurveEvent::Surface);
 }
 
 fn handle_keyboard(
