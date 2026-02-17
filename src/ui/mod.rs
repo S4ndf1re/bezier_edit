@@ -3,7 +3,10 @@ pub mod slider;
 
 use crate::{
     MainCamera,
-    bezier_curve::render_info::{ChangeCoordinateMode, CoordinateMode, UpdateIsoDimEvent},
+    bezier_curve::{
+        render_info::{ChangeCoordinateMode, CoordinateMode, UpdateIsoDimEvent},
+        test_mode::EnterEvalEvent,
+    },
 };
 use bevy::{
     color::palettes::tailwind::GRAY_900, ecs::relationship::RelatedSpawnerCommands, prelude::*,
@@ -44,6 +47,7 @@ pub struct UiState {
     box_height: f32,
     box_depth: f32,
     coordinate_mode: CoordinateMode,
+    number_of_points_and_curves: usize,
 }
 
 impl Default for UiState {
@@ -59,6 +63,7 @@ impl Default for UiState {
             box_height: 0.1,
             box_depth: 0.25,
             coordinate_mode: CoordinateMode::default(),
+            number_of_points_and_curves: 1,
         }
     }
 }
@@ -142,7 +147,7 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<Ui
         Name::new("Layout Second"),
         UiLayout::window()
             .pos(Rl((0.0, 0.0)))
-            .size((Rw(100.0), Rh(20.0)))
+            .size((Rw(100.0), Rh(20.0 * 2.0 / 3.0)))
             .anchor(Anchor::TopLeft)
             .pack(),
     ))
@@ -151,8 +156,8 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<Ui
     ui.spawn((
         Name::new("Layout Third"),
         UiLayout::window()
-            .pos(Rl((0.0, 20.0)))
-            .size((Rw(100.0), Rh(10.0)))
+            .pos(Rl((0.0, 20.0 * 2.0 / 3.0)))
+            .size((Rw(100.0), Rh(10.0 * 2.0 / 3.0)))
             .anchor(Anchor::TopLeft)
             .pack(),
     ))
@@ -188,8 +193,8 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<Ui
     ui.spawn((
         Name::new("Layout Iso Lines"),
         UiLayout::window()
-            .pos(Rl((0.0, 30.0)))
-            .size((Rw(100.0), Rh(20.0)))
+            .pos(Rl((0.0, 30.0 * 2.0 / 3.0)))
+            .size((Rw(100.0), Rh(20.0 * 2.0 / 3.0)))
             .anchor(Anchor::TopLeft)
             .pack(),
     ))
@@ -246,8 +251,8 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<Ui
     ui.spawn((
         Name::new("Layout Boxes"),
         UiLayout::window()
-            .pos(Rl((0.0, 50.0)))
-            .size((Rw(100.0), Rh(50.0)))
+            .pos(Rl((0.0, 50.0 * 2.0 / 3.0)))
+            .size((Rw(100.0), Rh(50.0 * 2.0 / 3.0)))
             .anchor(Anchor::TopLeft)
             .pack(),
     ))
@@ -372,8 +377,156 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<Ui
             );
         });
     });
-    // TODO(Jan): Spawn evaluation mode ui here. For that, add 5 buttons, "Next", "Surface", "Curves", "Line", "Point".
-    // For the "Curves" and "Point" mode, add a slider to create up to 5 and 10 points respectiveley
+
+    // NOTE: The above layout takes up exactly 66% of the ui. The last 33% can be used for
+    // evaluation
+
+    ui.spawn((
+        UiLayout::window()
+            .size(Rl((100.0, 1.0 / 3.0 * 100.0)))
+            .pos(Rl((0.0, 2.0 / 3.0 * 100.0)))
+            .anchor(Anchor::TopLeft)
+            .pack(),
+        Name::new("Evaluation UI Node"),
+    ))
+    .with_children(|ui| {
+        ui.spawn((
+            UiLayout::window()
+                .size(Rl((100.0, 1.0 / 4.0 * 100.0)))
+                .pos(Rl(0.0))
+                .anchor(Anchor::TopLeft)
+                .pack(),
+            Name::new("Button Next"),
+        ))
+        .with_children(|ui| {
+            ui.spawn(UiButton::new("Next Evaluation".to_string(), 15, Rl(100.0)))
+                .observe(
+                    |_trigger: Trigger<ButtonClickedEvent>,
+                     mut enter_eval_event_writer: EventWriter<EnterEvalEvent>| {
+                        enter_eval_event_writer.write(EnterEvalEvent::Next);
+                    },
+                );
+        });
+
+        ui.spawn((
+            UiLayout::window()
+                .size(Rl((100.0, 1.0 / 4.0 * 100.0)))
+                .pos(Rl((0.0, 1.0 / 4.0 * 100.0)))
+                .anchor(Anchor::TopLeft)
+                .pack(),
+            Name::new("Buttons Surface and Curves"),
+        ))
+        .with_children(|ui| {
+            ui.spawn((
+                UiLayout::window()
+                    .pos(Rl((2.5, 0.0)))
+                    .size(Rl((45.0, 100.0)))
+                    .anchor(Anchor::TopLeft)
+                    .pack(),
+                Name::new("New Surface"),
+            ))
+            .with_children(|ui| {
+                ui.spawn(UiButton::new("Surface".to_string(), 7, Rl(100.0)))
+                    .observe(
+                        |_trigger: Trigger<ButtonClickedEvent>,
+                         mut enter_eval_event_writer: EventWriter<EnterEvalEvent>| {
+                            enter_eval_event_writer.write(EnterEvalEvent::Surface);
+                        },
+                    );
+            });
+
+            ui.spawn((
+                UiLayout::window()
+                    .pos(Rl((52.5, 0.0)))
+                    .size(Rl((45.0, 100.0)))
+                    .anchor(Anchor::TopLeft)
+                    .pack(),
+                Name::new("New Curves"),
+            ))
+            .with_children(|ui| {
+                ui.spawn(UiButton::new("Curves".to_string(), 6, Rl(100.0)))
+                    .observe(
+                        |_trigger: Trigger<ButtonClickedEvent>,
+                        state: Res<UiState>,
+                         mut enter_eval_event_writer: EventWriter<EnterEvalEvent>| {
+                            enter_eval_event_writer.write(EnterEvalEvent::Curves(state.number_of_points_and_curves));
+                        },
+                    );
+            });
+        });
+
+        ui.spawn((
+            UiLayout::window()
+                .size(Rl((100.0, 1.0 / 4.0 * 100.0)))
+                .pos(Rl((0.0, 2.0 / 4.0 * 100.0)))
+                .anchor(Anchor::TopLeft)
+                .pack(),
+            Name::new("Buttons Linear and Precision"),
+        ))
+        .with_children(|ui| {
+            ui.spawn((
+                UiLayout::window()
+                    .pos(Rl((2.5, 0.0)))
+                    .size(Rl((45.0, 100.0)))
+                    .anchor(Anchor::TopLeft)
+                    .pack(),
+                Name::new("New Surface"),
+            ))
+            .with_children(|ui| {
+                ui.spawn(UiButton::new("Linear".to_string(), 6, Rl(100.0)))
+                    .observe(
+                        |_trigger: Trigger<ButtonClickedEvent>,
+                        state: Res<UiState>,
+                         mut enter_eval_event_writer: EventWriter<EnterEvalEvent>| {
+                            enter_eval_event_writer.write(EnterEvalEvent::Linear(state.number_of_points_and_curves));
+                        },
+                    );
+            });
+
+            ui.spawn((
+                UiLayout::window()
+                    .pos(Rl((52.5, 0.0)))
+                    .size(Rl((45.0, 100.0)))
+                    .anchor(Anchor::TopLeft)
+                    .pack(),
+                Name::new("New Curves"),
+            ))
+            .with_children(|ui| {
+                ui.spawn(UiButton::new("Precision".to_string(), 9, Rl(100.0)))
+                    .observe(
+                        |_trigger: Trigger<ButtonClickedEvent>,
+                        state: Res<UiState>,
+                         mut enter_eval_event_writer: EventWriter<EnterEvalEvent>| {
+                            enter_eval_event_writer.write(EnterEvalEvent::Precision(state.number_of_points_and_curves));
+                        },
+                    );
+            });
+        });
+
+        ui.spawn((
+            UiLayout::window()
+                .size(Rl((100.0, 1.0 / 4.0 * 100.0)))
+                .pos(Rl((0.0, 3.0 / 4.0 * 100.0)))
+                .anchor(Anchor::TopLeft)
+                .pack(),
+            Name::new("Slider"),
+        ))
+        .with_children(|ui| {
+            let mut slider = UiSlider::new(
+                "# of Entities: ".to_owned(),
+                1.0,
+                10.0,
+                Rl((100.0, 100.0)),
+            );
+            slider.set_to_string_fn(|value| format!("{}", value as i32));
+            slider.set(ui_state.box_depth);
+            ui.spawn(slider).observe(
+                |trigger: Trigger<SliderValueChangedEvent>, mut state: ResMut<UiState>| {
+                    state.number_of_points_and_curves = trigger.value.round() as usize;
+                },
+            );
+        });
+    });
 }
 
 fn build_ui(
@@ -391,7 +544,7 @@ fn build_ui(
             // Use this constructor to init 3D settings
             UiLayoutRoot::new_3d(),
             // Provide default size instead of camera
-            Dimension::from((1.0 * scale_info.scale, 2.0 * scale_info.scale)),
+            Dimension::from((1.0 * scale_info.scale, 3.0 * scale_info.scale)),
             // The location of the UI panel
             Transform::from_xyz(0.0, 0.0, -5.0 * scale_info.scale),
             RenderLayers::from(DisplayIn::Normal),

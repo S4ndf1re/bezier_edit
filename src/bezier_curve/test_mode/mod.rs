@@ -123,7 +123,7 @@ pub struct Evaluation {
     evaluations: Vec<SingleEvaluation>,
 
     #[serde(skip)]
-    current_creation_type: Option<EnterEvalState>,
+    current_creation_type: Option<EnterEvalEvent>,
 }
 
 impl Evaluation {
@@ -273,7 +273,7 @@ fn handle_state_change_event(
 }
 
 #[derive(Default, Clone, Debug, Event)]
-pub enum EnterEvalState {
+pub enum EnterEvalEvent {
     #[default]
     Next,
     Surface,
@@ -282,26 +282,26 @@ pub enum EnterEvalState {
     Precision(usize),
 }
 
-impl From<EnterEvalState> for ResetDefaultCurveEvent {
-    fn from(value: EnterEvalState) -> Self {
+impl From<EnterEvalEvent> for ResetDefaultCurveEvent {
+    fn from(value: EnterEvalEvent) -> Self {
         match value {
-            EnterEvalState::Next => ResetDefaultCurveEvent::Surface,
-            EnterEvalState::Surface => ResetDefaultCurveEvent::Surface,
-            EnterEvalState::Curves(n) => ResetDefaultCurveEvent::Curves(n),
-            EnterEvalState::Linear(n) => todo!("Generate default line and points here"),
-            EnterEvalState::Precision(n) => todo!("Generate default points here"),
+            EnterEvalEvent::Next => ResetDefaultCurveEvent::Surface,
+            EnterEvalEvent::Surface => ResetDefaultCurveEvent::Surface,
+            EnterEvalEvent::Curves(n) => ResetDefaultCurveEvent::Curves(n),
+            EnterEvalEvent::Linear(n) => todo!("Generate default line and points here"),
+            EnterEvalEvent::Precision(n) => todo!("Generate default points here"),
         }
     }
 }
 
-impl TryFrom<(EnterEvalState, Vec<TestControlPoint>)> for EvaluationType {
+impl TryFrom<(EnterEvalEvent, Vec<TestControlPoint>)> for EvaluationType {
     type Error = String;
     fn try_from(
-        value: (EnterEvalState, Vec<TestControlPoint>),
+        value: (EnterEvalEvent, Vec<TestControlPoint>),
     ) -> std::result::Result<Self, Self::Error> {
         match value.0 {
-            EnterEvalState::Next => Err("next cannot be converted".to_owned()),
-            EnterEvalState::Curves(_) => {
+            EnterEvalEvent::Next => Err("next cannot be converted".to_owned()),
+            EnterEvalEvent::Curves(_) => {
                 let points = value.1.to_control_points();
 
                 let curves: Vec<Vec<TestControlPoint>> = points
@@ -322,10 +322,10 @@ impl TryFrom<(EnterEvalState, Vec<TestControlPoint>)> for EvaluationType {
                     .collect();
                 Ok(EvaluationType::Curve(EvaluationCurves { curves }))
             }
-            EnterEvalState::Surface => Ok(EvaluationType::Surface(EvaluationSurface {
+            EnterEvalEvent::Surface => Ok(EvaluationType::Surface(EvaluationSurface {
                 control_points: value.1,
             })),
-            EnterEvalState::Linear(n) => {
+            EnterEvalEvent::Linear(n) => {
                 let points = value.1.to_control_points();
 
                 let curves: Vec<Vec<TestControlPoint>> = points
@@ -360,7 +360,7 @@ impl TryFrom<(EnterEvalState, Vec<TestControlPoint>)> for EvaluationType {
                     start_points,
                 }))
             }
-            EnterEvalState::Precision(n) => {
+            EnterEvalEvent::Precision(n) => {
                 let points = value.1.to_control_points();
 
                 let curves: Vec<Vec<TestControlPoint>> = points
@@ -401,7 +401,7 @@ impl TryFrom<(EnterEvalState, Vec<TestControlPoint>)> for EvaluationType {
 
 #[allow(clippy::complexity)]
 fn on_enter_eval_state(
-    mut eval_state_reader: EventReader<EnterEvalState>,
+    mut eval_state_reader: EventReader<EnterEvalEvent>,
     mut evaluation: ResMut<Evaluation>,
     mut commands: Commands,
     evaluation_parents: Query<Entity, With<EvaluationMarker>>,
@@ -529,7 +529,7 @@ fn on_enter_result_state(
         ));
     } else if !evaluation.can_evaluate_further()
         && let Some(eval_type) = evaluation.current_creation_type.clone()
-        && !matches!(eval_type, EnterEvalState::Next)
+        && !matches!(eval_type, EnterEvalEvent::Next)
     {
         evaluation.add_reference_surface(
             (eval_type, points)
@@ -640,7 +640,7 @@ impl Plugin for EvaluationPlugin {
 
         app.add_systems(
             Update,
-            on_enter_eval_state.run_if(on_event::<EnterEvalState>),
+            on_enter_eval_state.run_if(on_event::<EnterEvalEvent>),
         );
         app.add_systems(OnEnter(EvaluationFlowState::Result), on_enter_result_state);
         app.add_systems(Last, handle_state_change_event);
@@ -649,5 +649,7 @@ impl Plugin for EvaluationPlugin {
         app.add_event::<NextEvaluationEvent>();
 
         app.insert_state(EvaluationFlowState::default());
+
+        app.add_event::<EnterEvalEvent>();
     }
 }
