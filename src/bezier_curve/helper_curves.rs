@@ -5,6 +5,7 @@ use super::bridges::BridgeSpawner;
 use super::{EntityDeletedEvent, components::ControlState, render_info::RenderInformation};
 use crate::bezier_curve::bridges::BridgeDespawner;
 use crate::nurbs::bezier::{de_casteljau, increase_degree};
+use crate::nurbs::parametric::Parametric;
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::projection::{AddBoundingEntityEvent, BoundingEntitiesManager, DisplayIn};
 use crate::translation_control::translation_controller::{
@@ -35,7 +36,7 @@ pub struct ControlCurve;
 
 #[derive(Component)]
 #[require(Transform)]
-pub struct ControlCurvePoint(usize);
+pub struct ControlCurvePoint(pub usize);
 
 #[derive(Component)]
 #[require(Transform)]
@@ -70,6 +71,113 @@ pub struct CurveSupportPoint {
 
 #[derive(Event)]
 pub struct RedrawCurvesEvent;
+
+/// Spawn a new curve. Note that this does not add the curve and its points to the BoundingEntityManager using the AddBoundingEntity Event
+pub fn spawn_new_curve(
+    commands: &mut Commands,
+    root: Entity,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    points: &[Vec3],
+    render_info: &Res<RenderInformation>,
+    hidden: bool,
+) -> (Entity, Vec<(usize, Entity, Vec3)>) {
+    let parent = if hidden {
+        commands
+            .spawn((
+                ControlCurve,
+                RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                Name::new("Control Curve"),
+                Transform::default(),
+                Visibility::Inherited,
+                ChildOf(root),
+            ))
+            .id()
+    } else {
+        commands
+            .spawn((
+                ControlCurve,
+                RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                Name::new("Control Curve"),
+                Transform::default(),
+                Visibility::Inherited,
+                ChildOf(root),
+            ))
+            .observe(handle_click_event_on_curve_level)
+            .observe(handle_click_event_on_curve_level3d)
+            .id()
+    };
+
+    let sphere = meshes.add(Sphere::new(0.08 * render_info.scale));
+    let material = materials.add(StandardMaterial::from_color(PURPLE_600));
+
+    let mut indexed_points = Vec::with_capacity(points.len());
+
+    for (idx, p) in points.iter().enumerate() {
+        let child = if hidden {
+            commands
+                .spawn((
+                    ChildOf(parent),
+                    Transform::from_translation(*p),
+                    ControlCurvePoint(idx),
+                    Picking3dInteractable::default(),
+                    CantSnapToCurve::Single(parent),
+                    Name::new("Temporary Curve"),
+                    Mesh3d(sphere.clone()),
+                    MeshMaterial3d(material.clone()),
+                    Visibility::Hidden,
+                    RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                ))
+                .id()
+        } else {
+            commands
+                .spawn((
+                    ChildOf(parent),
+                    Transform::from_translation(*p),
+                    ControlCurvePoint(idx),
+                    Picking3dInteractable::default(),
+                    CantSnapToCurve::Single(parent),
+                    Name::new("Temporary Curve"),
+                    Mesh3d(sphere.clone()),
+                    MeshMaterial3d(material.clone()),
+                    Visibility::Inherited,
+                    RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                ))
+                .observe(handle_click_on_curve_point3d)
+                .observe(handle_click_on_curve_point)
+                .id()
+        };
+
+        indexed_points.push((idx, child, *p));
+    }
+
+    if points.len() >= 2 {
+
+        let (sphere_mesh, purple) = {
+            (
+                meshes.add(Sphere::new(0.03 * render_info.scale)),
+                materials.add(StandardMaterial::from_color(PURPLE_600)),
+            )
+        };
+
+        for i in 0..10 {
+            let u = (i + 1) as f64 / 11.0;
+
+            let points: Vec<Point> = points.iter().map(|p| Point::from(*p)).collect();
+
+            let point = points.f(&[u]);
+
+            commands.spawn((
+                ChildOf(parent),
+                CurveSupportPoint { u },
+                Transform::from_translation(Vec3::from(point)),
+                Mesh3d(sphere_mesh.clone()),
+                MeshMaterial3d(purple.clone()),
+            ));
+        }
+    }
+    (parent, indexed_points)
+}
 
 #[cfg(feature = "vr_enable")]
 #[allow(clippy::complexity)]

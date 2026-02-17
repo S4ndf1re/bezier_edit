@@ -3,8 +3,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     bezier_curve::{
-        bezier_curve_renderer::ResetDefaultCurveEvent,
+        bezier_curve_renderer::{RedrawEvent, ResetDefaultCurveEvent},
         curvature_display_mode::CurvatureDisplayMode,
+        helper_curves::spawn_new_curve,
         render_info::RenderInformation,
         test_mode::{
             BasicSurfaceEvaluationData, EvaluationPointComponent, EvaluationSurfaceComponent,
@@ -12,7 +13,13 @@ use crate::{
         },
         util::{SurfaceRenderMode, create_mesh_from_control_points},
     },
-    nurbs::bezier_plane::{ToControlPoints2D, eval_2d_bezier_curves, transpose_control_points},
+    nurbs::{
+        bezier_plane::{
+            ControlPoints2D, ToControlPoints2D, eval_2d_bezier_curves, transpose_control_points,
+        },
+        parametric::{MinDistanceToPoint, Parametric},
+        point::Point,
+    },
     translation_control::proximity_detector::Snappable,
 };
 
@@ -24,6 +31,7 @@ pub trait ToRenderCommandsForEvaluation {
         images: ResMut<Assets<Image>>,
         materials: ResMut<Assets<StandardMaterial>>,
         meshes: ResMut<Assets<Mesh>>,
+        redraw_event: EventWriter<RedrawEvent>,
         info: Res<RenderInformation>,
     );
 
@@ -63,8 +71,16 @@ impl EvaluationType {
             Self::LinearPlacement(line) => {
                 let (_, _, start) = line.start.into();
                 let (_, _, end) = line.end.into();
+                let points = line
+                    .start_points
+                    .iter()
+                    .map(|p| {
+                        let (_, _, p) = (*p).into();
+                        p
+                    })
+                    .collect();
 
-                ResetDefaultCurveEvent::Line { start, end }
+                ResetDefaultCurveEvent::Line { start, end, points }
             }
         }
     }
@@ -78,20 +94,46 @@ impl ToRenderCommandsForEvaluation for EvaluationType {
         images: ResMut<Assets<Image>>,
         materials: ResMut<Assets<StandardMaterial>>,
         meshes: ResMut<Assets<Mesh>>,
+        redraw_event: EventWriter<RedrawEvent>,
         info: Res<RenderInformation>,
     ) {
         match self {
-            Self::Surface(surface) => {
-                surface.to_render_commands(commands, root, images, materials, meshes, info)
-            }
-            Self::LinearPlacement(lin_placement) => {
-                lin_placement.to_render_commands(commands, root, images, materials, meshes, info)
-            }
-            Self::PrecisionMovement(precision_movement) => precision_movement
-                .to_render_commands(commands, root, images, materials, meshes, info),
-            Self::Curve(curves) => {
-                curves.to_render_commands(commands, root, images, materials, meshes, info)
-            }
+            Self::Surface(surface) => surface.to_render_commands(
+                commands,
+                root,
+                images,
+                materials,
+                meshes,
+                redraw_event,
+                info,
+            ),
+            Self::LinearPlacement(lin_placement) => lin_placement.to_render_commands(
+                commands,
+                root,
+                images,
+                materials,
+                meshes,
+                redraw_event,
+                info,
+            ),
+            Self::PrecisionMovement(precision_movement) => precision_movement.to_render_commands(
+                commands,
+                root,
+                images,
+                materials,
+                meshes,
+                redraw_event,
+                info,
+            ),
+            Self::Curve(curves) => curves.to_render_commands(
+                commands,
+                root,
+                images,
+                materials,
+                meshes,
+                redraw_event,
+                info,
+            ),
         }
     }
 
@@ -125,6 +167,7 @@ impl ToRenderCommandsForEvaluation for EvaluationSurface {
         images: ResMut<Assets<Image>>,
         mut materials: ResMut<Assets<StandardMaterial>>,
         mut meshes: ResMut<Assets<Mesh>>,
+        _redraw_event: EventWriter<RedrawEvent>,
         info: Res<RenderInformation>,
     ) {
         let points = &self.control_points;
@@ -246,18 +289,71 @@ pub struct EvaluationCurves {
 impl ToRenderCommandsForEvaluation for EvaluationCurves {
     fn to_render_commands(
         &self,
-        _commands: &mut Commands,
-        _root: Entity,
+        commands: &mut Commands,
+        root: Entity,
         _images: ResMut<Assets<Image>>,
-        _materials: ResMut<Assets<StandardMaterial>>,
-        _meshes: ResMut<Assets<Mesh>>,
-        _info: Res<RenderInformation>,
+        mut materials: ResMut<Assets<StandardMaterial>>,
+        mut meshes: ResMut<Assets<Mesh>>,
+        mut redraw_event: EventWriter<RedrawEvent>,
+        info: Res<RenderInformation>,
     ) {
-        todo!()
+        for curve in &self.curves {
+            let curve = curve.to_control_points();
+            if !curve.is_empty() {
+                let points: Vec<Vec3> = curve[0].iter().map(|v| Vec3::from(*v)).collect();
+                let _ = spawn_new_curve(
+                    commands,
+                    root,
+                    &mut meshes,
+                    &mut materials,
+                    &points,
+                    &info,
+                    true,
+                );
+            }
+        }
+
+        // TODO: Fix a bug that the lines are not rendered directly
+        redraw_event.write(RedrawEvent::HighQuality);
     }
 
     fn evaluate(&self, result: &mut SingleEvaluation) -> BasicSurfaceEvaluationData {
-        todo!()
+        let plane: ControlPoints2D = result.test_control_points.to_control_points();
+
+        let mut min_dist = f64::MAX;
+        let mut max_dist = f64::MIN;
+        let mut avg_dist = 0.0;
+
+        let resolution = result.resolution;
+
+        for curve in &self.curves {
+            let nurbs_points: Vec<Point> = curve.iter().map(|v| Point::from(v.point)).collect();
+
+            for i in 0..=resolution {
+                let u = i as f64 / resolution as f64;
+
+                let curve_point = nurbs_points.f(&[u]);
+
+                let min_dist_result = plane.min_distance_to_point(curve_point);
+
+                min_dist = min_dist.min(min_dist_result.distance);
+                max_dist = max_dist.max(min_dist_result.distance);
+                avg_dist +=
+                    min_dist_result.distance / (resolution as f64 * self.curves.len() as f64);
+            }
+        }
+
+        result.min_dist = min_dist;
+        result.max_dist = max_dist;
+        result.average_dist = avg_dist;
+        result.evaluated = true;
+
+        BasicSurfaceEvaluationData {
+            average_dist: avg_dist,
+            max_dist,
+            min_dist,
+            time: result.time,
+        }
     }
 }
 
@@ -276,6 +372,7 @@ impl ToRenderCommandsForEvaluation for EvaluationLinearPlacement {
         _images: ResMut<Assets<Image>>,
         mut materials: ResMut<Assets<StandardMaterial>>,
         mut meshes: ResMut<Assets<Mesh>>,
+        _redraw_event: EventWriter<RedrawEvent>,
         info: Res<RenderInformation>,
     ) {
         let (_, _, start) = self.start.into();
@@ -356,6 +453,7 @@ impl ToRenderCommandsForEvaluation for EvaluationPrecisionMovement {
         _images: ResMut<Assets<Image>>,
         mut materials: ResMut<Assets<StandardMaterial>>,
         mut meshes: ResMut<Assets<Mesh>>,
+        _redraw_event: EventWriter<RedrawEvent>,
         info: Res<RenderInformation>,
     ) {
         let (_, _, end) = self.end.into();

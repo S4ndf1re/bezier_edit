@@ -1,3 +1,5 @@
+use std::thread::spawn;
+
 use super::bridges::{BridgeSpawner, update_lines};
 use super::curvature_display_mode::{
     ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
@@ -36,9 +38,10 @@ use crate::bezier_curve::align_mode::{
     HomeRootTransformEvent, RecreateAlignmentChildren, create_alignment_sphere,
     delete_alignment_sphere, handle_home_root_transform, update_cross_bridge,
 };
+use crate::bezier_curve::bridges::{Bridge, BridgeMarker, draw_bridge_cylinder};
 use crate::bezier_curve::helper_curves::{
     AddPointToCurveEvent, RemovePointFromCurveEvent, add_point_to_curve_handler,
-    remove_point_from_curve_handler, update_sphere_positions,
+    remove_point_from_curve_handler, spawn_new_curve, update_sphere_positions,
 };
 use crate::bezier_curve::inspector::{
     UpdateSurfaceInspectorEvent, inspectors_exist, setup_surface_inspector,
@@ -125,6 +128,12 @@ pub struct PlusModeEvent;
 
 #[derive(Event)]
 pub struct AlignModeEvent;
+
+#[derive(Component)]
+pub struct NonSurfaceMarker;
+
+#[derive(Component)]
+pub struct RemoveOnResetMarker;
 
 pub fn generic_on_despawn_trigger(mut world: DeferredWorld, context: HookContext) {
     let mut writer = world.resource_mut::<Events<EntityDeletedEvent>>();
@@ -299,7 +308,7 @@ fn generate_pointcloud(
     mut events: EventReader<RedrawEvent>,
     mut commands: Commands,
     entities: Query<Entity, With<ResultSurface>>,
-    control_points: Query<(&Transform, &RenderPoint)>,
+    control_points: Query<(&Transform, &RenderPoint), Without<NonSurfaceMarker>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     images: ResMut<Assets<Image>>,
@@ -325,6 +334,11 @@ fn generate_pointcloud(
     // Despawn old, respawn new
     for p in entities.iter() {
         let _ = commands.get_entity(p).map(|mut e| e.despawn());
+    }
+
+    // Return if there are no actual control points
+    if control_points.iter().len() == 0 {
+        return;
     }
 
     if scale_info.surface_mesh_mode == SurfaceMeshMode::Mesh {
@@ -371,7 +385,7 @@ pub fn redraw_iso_lines(
     mut events: EventReader<RedrawLinesEvent>,
     entities: Query<Entity, With<ResultLines>>,
     scale_info: Res<RenderInformation>,
-    control_points: Query<(&Transform, &RenderPoint)>,
+    control_points: Query<(&Transform, &RenderPoint), Without<NonSurfaceMarker>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -395,6 +409,10 @@ pub fn redraw_iso_lines(
     // Despawn old, respawn new
     for p in entities.iter() {
         let _ = commands.get_entity(p).map(|mut e| e.despawn());
+    }
+
+    if control_points.iter().len() == 0 {
+        return;
     }
 
     let w = resolution.0;
@@ -454,7 +472,7 @@ pub fn redraw_boxes(
     mut commands: Commands,
     surface: Query<Entity, With<Surface>>,
     boxes: Query<Entity, With<CurveBox>>,
-    control_points: Query<(&Transform, &RenderPoint)>,
+    control_points: Query<(&Transform, &RenderPoint), Without<NonSurfaceMarker>>,
     scale_info: Res<RenderInformation>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -467,6 +485,10 @@ pub fn redraw_boxes(
     // Despawn old, respawn new
     for p in boxes.iter() {
         let _ = commands.get_entity(p).map(|mut e| e.despawn());
+    }
+
+    if control_points.iter().len() == 0 {
+        return;
     }
 
     let multi_curves = control_points.to_control_points();
@@ -632,10 +654,10 @@ pub fn redraw_boxes(
 #[allow(clippy::complexity)]
 #[derive(SystemParam)]
 pub struct SurfaceCreator<'w, 's> {
-    root: Query<'w, 's, Entity, With<RootTransform>>,
-    surface: Query<'w, 's, Entity, With<Surface>>,
-    event_writer: EventWriter<'w, RedrawEvent>,
-    duplicate_set: ParamSet<
+    pub root: Query<'w, 's, Entity, With<RootTransform>>,
+    pub surface: Query<'w, 's, Entity, With<Surface>>,
+    pub event_writer: EventWriter<'w, RedrawEvent>,
+    pub duplicate_set: ParamSet<
         'w,
         's,
         (
@@ -730,19 +752,36 @@ impl<'w, 's> SurfaceCreator<'w, 's> {
 pub enum ResetDefaultCurveEvent {
     Surface,
     Curves(usize),
-    Line { start: Vec3, end: Vec3 },
-    Point { target: Vec3, starts: Vec<Vec3> },
+    Line {
+        start: Vec3,
+        end: Vec3,
+        points: Vec<Vec3>,
+    },
+    Point {
+        target: Vec3,
+        starts: Vec<Vec3>,
+    },
 }
 
 pub fn generate_default_curve(
     mut reader: EventReader<ResetDefaultCurveEvent>,
     mut surface_creator: SurfaceCreator,
+    to_remove: Query<Entity, With<RemoveOnResetMarker>>,
 ) {
     if reader.is_empty() {
         return;
     }
     let event = reader.read().collect::<Vec<_>>()[0].clone();
     reader.clear();
+
+    for entity in to_remove {
+        let _ = surface_creator
+            .duplicate_set
+            .p0()
+            .0
+            .get_entity(entity)
+            .map(|mut e| e.despawn());
+    }
 
     match event {
         ResetDefaultCurveEvent::Surface => {
@@ -774,7 +813,171 @@ pub fn generate_default_curve(
 
             surface_creator.create_surface_from_points(points, w, h);
         }
-        _ => todo!(""),
+        ResetDefaultCurveEvent::Point { starts, target } => {
+            let (mut commands, mut materials, mut meshes, _add_bounding_entity, info) =
+                surface_creator.duplicate_set.p0();
+
+            let root = surface_creator.root.single().expect("must be present");
+            let sphere = meshes.add(Sphere::new(0.1 * info.scale));
+            let red = materials.add(Color::from(RED_600));
+            let blue = materials.add(Color::from(BLUE_600));
+
+            let parent = commands.spawn((RemoveOnResetMarker, ChildOf(root))).id();
+
+            commands
+                .spawn((
+                    ChildOf(parent),
+                    RenderPoint(0, 0),
+                    NonSurfaceMarker,
+                    Transform::from_translation(target),
+                    Mesh3d(sphere.clone()),
+                    MeshMaterial3d(red),
+                ))
+                .observe(hover_3d)
+                //.observe(drag_point)
+                .observe(click_on_control_point3d)
+                .observe(click_on_control_point);
+
+            for (idx, point) in starts.iter().enumerate() {
+                commands
+                    .spawn((
+                        ChildOf(parent),
+                        RenderPoint(1, idx),
+                        Transform::from_translation(*point),
+                        Mesh3d(sphere.clone()),
+                        MeshMaterial3d(blue.clone()),
+                    ))
+                    .observe(hover_3d)
+                    //.observe(drag_point)
+                    .observe(click_on_control_point3d)
+                    .observe(click_on_control_point);
+            }
+        }
+        ResetDefaultCurveEvent::Line { start, end, points } => {
+            let (mut commands, mut materials, mut meshes, _add_bounding_entity, info) =
+                surface_creator.duplicate_set.p0();
+
+            let root = surface_creator.root.single().expect("must be present");
+
+            let sphere = meshes.add(Sphere::new(0.1 * info.scale));
+            let red = materials.add(Color::from(RED_600));
+            let blue = materials.add(Color::from(BLUE_600));
+
+            let parent = commands.spawn((RemoveOnResetMarker, ChildOf(root))).id();
+
+            let a = commands
+                .spawn((
+                    ChildOf(parent),
+                    RenderPoint(0, 0),
+                    NonSurfaceMarker,
+                    Transform::from_translation(start),
+                    Mesh3d(sphere.clone()),
+                    MeshMaterial3d(red.clone()),
+                    RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                ))
+                .observe(hover_3d)
+                //.observe(drag_point)
+                .observe(click_on_control_point3d)
+                .observe(click_on_control_point)
+                .id();
+
+            let b = commands
+                .spawn((
+                    RenderPoint(0, 0),
+                    ChildOf(parent),
+                    NonSurfaceMarker,
+                    Transform::from_translation(end),
+                    Mesh3d(sphere.clone()),
+                    MeshMaterial3d(red.clone()),
+                    RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                ))
+                .observe(hover_3d)
+                //.observe(drag_point)
+                .observe(click_on_control_point3d)
+                .observe(click_on_control_point)
+                .id();
+
+            let diff = end - start;
+
+            commands.spawn((
+                Transform::from_translation(start).looking_at(end, Vec3::Y),
+                Bridge { a, b },
+                Name::new(format!("Render line {a} {b}")),
+                RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                Visibility::Inherited,
+                ChildOf(parent),
+                related!(
+                    Children[draw_bridge_cylinder(
+                        &mut meshes,
+                        &mut materials,
+                        diff.length(),
+                        info.scale,
+                    )]
+                ),
+            ));
+
+            for (idx, point) in points.iter().enumerate() {
+                commands
+                    .spawn((
+                        RenderPoint(1, idx),
+                        NonSurfaceMarker,
+                        Transform::from_translation(*point),
+                        Mesh3d(sphere.clone()),
+                        MeshMaterial3d(blue.clone()),
+                        RenderLayers::from(DisplayIn::BothNormalAndOrtho),
+                        ChildOf(parent),
+                    ))
+                    .observe(hover_3d)
+                    //.observe(drag_point)
+                    .observe(click_on_control_point3d)
+                    .observe(click_on_control_point);
+            }
+        }
+        ResetDefaultCurveEvent::Curves(n) => {
+            let root = surface_creator.root.single().expect("must be present");
+
+            let parent = surface_creator
+                .duplicate_set
+                .p0()
+                .0
+                .spawn((RemoveOnResetMarker, ChildOf(root)))
+                .id();
+
+            for i in 0..n {
+                let (inner_parent, mut spawned_points) = {
+                    let (mut commands, mut materials, mut meshes, _add_bounding_entity, info) =
+                        surface_creator.duplicate_set.p0();
+
+                    spawn_new_curve(
+                        &mut commands,
+                        parent,
+                        &mut meshes,
+                        &mut materials,
+                        &[Vec3::new(i as f32, 0.0, 0.0), Vec3::new(i as f32, 0.0, 1.0)],
+                        &info,
+                        false,
+                    )
+                };
+
+                if spawned_points.len() >= 2 {
+                    spawned_points.sort_by_key(|v| v.0);
+
+                    let points: Vec<(usize, Vec3)> =
+                        spawned_points.iter().map(|v| (v.0, v.2)).collect();
+                    let ids: Vec<Entity> = spawned_points.iter().map(|v| v.1).collect();
+                    surface_creator.duplicate_set.p1().spawn_bridges_1d(
+                        inner_parent,
+                        points.len(),
+                        &points,
+                        &ids,
+                    );
+
+                    // Spawn helper spheres
+                    let mut points = points;
+                    points.sort_by_key(|p| p.0);
+                }
+            }
+        }
     }
 }
 

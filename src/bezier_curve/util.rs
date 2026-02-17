@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 
 use bevy::asset::RenderAssetUsages;
+use bevy::ecs::system::QueryLens;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::{color::palettes::css::BLACK, prelude::*};
 use num::pow;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
+use crate::bezier_curve::bezier_curve_renderer::NonSurfaceMarker;
 use crate::nurbs::bezier_plane::{ControlPoints2D, ToControlPoints2D, eval_2d_bezier_curves};
 use crate::nurbs::parametric::Parametric;
 use crate::nurbs::point::Point;
@@ -261,6 +263,40 @@ pub fn curvature_to_color(
 }
 
 impl<'w, 's> ToControlPoints2D for &Query<'w, 's, (&Transform, &RenderPoint)> {
+    fn to_control_points(self) -> ControlPoints2D {
+        let mut points = HashMap::<usize, Vec<(usize, Point)>>::new();
+        for (transform, render_point) in self.iter() {
+            let curve = points.entry(render_point.0).or_default();
+            curve.push((
+                render_point.1,
+                Point::new(
+                    transform.translation.x as f64,
+                    transform.translation.y as f64,
+                    transform.translation.z as f64,
+                    Some(1.0),
+                ),
+            ));
+        }
+
+        // First get all points in order for each sub curve
+        let mut multi_curves = Vec::<(usize, Vec<Point>)>::new();
+        for (i, points) in points.iter_mut() {
+            points.sort_by(|a, b| a.0.cmp(&b.0));
+            let points = points.iter().map(|p| p.1).collect::<Vec<_>>();
+            multi_curves.push((*i, points));
+        }
+
+        // Then order the subcurves by index
+        multi_curves.sort_by(|a, b| a.0.cmp(&b.0));
+        let multi_curves: Vec<Vec<Point>> =
+            multi_curves.iter().map(|p| p.1.clone()).collect::<Vec<_>>();
+
+        multi_curves
+    }
+}
+
+
+impl<'w, 's> ToControlPoints2D for &Query<'w, 's, (&Transform, &RenderPoint), Without<NonSurfaceMarker>> {
     fn to_control_points(self) -> ControlPoints2D {
         let mut points = HashMap::<usize, Vec<(usize, Point)>>::new();
         for (transform, render_point) in self.iter() {

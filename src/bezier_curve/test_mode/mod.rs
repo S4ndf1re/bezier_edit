@@ -28,7 +28,11 @@ use crate::MainCamera;
 use super::{bezier_curve_renderer::ResetDefaultCurveEvent, components::RenderPoint};
 use crate::{
     RootTransform,
-    bezier_curve::render_info::RenderInformation,
+    bezier_curve::{
+        bezier_curve_renderer::RedrawEvent,
+        helper_curves::{ControlCurve, ControlCurvePoint},
+        render_info::RenderInformation,
+    },
     nurbs::{
         bezier_plane::{ControlPoints2D, ToControlPoints2D},
         point::Point,
@@ -41,6 +45,8 @@ enum EvaluationFlowState {
     Idle,
     Eval,
     Result,
+    Creation,
+    Created,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
@@ -263,9 +269,11 @@ fn handle_state_change_event(
 ) {
     for _ in reader.read() {
         let next_state = match **current_state {
-            EvaluationFlowState::Idle => EvaluationFlowState::Eval,
+            EvaluationFlowState::Idle => EvaluationFlowState::Idle,
             EvaluationFlowState::Eval => EvaluationFlowState::Result,
-            EvaluationFlowState::Result => EvaluationFlowState::Eval,
+            EvaluationFlowState::Result => EvaluationFlowState::Idle,
+            EvaluationFlowState::Creation => EvaluationFlowState::Created,
+            EvaluationFlowState::Created => EvaluationFlowState::Idle,
         };
 
         next_state_res.set(next_state);
@@ -288,8 +296,34 @@ impl From<EnterEvalEvent> for ResetDefaultCurveEvent {
             EnterEvalEvent::Next => ResetDefaultCurveEvent::Surface,
             EnterEvalEvent::Surface => ResetDefaultCurveEvent::Surface,
             EnterEvalEvent::Curves(n) => ResetDefaultCurveEvent::Curves(n),
-            EnterEvalEvent::Linear(n) => todo!("Generate default line and points here"),
-            EnterEvalEvent::Precision(n) => todo!("Generate default points here"),
+            EnterEvalEvent::Linear(n) => {
+                let start = Vec3::ZERO;
+                let end = Vec3::ONE;
+
+                let mut points = Vec::new();
+
+                for i in 0..n {
+                    let p = Vec3::new(i as f32, 1.0, 0.0);
+                    points.push(p);
+                }
+
+                ResetDefaultCurveEvent::Line { start, end, points }
+            }
+            EnterEvalEvent::Precision(n) => {
+                let start = Vec3::ZERO;
+
+                let mut points = Vec::new();
+
+                for i in 0..n {
+                    let p = Vec3::new(i as f32, 1.0, 0.0);
+                    points.push(p);
+                }
+
+                ResetDefaultCurveEvent::Point {
+                    target: start,
+                    starts: points,
+                }
+            }
         }
     }
 }
@@ -400,6 +434,23 @@ impl TryFrom<(EnterEvalEvent, Vec<TestControlPoint>)> for EvaluationType {
 }
 
 #[allow(clippy::complexity)]
+fn on_enter_idle_state(
+    mut commands: Commands,
+    evaluation_parents: Query<Entity, With<EvaluationMarker>>,
+    texts: Query<Entity, With<EvalTextMarker>>,
+) {
+    // NOTE(Kleinmann): Only cleanup
+    // NOTE(Kleinmann): Assume that each evaluation has a parent
+    for parent in evaluation_parents {
+        let _ = commands.get_entity(parent).map(|mut e| e.despawn());
+    }
+
+    for text_entity in texts {
+        let _ = commands.get_entity(text_entity).map(|mut e| e.despawn());
+    }
+}
+
+#[allow(clippy::complexity)]
 fn on_enter_eval_state(
     mut eval_state_reader: EventReader<EnterEvalEvent>,
     mut evaluation: ResMut<Evaluation>,
@@ -412,7 +463,22 @@ fn on_enter_eval_state(
     materials: ResMut<Assets<StandardMaterial>>,
     mut reset_default_curve: EventWriter<ResetDefaultCurveEvent>,
     info: Res<RenderInformation>,
+    mut next_state: ResMut<NextState<EvaluationFlowState>>,
+    current_state: Res<State<EvaluationFlowState>>,
+    redraw_event: EventWriter<RedrawEvent>,
 ) {
+    match current_state.get() {
+        EvaluationFlowState::Creation => {
+            next_state.set(EvaluationFlowState::Created);
+            return;
+        }
+        EvaluationFlowState::Eval => {
+            next_state.set(EvaluationFlowState::Result);
+            return;
+        }
+        _ => (),
+    }
+
     if eval_state_reader.is_empty() {
         return;
     }
@@ -425,8 +491,15 @@ fn on_enter_eval_state(
     let mut next_surface = None;
     info!("In eval state");
 
-    if let Some(points) = evaluation.start_next_evaluation() {
+    if matches!(
+        evaluation.current_creation_type.as_ref().expect("just set"),
+        EnterEvalEvent::Next
+    ) && let Some(points) = evaluation.start_next_evaluation()
+    {
         next_surface = Some(points);
+        next_state.set(EvaluationFlowState::Eval);
+    } else {
+        next_state.set(EvaluationFlowState::Creation);
     }
 
     // NOTE(Kleinmann): Assume that each evaluation has a parent
@@ -455,13 +528,26 @@ fn on_enter_eval_state(
             .id();
 
         // Spawn shape
-        points.to_render_commands(&mut commands, parent, images, materials, meshes, info);
+        points.to_render_commands(
+            &mut commands,
+            parent,
+            images,
+            materials,
+            meshes,
+            redraw_event,
+            info,
+        );
 
         reset_default_curve.write(points.to_redraw_event());
     } else {
         // Reset surface
-        // TODO(Kleinmann): Make sure to somehow configure this, for example using states or whatever
-        reset_default_curve.write(ResetDefaultCurveEvent::Surface);
+        reset_default_curve.write(
+            evaluation
+                .current_creation_type
+                .clone()
+                .expect("just set")
+                .into(),
+        );
     }
 }
 
@@ -489,7 +575,6 @@ fn on_enter_result_state(
     info: Res<RenderInformation>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    info!("In result state");
     let mut points = Vec::new();
     for (vec, RenderPoint(y, x)) in control_points {
         points.push((*y, *x, vec.translation).into());
@@ -527,16 +612,78 @@ fn on_enter_result_state(
             Mesh3d::default(),
             Visibility::Inherited,
         ));
-    } else if !evaluation.can_evaluate_further()
-        && let Some(eval_type) = evaluation.current_creation_type.clone()
+    }
+
+    for mut point_entity in &mut evaluation_points {
+        *point_entity = Visibility::Hidden;
+    }
+
+    for mut point_entity in &mut original_points {
+        *point_entity = Visibility::Inherited;
+    }
+
+    // Reset current creation type here
+    evaluation.current_creation_type = None;
+
+    // Reset flow state to idle, use ui to change back to evaluation or creation
+    next_state_res.set(EvaluationFlowState::Idle);
+}
+
+#[allow(clippy::complexity)]
+fn on_enter_create_state(
+    mut evaluation: ResMut<Evaluation>,
+    mut evaluation_points: Query<
+        &mut Visibility,
+        (
+            With<EvaluationPointComponent>,
+            Without<OriginalControlPointMarker>,
+        ),
+    >,
+    mut original_points: Query<
+        &mut Visibility,
+        (
+            With<OriginalControlPointMarker>,
+            Without<EvaluationPointComponent>,
+        ),
+    >,
+    control_points: Query<(&Transform, &RenderPoint)>,
+    curves: Query<&Children, With<ControlCurve>>,
+    curve_points: Query<(&Transform, &ControlCurvePoint), Without<RenderPoint>>,
+    mut next_state_res: ResMut<NextState<EvaluationFlowState>>,
+) {
+    let mut points = Vec::new();
+    for (vec, RenderPoint(y, x)) in control_points {
+        points.push((*y, *x, vec.translation).into());
+    }
+
+    if let Some(eval_type) = evaluation.current_creation_type.clone()
         && !matches!(eval_type, EnterEvalEvent::Next)
     {
+        let points = if matches!(eval_type, EnterEvalEvent::Curves(_)) {
+            // TODO: Collect curves
+            let mut test_points: Vec<TestControlPoint> = Vec::new();
+            for (idx, curve_children) in curves.iter().enumerate() {
+                for child in curve_children {
+                    if let Ok((pos, curve_point)) = curve_points.get(*child) {
+                        let pos = pos.translation;
+                        test_points.push(TestControlPoint {
+                            y_idx: idx,
+                            x_idx: curve_point.0,
+                            point: (pos.x as f64, pos.y as f64, pos.z as f64),
+                        });
+                    }
+                }
+            }
+            test_points
+        } else {
+            points
+        };
         evaluation.add_reference_surface(
             (eval_type, points)
                 .try_into()
                 .expect("Critical error, this should never trigger out of the 'next' eval type"),
         );
-        next_state_res.set(EvaluationFlowState::Eval);
+        next_state_res.set(EvaluationFlowState::Idle);
     }
 
     for mut point_entity in &mut evaluation_points {
@@ -643,6 +790,8 @@ impl Plugin for EvaluationPlugin {
             on_enter_eval_state.run_if(on_event::<EnterEvalEvent>),
         );
         app.add_systems(OnEnter(EvaluationFlowState::Result), on_enter_result_state);
+        app.add_systems(OnEnter(EvaluationFlowState::Idle), on_enter_idle_state);
+        app.add_systems(OnEnter(EvaluationFlowState::Created), on_enter_create_state);
         app.add_systems(Last, handle_state_change_event);
         app.add_systems(Update, follow_camera);
 

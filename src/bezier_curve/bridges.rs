@@ -206,7 +206,7 @@ fn moved_complete_bridge(
     }
 }
 
-fn draw_bridge_cylinder(
+pub fn draw_bridge_cylinder(
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
     length: f32,
