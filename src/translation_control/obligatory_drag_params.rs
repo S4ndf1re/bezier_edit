@@ -187,6 +187,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         let shortest = self.transform_set.p1().collect_shortest(
             Point::from(t.translation + translation),
             &cant_snap_to_curve.unwrap_or_default(),
+            true,
         );
 
         if let Some((curve, u, p, dist, points)) = &shortest
@@ -321,10 +322,11 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     )
                 };
 
-                let shortest = self
-                    .transform_set
-                    .p1()
-                    .collect_shortest(point, &cant_snap_to_curve.unwrap_or_default());
+                let shortest = self.transform_set.p1().collect_shortest(
+                    point,
+                    &cant_snap_to_curve.unwrap_or_default(),
+                    true,
+                );
                 if let Some((curve, u, p, dist, _)) = shortest
                     && dist < SNAPPING_DIST as f64 * self.info.scale as f64
                 {

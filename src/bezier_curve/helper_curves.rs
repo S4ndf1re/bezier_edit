@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use super::bezier_curve_renderer::EndModeEvent;
 use super::bridges::BridgeSpawner;
 use super::{EntityDeletedEvent, components::ControlState, render_info::RenderInformation};
+use crate::bezier_curve::bezier_curve_renderer::hover_3d;
 use crate::bezier_curve::bridges::BridgeDespawner;
 use crate::nurbs::bezier::{de_casteljau, increase_degree};
 use crate::nurbs::parametric::Parametric;
@@ -29,6 +30,9 @@ use bevy::{
 use bevy_lunex::UiLayoutRoot;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use scopeguard::defer;
+
+#[derive(Component)]
+pub struct IgnoreCurve;
 
 #[derive(Component)]
 #[require(Transform)]
@@ -86,6 +90,7 @@ pub fn spawn_new_curve(
         commands
             .spawn((
                 ControlCurve,
+                IgnoreCurve,
                 RenderLayers::from(DisplayIn::BothNormalAndOrtho),
                 Name::new("Control Curve"),
                 Transform::default(),
@@ -122,7 +127,7 @@ pub fn spawn_new_curve(
                     ControlCurvePoint(idx),
                     Picking3dInteractable::default(),
                     CantSnapToCurve::Single(parent),
-                    Name::new("Temporary Curve"),
+                    Name::new("Curve Point"),
                     Mesh3d(sphere.clone()),
                     MeshMaterial3d(material.clone()),
                     Visibility::Hidden,
@@ -137,12 +142,13 @@ pub fn spawn_new_curve(
                     ControlCurvePoint(idx),
                     Picking3dInteractable::default(),
                     CantSnapToCurve::Single(parent),
-                    Name::new("Temporary Curve"),
+                    Name::new("Curve Point"),
                     Mesh3d(sphere.clone()),
                     MeshMaterial3d(material.clone()),
                     Visibility::Inherited,
                     RenderLayers::from(DisplayIn::BothNormalAndOrtho),
                 ))
+                .observe(hover_3d)
                 .observe(handle_click_on_curve_point3d)
                 .observe(handle_click_on_curve_point)
                 .id()
@@ -152,7 +158,6 @@ pub fn spawn_new_curve(
     }
 
     if points.len() >= 2 {
-
         let (sphere_mesh, purple) = {
             (
                 meshes.add(Sphere::new(0.03 * render_info.scale)),
@@ -160,8 +165,12 @@ pub fn spawn_new_curve(
             )
         };
 
-        for i in 0..10 {
-            let u = (i + 1) as f64 / 11.0;
+        for i in 0..=10 {
+            let u = if hidden {
+                i as f64 / 10.0
+            } else {
+                (i + 1) as f64 / 12.0
+            };
 
             let points: Vec<Point> = points.iter().map(|p| Point::from(*p)).collect();
 
@@ -620,6 +629,7 @@ pub fn add_point_to_curve_handler(
                 Picking3dInteractable::default(),
                 CantSnapToCurve::Single(curve),
             ))
+            .observe(hover_3d)
             .observe(handle_click_on_curve_point3d)
             .observe(handle_click_on_curve_point)
             .id();
@@ -710,6 +720,7 @@ pub fn commit_curve(
                         Picking3dInteractable::default(),
                         CantSnapToCurve::Single(parent),
                     ))
+                    .observe(hover_3d)
                     .observe(handle_click_on_curve_point3d)
                     .observe(handle_click_on_curve_point);
 
@@ -756,17 +767,27 @@ pub fn commit_curve(
 }
 
 #[derive(SystemParam)]
+#[allow(clippy::complexity)]
 pub struct CurveCollection<'w, 's> {
-    curves: Query<'w, 's, Entity, (With<ControlCurve>, Without<TemporaryCurve>)>,
+    curves: Query<
+        'w,
+        's,
+        (Entity, Option<Read<IgnoreCurve>>),
+        (With<ControlCurve>, Without<TemporaryCurve>),
+    >,
     children: Query<'w, 's, Read<Children>>,
     curves_points:
         Query<'w, 's, (Read<ControlCurvePoint>, Read<Transform>), Without<TemporaryCurvePoint>>,
 }
 
 impl<'w, 's> CurveCollection<'w, 's> {
-    pub fn collect(&self) -> HashMap<Entity, Vec<Point>> {
+    pub fn collect(&self, ignore_marked_curves: bool) -> HashMap<Entity, Vec<Point>> {
         let mut result = HashMap::new();
-        for curve in self.curves.iter() {
+        for (curve, ignore_curve) in self.curves.iter() {
+            // Note: Ignore if curve has ignore marker, and we actually want to ignore the curves
+            if ignore_marked_curves && ignore_curve.is_some() {
+                continue;
+            }
             let mut points = Vec::new();
             if let Ok(children) = self.children.get(curve) {
                 for child in children {
@@ -786,6 +807,7 @@ impl<'w, 's> CurveCollection<'w, 's> {
         &self,
         point: Point,
         ignore_curves: &CantSnapToCurve,
+        ignore_marked_curves: bool,
     ) -> Option<(Entity, f64, Point, f64, Vec<Point>)> {
         let mut min = f64::MAX;
         let mut min_u = None;
@@ -793,7 +815,7 @@ impl<'w, 's> CurveCollection<'w, 's> {
         let mut min_point = None;
         let mut min_points = None;
 
-        let collected = self.collect();
+        let collected = self.collect(ignore_marked_curves);
         for (curve, points) in collected {
             match ignore_curves {
                 CantSnapToCurve::All => {
@@ -869,7 +891,7 @@ pub struct AllCurveCollection<'w, 's> {
 
 impl<'w, 's> AllCurveCollection<'w, 's> {
     pub fn collect(&self) -> HashMap<Entity, Vec<Point>> {
-        let mut map = self.curves.collect();
+        let mut map = self.curves.collect(false);
         map.extend(self.temporary_curves.collect());
         map
     }

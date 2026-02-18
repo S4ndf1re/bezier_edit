@@ -596,7 +596,7 @@ fn show_transitional_controls(
                                     false,
                                     pickable3d,
                                     pickable.clone(),
-                                    enabled_control.hide_lines
+                                    enabled_control.hide_lines,
                                 );
                             })
                             .observe(drag_controller)
@@ -719,7 +719,7 @@ fn show_transitional_controls(
                                     false,
                                     pickable3d,
                                     pickable.clone(),
-                                    enabled_control.hide_lines
+                                    enabled_control.hide_lines,
                                 );
                             })
                             .observe(drag_controller)
@@ -819,7 +819,7 @@ fn drag_start(
                         Picking3dInteractable::Ignore,
                         Pickable::IGNORE,
                         true,
-                   );
+                    );
                 });
         }
     });
@@ -1894,7 +1894,7 @@ fn update_snapped_points(
     )>,
     control_parents: Query<&ControlParent>,
 ) {
-    let curves = set.p1().collect();
+    let curves = set.p1().collect(false);
 
     let (mut arrows, mut snapped) = set.p0();
 

@@ -1,4 +1,4 @@
-use bevy::{ecs::change_detection, prelude::*};
+use bevy::prelude::*;
 
 use crate::nurbs::bezier_plane::{
     ToControlPoints2D, decrease_degree_surface, increase_degree_surface,
@@ -37,7 +37,7 @@ pub fn handle_degree_increase_event(
             }
         }
 
-        surface_creation.create_surface_from_points(points_flattened, w, h);
+        surface_creation.create_surface_from_points(points_flattened, w, h, None);
     }
 }
 
@@ -66,6 +66,6 @@ pub fn handle_degree_reduction_event(
             }
         }
 
-        surface_creation.create_surface_from_points(points_flattened, w, h);
+        surface_creation.create_surface_from_points(points_flattened, w, h, None);
     }
 }

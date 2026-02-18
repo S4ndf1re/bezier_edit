@@ -24,6 +24,7 @@ use crate::{
 };
 
 pub trait ToRenderCommandsForEvaluation {
+    #[allow(clippy::complexity)]
     fn to_render_commands(
         &self,
         commands: &mut Commands,

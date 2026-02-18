@@ -438,6 +438,7 @@ fn on_enter_idle_state(
     mut commands: Commands,
     evaluation_parents: Query<Entity, With<EvaluationMarker>>,
     texts: Query<Entity, With<EvalTextMarker>>,
+    mut new_surface_writer: EventWriter<ResetDefaultCurveEvent>,
 ) {
     // NOTE(Kleinmann): Only cleanup
     // NOTE(Kleinmann): Assume that each evaluation has a parent
@@ -448,6 +449,9 @@ fn on_enter_idle_state(
     for text_entity in texts {
         let _ = commands.get_entity(text_entity).map(|mut e| e.despawn());
     }
+
+    // NOTE: When returning to idle mode, let the user play around with a surface. This inherently leads to a better experience
+    new_surface_writer.write(ResetDefaultCurveEvent::Surface);
 }
 
 #[allow(clippy::complexity)]
@@ -656,6 +660,7 @@ fn on_enter_create_state(
         points.push((*y, *x, vec.translation).into());
     }
 
+    dbg!(evaluation.current_creation_type.clone());
     if let Some(eval_type) = evaluation.current_creation_type.clone()
         && !matches!(eval_type, EnterEvalEvent::Next)
     {
@@ -786,7 +791,7 @@ impl Plugin for EvaluationPlugin {
         );
 
         app.add_systems(
-            Update,
+            PostUpdate,
             on_enter_eval_state.run_if(on_event::<EnterEvalEvent>),
         );
         app.add_systems(OnEnter(EvaluationFlowState::Result), on_enter_result_state);

@@ -68,6 +68,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::color::palettes::tailwind::*;
 use bevy::ecs::component::HookContext;
 use bevy::ecs::system::SystemParam;
+use bevy::ecs::system::lifetimeless::Read;
 use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
 use bevy::render::mesh::{PrimitiveTopology, VertexAttributeValues};
@@ -655,7 +656,7 @@ pub fn redraw_boxes(
 #[derive(SystemParam)]
 pub struct SurfaceCreator<'w, 's> {
     pub root: Query<'w, 's, Entity, With<RootTransform>>,
-    pub surface: Query<'w, 's, Entity, With<Surface>>,
+    pub surface: Query<'w, 's, (Entity, Read<ChildOf>), With<Surface>>,
     pub event_writer: EventWriter<'w, RedrawEvent>,
     pub duplicate_set: ParamSet<
         'w,
@@ -674,19 +675,30 @@ pub struct SurfaceCreator<'w, 's> {
 }
 
 impl<'w, 's> SurfaceCreator<'w, 's> {
+    /// Create a new surface, replacing the old. Make sure to either use the root transform as a parent, or any provided parent.
+    /// If parent is none, use the old parent, if a surface existed before
     pub fn create_surface_from_points(
         &mut self,
         points: Vec<(usize, usize, Vec3)>,
         w: usize,
         h: usize,
+        parent: Option<Entity>,
     ) {
         let (surface, ids) = {
             let (mut commands, mut materials, mut meshes, mut add_bounding_entities, info) =
                 self.duplicate_set.p0();
-            let root = self.root.single().unwrap();
 
-            if let Ok(surface) = self.surface.single() {
+            let mut root = if let Some(parent) = parent {
+                parent
+            } else {
+                self.root.single().unwrap()
+            };
+
+            if let Ok((surface, old_parent)) = self.surface.single() {
                 let _ = commands.get_entity(surface).map(|mut e| e.despawn());
+                if parent.is_none() {
+                    root = old_parent.parent();
+                }
             }
 
             let surface = commands
@@ -783,6 +795,19 @@ pub fn generate_default_curve(
             .map(|mut e| e.despawn());
     }
 
+    let root = surface_creator.root.single().expect("must be present");
+    let parent = surface_creator
+        .duplicate_set
+        .p0()
+        .0
+        .spawn((
+            RemoveOnResetMarker,
+            ChildOf(root),
+            Transform::default(),
+            Visibility::Inherited,
+        ))
+        .id();
+
     match event {
         ResetDefaultCurveEvent::Surface => {
             let (w, h): (usize, usize) = (2, 2);
@@ -811,18 +836,15 @@ pub fn generate_default_curve(
                 curr_y += step_y;
             }
 
-            surface_creator.create_surface_from_points(points, w, h);
+            surface_creator.create_surface_from_points(points, w, h, Some(parent));
         }
         ResetDefaultCurveEvent::Point { starts, target } => {
             let (mut commands, mut materials, mut meshes, _add_bounding_entity, info) =
                 surface_creator.duplicate_set.p0();
 
-            let root = surface_creator.root.single().expect("must be present");
             let sphere = meshes.add(Sphere::new(0.1 * info.scale));
             let red = materials.add(Color::from(RED_600));
             let blue = materials.add(Color::from(BLUE_600));
-
-            let parent = commands.spawn((RemoveOnResetMarker, ChildOf(root))).id();
 
             commands
                 .spawn((
@@ -857,13 +879,9 @@ pub fn generate_default_curve(
             let (mut commands, mut materials, mut meshes, _add_bounding_entity, info) =
                 surface_creator.duplicate_set.p0();
 
-            let root = surface_creator.root.single().expect("must be present");
-
             let sphere = meshes.add(Sphere::new(0.1 * info.scale));
             let red = materials.add(Color::from(RED_600));
             let blue = materials.add(Color::from(BLUE_600));
-
-            let parent = commands.spawn((RemoveOnResetMarker, ChildOf(root))).id();
 
             let a = commands
                 .spawn((
@@ -934,15 +952,6 @@ pub fn generate_default_curve(
             }
         }
         ResetDefaultCurveEvent::Curves(n) => {
-            let root = surface_creator.root.single().expect("must be present");
-
-            let parent = surface_creator
-                .duplicate_set
-                .p0()
-                .0
-                .spawn((RemoveOnResetMarker, ChildOf(root)))
-                .id();
-
             for i in 0..n {
                 let (inner_parent, mut spawned_points) = {
                     let (mut commands, mut materials, mut meshes, _add_bounding_entity, info) =

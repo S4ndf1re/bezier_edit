@@ -1,8 +1,13 @@
-use bevy::{color::palettes::tailwind::RED_400, prelude::*, render::mesh::VertexAttributeValues};
+use bevy::{
+    color::palettes::tailwind::RED_400,
+    prelude::*,
+    render::{mesh::VertexAttributeValues, render_resource::AsBindGroupShaderType},
+};
 use struct_patch::Patch;
 
 use crate::{
     MainCamera, RootTransform,
+    bezier_curve::bezier_curve_renderer::NonSurfaceMarker,
     custom_shapes::parallelogram::Parallelogram2d,
     nurbs::{
         bezier_plane::{ControlPoints2D, ToControlPoints2D},
@@ -44,8 +49,16 @@ pub struct UpdateSurfaceInspectorEvent;
 pub fn update_surface_inspector(
     mut reader: EventReader<UpdateSurfaceInspectorEvent>,
     mut set: ParamSet<(
-        Query<(&SurfaceInspector, &mut Transform, &Children), Without<SurfaceInspectorMesh>>,
-        Query<(&Transform, &RenderPoint)>,
+        Query<
+            (
+                &SurfaceInspector,
+                &mut Transform,
+                &Children,
+                &mut Visibility,
+            ),
+            Without<SurfaceInspectorMesh>,
+        >,
+        Query<(&Transform, &RenderPoint), Without<NonSurfaceMarker>>,
     )>,
     mut meshes_query: Query<
         (
@@ -74,7 +87,16 @@ pub fn update_surface_inspector(
     let scale = scale_res.scale;
     let points = set.p1().to_control_points();
 
-    for (surface, mut parent_transform, children) in set.p0() {
+    // NOTE: Only fur actual surfaces, this code is relevatn
+    if points.len() < 2 {
+        for (_, _, _, mut visibility) in set.p0() {
+            *visibility = Visibility::Hidden;
+        }
+        return;
+    }
+
+    for (surface, mut parent_transform, children, mut visibility) in set.p0() {
+        *visibility = Visibility::Inherited;
         let point = points.f(&[surface.u, surface.v]);
         let [u_diff, v_diff] = points.derive(&[surface.u, surface.v], 1);
 
