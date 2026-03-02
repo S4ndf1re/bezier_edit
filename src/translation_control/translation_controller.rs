@@ -1950,18 +1950,18 @@ fn update_texts(
             if let Ok(mut text3d) = text3d.get_mut(*child) {
                 *text3d = Text3d::new(format!(
                     "X {:.3}, \t{}{:.3}, \t{:.3}\nY {:.3}, \t{}{:.3}, \t{:.3}\nZ {:.3}, \t{}{:.3}, \t{:.3}",
-                    start.x,
+                    start.x * 1000.0,
                     signs.0,
-                    diff.x,
-                    current.x,
-                    start.y,
+                    diff.x * 1000.0,
+                    current.x * 1000.0,
+                    start.y * 1000.0,
                     signs.1,
-                    diff.y,
-                    current.y,
-                    start.z,
+                    diff.y * 1000.0,
+                    current.y * 1000.0,
+                    start.z * 1000.0,
                     signs.2,
-                    diff.z,
-                    current.z,
+                    diff.z * 1000.0,
+                    current.z * 1000.0,
                 ));
             }
         }
