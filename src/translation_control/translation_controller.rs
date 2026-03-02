@@ -36,9 +36,6 @@ pub struct TemporaryInvisible;
 #[derive(Component)]
 pub struct CoordinateTextMarker(bool);
 
-#[derive(Component)]
-pub struct DistanceTextMarker(bool);
-
 #[derive(Event)]
 pub struct MovedEntityEvent {
     pub entity: Entity,
@@ -880,40 +877,6 @@ fn drag_start(
         )],
     ));
 
-    commands.spawn((
-        ChildOf(control_parent.0),
-        Transform::from_rotation(start_transform.rotation.inverse()),
-        DistanceTextMarker(control_parent.1),
-        Visibility::Inherited,
-        children![(
-            Transform::from_translation(-camera_forward * 1.0 * scale - Vec3::Y * scale)
-                .looking_to(camera_forward, Vec3::Y)
-                .with_scale(Vec3::ONE * 0.0025 * scale),
-            Text3d::new(format!(
-                "({:.3}, {:.3}, {:.3})",
-                0.0 / scale,
-                0.0 / scale,
-                0.0 / scale
-            )),
-            Text3dStyling {
-                size: 64.0,
-                color: Srgba::new(0., 0., 0., 1.),
-                align: TextAlign::Center,
-                font: Arc::from("Rajdhani"),
-                weight: Weight::BOLD,
-                ..Default::default()
-            },
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
-                alpha_mode: AlphaMode::Blend,
-                unlit: true,
-                ..Default::default()
-            })),
-            Mesh3d::default(),
-            Visibility::Inherited,
-        )],
-    ));
-
     history.write(HistoryLogEvent::Begin(
         control_parent.0,
         Some(start_transform),
@@ -1038,40 +1001,6 @@ fn drag_start3d(
         )],
     ));
 
-    commands.spawn((
-        ChildOf(control_parent.0),
-        Transform::from_rotation(start_transform.rotation.inverse()),
-        DistanceTextMarker(control_parent.1),
-        Visibility::Inherited,
-        children![(
-            Transform::from_translation(-camera_forward * 1.0 * scale - Vec3::Y * scale)
-                .looking_to(camera_forward, Vec3::Y)
-                .with_scale(Vec3::ONE * 0.0025 * scale),
-            Text3d::new(format!(
-                "({:.3}, {:.3}, {:.3})",
-                0.0 / scale,
-                0.0 / scale,
-                0.0 / scale
-            )),
-            Text3dStyling {
-                size: 64.0,
-                color: Srgba::new(0., 0., 0., 1.),
-                align: TextAlign::Center,
-                font: Arc::from("Rajdhani"),
-                weight: Weight::BOLD,
-                ..Default::default()
-            },
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
-                alpha_mode: AlphaMode::Blend,
-                unlit: true,
-                ..Default::default()
-            })),
-            Mesh3d::default(),
-            Visibility::Inherited,
-        )],
-    ));
-
     history.write(HistoryLogEvent::Begin(
         control_parent.0,
         Some(start_transform),
@@ -1092,7 +1021,6 @@ fn drag_end_trigger_redraw(
     mut accumulated_movement: ResMut<AccumulatedMovementStore>,
     children: Query<&Children>,
     text_marker: Query<Entity, With<CoordinateTextMarker>>,
-    distance_marker: Query<Entity, With<DistanceTextMarker>>,
 ) {
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
@@ -1122,12 +1050,6 @@ fn drag_end_trigger_redraw(
         if let Ok(text_entity) = text_marker.get(*child) {
             let _ = commands.get_entity(text_entity).map(|mut e| e.despawn());
         }
-
-        if let Ok(distance_entity) = distance_marker.get(*child) {
-            let _ = commands
-                .get_entity(distance_entity)
-                .map(|mut e| e.despawn());
-        }
     }
 
     let _ = commands.get_entity(control_parent.0).map(|mut e| {
@@ -1151,7 +1073,6 @@ fn drag_end3d_trigger_redraw(
     mut accumulated_movement: ResMut<AccumulatedMovementStore>,
     children: Query<&Children>,
     text_marker: Query<Entity, With<CoordinateTextMarker>>,
-    distance_marker: Query<Entity, With<DistanceTextMarker>>,
 ) {
     let dragged_entity = trigger.target();
     let (dragged_childof, _) = arrow_query.get(dragged_entity).unwrap();
@@ -1180,12 +1101,6 @@ fn drag_end3d_trigger_redraw(
     for child in children.get(control_parent.0).unwrap() {
         if let Ok(text_entity) = text_marker.get(*child) {
             let _ = commands.get_entity(text_entity).map(|mut e| e.despawn());
-        }
-
-        if let Ok(distance_entity) = distance_marker.get(*child) {
-            let _ = commands
-                .get_entity(distance_entity)
-                .map(|mut e| e.despawn());
         }
     }
 
@@ -1972,14 +1887,7 @@ fn update_plane_directions(
 fn update_texts(
     mut transforms: Query<&mut Transform>,
     root: Query<Entity, With<RootTransform>>,
-    coordinate_texts: Query<
-        (Entity, &ChildOf, &Children, &CoordinateTextMarker),
-        Without<DistanceTextMarker>,
-    >,
-    distance_texts: Query<
-        (Entity, &ChildOf, &Children, &DistanceTextMarker),
-        Without<CoordinateTextMarker>,
-    >,
+    coordinate_texts: Query<(Entity, &ChildOf, &Children, &CoordinateTextMarker)>,
     mut text3d: Query<&mut Text3d>,
     markers: Query<&AssignedShadowMarkers>,
     camera: Query<&GlobalTransform, With<MainCamera>>,
@@ -1988,7 +1896,6 @@ fn update_texts(
     let root = root.single().unwrap();
     let root_transform = *transforms.get(root).unwrap();
     let camera_transform = camera.single().unwrap();
-    let scale = info.scale;
 
     for (text_entity, &ChildOf(parent), children, marker) in coordinate_texts {
         let start_transform = *transforms.get(parent).unwrap();
@@ -2007,24 +1914,7 @@ fn update_texts(
             transform.rotation = start_transform.rotation.inverse();
         }
 
-        for child in children {
-            let mut transform = transforms.get_mut(*child).unwrap();
-            transform.translation = -camera_forward * 0.3 * info.scale + Vec3::Y * info.scale;
-            transform.look_to(camera_forward, Vec3::Y);
-            if let Ok(mut text3d) = text3d.get_mut(*child) {
-                *text3d = Text3d::new(format!(
-                    "({:.3}, {:.3}, {:.3})",
-                    start_transform.translation.x / scale,
-                    start_transform.translation.y / scale,
-                    start_transform.translation.z / scale
-                ));
-            }
-        }
-    }
-
-    for (text_entity, &ChildOf(parent), children, text_marker) in distance_texts {
-        let start_transform = *transforms.get(parent).unwrap();
-        if let Ok(markers) = markers.get(parent) {
+        let (start, diff, current) = if let Ok(markers) = markers.get(parent) {
             let marker = *markers
                 .0
                 .first()
@@ -2034,34 +1924,36 @@ fn update_texts(
                 .get(marker)
                 .expect("A shadow must always exist when the text exists");
 
-            let diff = start_transform.translation - shadow_position.translation;
+            (
+                shadow_position.translation,
+                start_transform.translation - shadow_position.translation,
+                start_transform.translation,
+            )
+        } else {
+            (
+                start_transform.translation,
+                Vec3::ZERO,
+                start_transform.translation,
+            )
+        };
 
-            let camera_forward = if text_marker.0 {
-                root_transform
-                    .compute_affine()
-                    .inverse()
-                    .transform_vector3(camera_transform.forward().normalize_or_zero())
-            } else {
-                camera_transform.forward().as_vec3()
-            };
-
-            {
-                let mut transform = transforms.get_mut(text_entity).unwrap();
-                transform.rotation = start_transform.rotation.inverse();
-            }
-
-            for child in children {
-                let mut transform = transforms.get_mut(*child).unwrap();
-                transform.translation = -camera_forward * 0.3 * info.scale - Vec3::Y * info.scale;
-                transform.look_to(camera_forward, Vec3::Y);
-                if let Ok(mut text3d) = text3d.get_mut(*child) {
-                    *text3d = Text3d::new(format!(
-                        "({:.3}, {:.3}, {:.3})",
-                        diff.x / scale,
-                        diff.y / scale,
-                        diff.z / scale
-                    ));
-                }
+        for child in children {
+            let mut transform = transforms.get_mut(*child).unwrap();
+            transform.translation = -camera_forward * 0.3 * info.scale + Vec3::Y * info.scale;
+            transform.look_to(camera_forward, Vec3::Y);
+            if let Ok(mut text3d) = text3d.get_mut(*child) {
+                *text3d = Text3d::new(format!(
+                    "X {:.3}, {:.3}, {:.3}\nY {:.3}, {:.3}, {:.3}\nZ {:.3}, {:.3}, {:.3}",
+                    start.x,
+                    diff.x,
+                    current.x,
+                    start.y,
+                    diff.y,
+                    current.y,
+                    start.z,
+                    diff.z,
+                    current.z,
+                ));
             }
         }
     }
@@ -2087,11 +1979,7 @@ fn update_texts(
 ) {
     let root = root.single().unwrap();
     let root_transform = *transforms.get(root).unwrap();
-
-    let Ok(camera_transform) = camera.single() else {
-        return;
-    };
-    let scale = info.scale;
+    let camera_transform = camera.single().unwrap();
 
     for (text_entity, &ChildOf(parent), children, marker) in coordinate_texts {
         let start_transform = *transforms.get(parent).unwrap();
@@ -2110,25 +1998,7 @@ fn update_texts(
             transform.rotation = start_transform.rotation.inverse();
         }
 
-        for child in children {
-            let mut transform = transforms.get_mut(*child).unwrap();
-            transform.translation = -camera_forward * 0.3 * info.scale + Vec3::Y * info.scale;
-            transform.look_to(camera_forward, Vec3::Y);
-            if let Ok(mut text3d) = text3d.get_mut(*child) {
-                *text3d = Text3d::new(format!(
-                    "({:.3}, {:.3}, {:.3})",
-                    start_transform.translation.x / scale,
-                    start_transform.translation.y / scale,
-                    start_transform.translation.z / scale
-                ));
-            }
-        }
-    }
-
-    for (text_entity, &ChildOf(parent), children, text_marker) in distance_texts {
-        let start_transform = *transforms.get(parent).unwrap();
-
-        if let Ok(markers) = markers.get(parent) {
+        let (start, diff, current) = if let Ok(markers) = markers.get(parent) {
             let marker = *markers
                 .0
                 .first()
@@ -2138,34 +2008,36 @@ fn update_texts(
                 .get(marker)
                 .expect("A shadow must always exist when the text exists");
 
-            let diff = start_transform.translation - shadow_position.translation;
+            (
+                shadow_position.translation,
+                start_transform.translation - shadow_position.translation,
+                start_transform.translation,
+            )
+        } else {
+            (
+                start_transform.translation,
+                Vec3::ZERO,
+                start_transform.translation,
+            )
+        };
 
-            let camera_forward = if text_marker.0 {
-                root_transform
-                    .compute_affine()
-                    .inverse()
-                    .transform_vector3(camera_transform.forward().normalize_or_zero())
-            } else {
-                camera_transform.forward().as_vec3()
-            };
-
-            {
-                let mut transform = transforms.get_mut(text_entity).unwrap();
-                transform.rotation = start_transform.rotation.inverse();
-            }
-
-            for child in children {
-                let mut transform = transforms.get_mut(*child).unwrap();
-                transform.translation = -camera_forward * 0.3 * info.scale - Vec3::Y * info.scale;
-                transform.look_to(camera_forward, Vec3::Y);
-                if let Ok(mut text3d) = text3d.get_mut(*child) {
-                    *text3d = Text3d::new(format!(
-                        "({:.3}, {:.3}, {:.3})",
-                        diff.x / scale,
-                        diff.y / scale,
-                        diff.z / scale
-                    ));
-                }
+        for child in children {
+            let mut transform = transforms.get_mut(*child).unwrap();
+            transform.translation = -camera_forward * 0.3 * info.scale + Vec3::Y * info.scale;
+            transform.look_to(camera_forward, Vec3::Y);
+            if let Ok(mut text3d) = text3d.get_mut(*child) {
+                *text3d = Text3d::new(format!(
+                    "X {:.3}, {:.3}, {:.3}\nY {:.3}, {:.3}, {:.3}\nZ {:.3}, {:.3}, {:.3}",
+                    start.x,
+                    diff.x,
+                    current.x,
+                    start.y,
+                    diff.y,
+                    current.y,
+                    start.z,
+                    diff.z,
+                    current.z,
+                ));
             }
         }
     }
