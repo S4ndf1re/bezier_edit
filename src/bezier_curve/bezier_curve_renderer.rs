@@ -1098,6 +1098,17 @@ impl Plugin for BezierRenderPlugin {
         app.add_systems(OnEnter(ControlState::CreateCurve), enter_create_curve_mode);
         app.add_systems(OnExit(ControlState::CreateCurve), commit_curve);
 
+        #[cfg(feature = "vr_enable")]
+        {
+            use crate::bezier_curve::helper_curves::exit_create_curve_mode_vr;
+
+            app.add_systems(
+                OnEnter(ControlState::CreateCurve),
+                enter_create_curve_mode_vr,
+            );
+            app.add_systems(OnExit(ControlState::CreateCurve), exit_create_curve_mode_vr);
+        }
+
         // Align Mode Enter and Exit, and Updates
         app.add_systems(OnEnter(ControlState::Align), create_alignment_sphere);
         app.add_systems(OnExit(ControlState::Align), delete_alignment_sphere);

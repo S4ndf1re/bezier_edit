@@ -13,6 +13,7 @@ use crate::translation_control::translation_controller::{
     CantSnapToCurve, EnableTranslationControlType,
 };
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
+use crate::vr_control::{GripLeft, GripRight};
 use crate::vr_menu::VrMenuRoot;
 use crate::{MainCamera, picking3d};
 use crate::{
@@ -21,6 +22,7 @@ use crate::{
     picking3d::events::{self, Pointer3d},
     translation_control::translation_controller::EnableTranslationControl,
 };
+use bevy::pbr::wireframe::Mesh3dWireframe;
 use bevy::render::view::RenderLayers;
 use bevy::{
     color::palettes::tailwind::PURPLE_600,
@@ -75,6 +77,10 @@ pub struct CurveSupportPoint {
 
 #[derive(Event)]
 pub struct RedrawCurvesEvent;
+
+#[cfg(feature = "vr_enable")]
+#[derive(Component)]
+pub struct PreviewSphereMarker;
 
 /// Spawn a new curve. Note that this does not add the curve and its points to the BoundingEntityManager using the AddBoundingEntity Event
 pub fn spawn_new_curve(
@@ -317,6 +323,50 @@ pub fn enter_create_curve_mode(
             RenderLayers::from(DisplayIn::BothNormalAndOrtho),
         ));
     });
+
+    commands.spawn((Name::new("Preview Left"), Visibility::Inherited));
+}
+
+#[cfg(feature = "vr_enable")]
+pub fn enter_create_curve_mode_vr(
+    mut commands: Commands,
+    left_handle: Query<Entity, With<GripLeft>>,
+    right_handle: Query<Entity, With<GripRight>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    info: Res<RenderInformation>,
+) {
+    let sphere = meshes.add(Sphere::new(0.1 * info.scale));
+    let purple = materials.add(Color::from(PURPLE_600));
+
+    let spawn_preview = |e: Entity, cmds: &mut Commands| {
+        cmds.spawn((
+            ChildOf(e),
+            Name::new("Preview Sphere"),
+            Visibility::Inherited,
+            PreviewSphereMarker,
+            MeshMaterial3d(purple.clone()),
+            Mesh3d(sphere.clone()),
+            Transform::default(),
+        ));
+    };
+
+    left_handle
+        .iter()
+        .for_each(|e| spawn_preview(e, &mut commands));
+    right_handle
+        .iter()
+        .for_each(|e| spawn_preview(e, &mut commands));
+}
+
+#[cfg(feature = "vr_enable")]
+pub fn exit_create_curve_mode_vr(
+    mut commands: Commands,
+    previews: Query<Entity, With<PreviewSphereMarker>>,
+) {
+    for preview in previews {
+        let _ = commands.get_entity(preview).map(|mut e| e.despawn());
+    }
 }
 
 #[allow(clippy::complexity)]
