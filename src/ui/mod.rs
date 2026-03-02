@@ -41,8 +41,7 @@ pub struct UiState {
     v: f64,
     u_box_count: u32,
     v_box_count: u32,
-    u_iso_count: u32,
-    v_iso_count: u32,
+    iso_count: u32,
     box_width: f32,
     box_height: f32,
     box_depth: f32,
@@ -57,8 +56,7 @@ impl Default for UiState {
             v: 0.5,
             u_box_count: 0,
             v_box_count: 0,
-            u_iso_count: 0,
-            v_iso_count: 0,
+            iso_count: 0,
             box_width: 0.25,
             box_height: 0.1,
             box_depth: 0.25,
@@ -202,46 +200,21 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<Ui
         ui.spawn(
             UiLayout::window()
                 .size(Rl((90.0, 40.0)))
-                .pos(Rl((5.0, 5.0)))
+                .pos(Rl((5.0, 30.0)))
                 .anchor(Anchor::TopLeft)
                 .pack(),
         )
         .with_children(|ui| {
-            let mut slider = UiSlider::new("U #Iso:".to_owned(), 0.0, 20.0, Rl((100.0, 100.0)));
-            slider.set(ui_state.u_iso_count as f32);
+            let mut slider = UiSlider::new("#Iso:".to_owned(), 0.0, 9.0, Rl((100.0, 100.0)));
+            slider.set(ui_state.iso_count as f32);
             slider.set_to_string_fn(|value| format!("{}", value as u32));
             ui.spawn(slider).observe(
                 |trigger: Trigger<SliderValueChangedEvent>,
                  mut state: ResMut<UiState>,
                  mut update_info: EventWriter<UpdateIsoDimEvent>| {
-                    state.u_iso_count = trigger.value as u32;
+                    state.iso_count = trigger.value as u32;
                     update_info.write(UpdateIsoDimEvent {
-                        u_iso_count: Some(state.u_iso_count),
-                        ..Default::default()
-                    });
-                },
-            );
-        });
-
-        ui.spawn(
-            UiLayout::window()
-                .size(Rl((90.0, 40.0)))
-                .pos(Rl((5.0, 50.0)))
-                .anchor(Anchor::TopLeft)
-                .pack(),
-        )
-        .with_children(|ui| {
-            let mut slider = UiSlider::new("V #Iso:".to_owned(), 0.0, 20.0, Rl((100.0, 100.0)));
-            slider.set_to_string_fn(|value| format!("{}", value as u32));
-            slider.set(ui_state.v_iso_count as f32);
-            ui.spawn(slider).observe(
-                |trigger: Trigger<SliderValueChangedEvent>,
-                 mut state: ResMut<UiState>,
-                 mut update_info: EventWriter<UpdateIsoDimEvent>| {
-                    state.v_iso_count = trigger.value as u32;
-                    update_info.write(UpdateIsoDimEvent {
-                        v_iso_count: Some(state.v_iso_count),
-                        ..Default::default()
+                        iso_count: Some(state.iso_count),
                     });
                 },
             );
@@ -265,7 +238,7 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<Ui
                 .pack(),
         )
         .with_children(|ui| {
-            let mut slider = UiSlider::new("U #Box:".to_owned(), 0.0, 10.0, Rl((100.0, 100.0)));
+            let mut slider = UiSlider::new("U #Box:".to_owned(), 0.0, 9.0, Rl((100.0, 100.0)));
             slider.set(ui_state.u_box_count as f32);
             slider.set_to_string_fn(|value| format!("{}", value as u32));
             ui.spawn(slider).observe(
@@ -289,7 +262,7 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<Ui
                 .pack(),
         )
         .with_children(|ui| {
-            let mut slider = UiSlider::new("V #Box:".to_owned(), 0.0, 10.0, Rl((100.0, 100.0)));
+            let mut slider = UiSlider::new("V #Box:".to_owned(), 0.0, 9.0, Rl((100.0, 100.0)));
             slider.set_to_string_fn(|value| format!("{}", value as u32));
             slider.set(ui_state.v_box_count as f32);
             ui.spawn(slider).observe(

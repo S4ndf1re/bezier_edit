@@ -1937,20 +1937,29 @@ fn update_texts(
             )
         };
 
+        let signs = (
+            if diff.x >= 0.0 { "+" } else { "" },
+            if diff.y >= 0.0 { "+" } else { "" },
+            if diff.z >= 0.0 { "+" } else { "" },
+        );
+
         for child in children {
             let mut transform = transforms.get_mut(*child).unwrap();
             transform.translation = -camera_forward * 0.3 * info.scale + Vec3::Y * info.scale;
             transform.look_to(camera_forward, Vec3::Y);
             if let Ok(mut text3d) = text3d.get_mut(*child) {
                 *text3d = Text3d::new(format!(
-                    "X {:.3}, {:.3}, {:.3}\nY {:.3}, {:.3}, {:.3}\nZ {:.3}, {:.3}, {:.3}",
+                    "X {:.3}, \t{}{:.3}, \t{:.3}\nY {:.3}, \t{}{:.3}, \t{:.3}\nZ {:.3}, \t{}{:.3}, \t{:.3}",
                     start.x,
+                    signs.0,
                     diff.x,
                     current.x,
                     start.y,
+                    signs.1,
                     diff.y,
                     current.y,
                     start.z,
+                    signs.2,
                     diff.z,
                     current.z,
                 ));

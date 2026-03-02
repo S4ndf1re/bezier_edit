@@ -79,8 +79,7 @@ pub struct UpdateBoxDimEvent {
 
 #[derive(Event, Default)]
 pub struct UpdateIsoDimEvent {
-    pub u_iso_count: Option<u32>,
-    pub v_iso_count: Option<u32>,
+    pub iso_count: Option<u32>,
 }
 
 pub enum UVEither {
@@ -95,8 +94,7 @@ pub struct RenderInformation {
     pub resolution: Resolution,
     pub fast_resolution: Resolution,
     pub curvature_mode: CurvatureDisplayMode,
-    pub u_iso_count: u32,
-    pub v_iso_count: u32,
+    pub iso_count: u32,
     pub u_box_count: u32,
     pub v_box_count: u32,
     pub box_dim: (f32, f32, f32),
@@ -110,31 +108,34 @@ impl RenderInformation {
             return vec![];
         }
 
-        let u_step = 1.0 / self.u_box_count as f64;
-        let v_step = 1.0 / self.v_box_count as f64;
+        let u_step = 1.0 / (self.u_box_count as f64 + 1.0);
+        let v_step = 1.0 / (self.v_box_count as f64 + 1.0);
 
-        (0..=self.u_box_count)
+        (0..=self.u_box_count + 1)
             .flat_map(|u| {
-                (0..=self.v_box_count).map(move |v| ((u as f64) * u_step, (v as f64) * v_step))
+                (0..=self.v_box_count + 1).map(move |v| ((u as f64) * u_step, (v as f64) * v_step))
             })
             .collect::<Vec<_>>()
     }
 
     pub fn to_line_uv(&self) -> Vec<UVEither> {
-        if self.u_iso_count == 0 || self.v_iso_count == 0 {
+        if self.iso_count == 0 {
             return vec![];
         }
 
-        let u_step = 1.0 / self.u_iso_count as f64;
-        let v_step = 1.0 / self.v_iso_count as f64;
+        let step = 1.0 / (self.iso_count as f64 + 1.0);
 
         let mut result = Vec::new();
-        for i in 0..=self.u_iso_count {
-            result.push(UVEither::U((i as f64) * u_step));
-        }
 
-        for i in 0..=self.v_iso_count {
-            result.push(UVEither::V((i as f64) * v_step));
+        // Start and end are fixed and always present
+        result.push(UVEither::U(0.0));
+        result.push(UVEither::V(0.0));
+
+        // NOTE: add 1 to actually reach the end, since one is added to the step as wel
+        for i in 0..=self.iso_count + 1 {
+            let uv_coord = (i as f64) * step;
+            result.push(UVEither::U(uv_coord));
+            result.push(UVEither::V(uv_coord));
         }
 
         result
@@ -149,8 +150,7 @@ impl Default for RenderInformation {
             resolution: (100, 100),
             fast_resolution: (25, 25),
             curvature_mode: CurvatureDisplayMode::None,
-            u_iso_count: 0,
-            v_iso_count: 0,
+            iso_count: 0,
             u_box_count: 0,
             v_box_count: 0,
             box_dim: (0.25, 0.10, 0.25),
@@ -193,13 +193,10 @@ pub fn handle_iso_dim_event(
 ) {
     let mut redraw = false;
     for evt in reader.read() {
-        if let Some(u_count) = evt.u_iso_count {
-            info.u_iso_count = u_count;
+        if let Some(count) = evt.iso_count {
+            info.iso_count = count;
         }
 
-        if let Some(v_count) = evt.v_iso_count {
-            info.v_iso_count = v_count;
-        }
         redraw = true;
     }
 
