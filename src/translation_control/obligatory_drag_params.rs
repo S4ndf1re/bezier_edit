@@ -14,7 +14,6 @@ use crate::{
         render_info::RenderInformation,
     },
     nurbs::{
-        bezier::{de_casteljau, derive_after_de_casteljau},
         parametric::Parametric,
         point::Point,
     },
@@ -70,26 +69,26 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         translation: Vec3,
     ) -> Vec3 {
         let mut p0 = self.transform_set.p0();
-        let mut t = p0.get_mut(control_parent.1.0).unwrap();
+        let mut t = p0.get_mut(control_parent.1.entity).unwrap();
         t.translation = match self.state.step_mode {
             StepMode::MM1 => {
                 if self
                     .accumulated_movement
-                    .current_diff(&control_parent.1.0)
+                    .current_diff(&control_parent.1.entity)
                     .unwrap()
                     .length()
                     > 0.01 * self.info.scale
                 {
                     let current = self
                         .accumulated_movement
-                        .current_point(&control_parent.1.0)
+                        .current_point(&control_parent.1.entity)
                         .unwrap();
                     // 0.05
                     let scaled = current * (100.0 / self.info.scale);
                     let floored = scaled.round();
                     let final_vec = floored / (100.0 / self.info.scale);
                     self.accumulated_movement
-                        .reset(control_parent.1.0, final_vec);
+                        .reset(control_parent.1.entity, final_vec);
                     final_vec
                 } else {
                     t.translation
@@ -98,21 +97,21 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             StepMode::MM5 => {
                 if self
                     .accumulated_movement
-                    .current_diff(&control_parent.1.0)
+                    .current_diff(&control_parent.1.entity)
                     .unwrap()
                     .length()
                     > 0.05 * self.info.scale
                 {
                     let current = self
                         .accumulated_movement
-                        .current_point(&control_parent.1.0)
+                        .current_point(&control_parent.1.entity)
                         .unwrap();
                     // 0.05
                     let scaled = current * (20.0 / self.info.scale);
                     let floored = scaled.round();
                     let final_vec = floored / (20.0 / self.info.scale);
                     self.accumulated_movement
-                        .reset(control_parent.1.0, final_vec);
+                        .reset(control_parent.1.entity, final_vec);
                     final_vec
                 } else {
                     t.translation
@@ -121,21 +120,21 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             StepMode::MM10 => {
                 if self
                     .accumulated_movement
-                    .current_diff(&control_parent.1.0)
+                    .current_diff(&control_parent.1.entity)
                     .unwrap()
                     .length()
                     > 0.10 * self.info.scale
                 {
                     let current = self
                         .accumulated_movement
-                        .current_point(&control_parent.1.0)
+                        .current_point(&control_parent.1.entity)
                         .unwrap();
                     // 0.10
                     let scaled = current * (10.0 / self.info.scale);
                     let floored = scaled.round();
                     let final_vec = floored / (10.0 / self.info.scale);
                     self.accumulated_movement
-                        .reset(control_parent.1.0, final_vec);
+                        .reset(control_parent.1.entity, final_vec);
                     final_vec
                 } else {
                     t.translation
@@ -158,17 +157,17 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         closest_move_direction: Vec3,
     ) -> Vec3 {
         self.commands
-            .get_entity(control_parent.1.0)
+            .get_entity(control_parent.1.entity)
             .unwrap()
             .insert(SnappedPoint::ToEntity);
 
         // Move to the snapped orthogonal projection
         let mut p0 = self.transform_set.p0();
-        let mut t = p0.get_mut(control_parent.1.0).unwrap();
+        let mut t = p0.get_mut(control_parent.1.entity).unwrap();
 
         t.translation = t.translation + translation + closest_move_direction;
         self.accumulated_movement
-            .reset(control_parent.1.0, t.translation);
+            .reset(control_parent.1.entity, t.translation);
         t.translation
     }
 
@@ -195,7 +194,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             && !is_temporarily_blocked
         {
             let mut p0 = self.transform_set.p0();
-            let mut t = p0.get_mut(control_parent.1.0).unwrap();
+            let mut t = p0.get_mut(control_parent.1.entity).unwrap();
             t.translation = (*p).into();
 
             let mat = self.materials.add(StandardMaterial::from_color(YELLOW_600));
@@ -204,7 +203,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             let deriv = points.derive(&[*u], 1)[0];
 
             self.commands
-                .get_entity(control_parent.1.0)
+                .get_entity(control_parent.1.entity)
                 .unwrap()
                 .insert(SnappedPoint::ToCurve {
                     u: *u,
@@ -241,18 +240,18 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     .observe(drag_controller3d);
                 });
             self.accumulated_movement
-                .reset(control_parent.1.0, t.translation);
+                .reset(control_parent.1.entity, t.translation);
             t.translation
         } else {
             if let Some((_, _, _, dist, _)) = &shortest
                 && *dist > 2.0 * SNAPPING_DIST as f64 * self.info.scale as f64
                 && is_temporarily_blocked
             {
-                let _ = self.commands.get_entity(control_parent.1.0).map(|mut e| {
+                let _ = self.commands.get_entity(control_parent.1.entity).map(|mut e| {
                     e.remove::<TemporaryCurveSnappingBlocker>();
                 });
             } else if shortest.is_none() {
-                let _ = self.commands.get_entity(control_parent.1.0).map(|mut e| {
+                let _ = self.commands.get_entity(control_parent.1.entity).map(|mut e| {
                     e.remove::<TemporaryCurveSnappingBlocker>();
                 });
             }
@@ -272,7 +271,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         // First test orthographic snap, then non orthographic snap, and last but not least, test
         // curve snapping
         if let Some(closest_move_direction) = self.transform_set.p2().detect_closest_projected(
-            control_parent.1.0,
+            control_parent.1.entity,
             translation,
             &cant_snap_to_entities,
         ) && closest_move_direction.length() < SNAPPING_DIST * self.info.scale
@@ -280,7 +279,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             self.snap_to_projection(control_parent, translation, closest_move_direction)
         } else if let Some(closest_move_direction) =
             self.transform_set.p3().detect_closest_snappable_entity(
-                control_parent.1.0,
+                control_parent.1.entity,
                 translation,
                 &cant_snap_to_entities,
             )
@@ -317,7 +316,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                 } else {
                     Point::from(
                         self.accumulated_movement
-                            .current_point(&control_parent.1.0)
+                            .current_point(&control_parent.1.entity)
                             .unwrap(),
                     )
                 };
@@ -331,21 +330,21 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     && dist < SNAPPING_DIST as f64 * self.info.scale as f64
                 {
                     if is_snapped_arrow {
-                        let mut snap = self.snapped.get_mut(control_parent.1.0).unwrap().1;
+                        let mut snap = self.snapped.get_mut(control_parent.1.entity).unwrap().1;
                         *snap = SnappedPoint::ToCurve { u, curve };
 
                         let mut p0 = self.transform_set.p0();
-                        let mut t = p0.get_mut(control_parent.1.0).unwrap();
+                        let mut t = p0.get_mut(control_parent.1.entity).unwrap();
 
                         t.translation = p.into();
                         self.accumulated_movement
-                            .reset(control_parent.1.0, t.translation);
+                            .reset(control_parent.1.entity, t.translation);
                         t.translation
                     } else {
                         t.translation
                     }
                 } else {
-                    let entity = self.snapped.get(control_parent.1.0).unwrap().0;
+                    let entity = self.snapped.get(control_parent.1.entity).unwrap().0;
                     self.commands
                         .get_entity(entity)
                         .unwrap()
@@ -356,7 +355,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     // projected position)
                     if let Some(closest_move_direction) =
                         self.transform_set.p2().detect_closest_projected(
-                            control_parent.1.0,
+                            control_parent.1.entity,
                             translation,
                             &cant_snap_to_entities,
                         )
@@ -368,7 +367,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                         self.snap_to_projection(control_parent, translation, closest_move_direction)
                     } else if let Some(closest_move_direction) =
                         self.transform_set.p3().detect_closest_snappable_entity(
-                            control_parent.1.0,
+                            control_parent.1.entity,
                             translation,
                             &cant_snap_to_entities,
                         )
@@ -388,45 +387,45 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                 // projected position)
                 if let Some(closest_move_direction) =
                     self.transform_set.p2().detect_closest_projected(
-                        control_parent.1.0,
+                        control_parent.1.entity,
                         self.accumulated_movement
-                            .current_diff(&control_parent.1.0)
+                            .current_diff(&control_parent.1.entity)
                             .unwrap(),
                         &cant_snap_to_entities,
                     )
                     && closest_move_direction.length() < SNAPPING_DIST * self.info.scale
                 {
                     let mut p0 = self.transform_set.p0();
-                    let mut t = p0.get_mut(control_parent.1.0).unwrap();
+                    let mut t = p0.get_mut(control_parent.1.entity).unwrap();
                     t.translation = t.translation
                         + self
                             .accumulated_movement
-                            .current_diff(&control_parent.1.0)
+                            .current_diff(&control_parent.1.entity)
                             .unwrap()
                         + closest_move_direction;
                     t.translation
                 } else if let Some(closest_move_direction) =
                     self.transform_set.p3().detect_closest_snappable_entity(
-                        control_parent.1.0,
+                        control_parent.1.entity,
                         self.accumulated_movement
-                            .current_diff(&control_parent.1.0)
+                            .current_diff(&control_parent.1.entity)
                             .unwrap(),
                         &cant_snap_to_entities,
                     )
                     && closest_move_direction.length() < SNAPPING_DIST * self.info.scale
                 {
                     let mut p0 = self.transform_set.p0();
-                    let mut t = p0.get_mut(control_parent.1.0).unwrap();
+                    let mut t = p0.get_mut(control_parent.1.entity).unwrap();
                     t.translation = t.translation
                         + self
                             .accumulated_movement
-                            .current_diff(&control_parent.1.0)
+                            .current_diff(&control_parent.1.entity)
                             .unwrap()
                         + closest_move_direction;
                     t.translation
                 } else {
                     // Remove snapped component
-                    let entity = self.snapped.get(control_parent.1.0).unwrap().0;
+                    let entity = self.snapped.get(control_parent.1.entity).unwrap().0;
                     self.commands
                         .get_entity(entity)
                         .unwrap()
@@ -434,7 +433,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
 
                     // Consider adding back the curve when not
                     if let Some(accumulated_diff) =
-                        self.accumulated_movement.current_diff(&control_parent.1.0)
+                        self.accumulated_movement.current_diff(&control_parent.1.entity)
                     {
                         self.try_snap_to_curve(
                             control_parent,
@@ -459,39 +458,39 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
     ) {
         if self
             .accumulated_movement
-            .current_diff(&control_parent.1.0)
+            .current_diff(&control_parent.1.entity)
             .is_none()
         {
             self.accumulated_movement.start_movement_entity(
-                control_parent.1.0,
+                control_parent.1.entity,
                 self.transform_set
                     .p0()
-                    .get(control_parent.1.0)
+                    .get(control_parent.1.entity)
                     .unwrap()
                     .translation,
             );
         }
         self.accumulated_movement
-            .add_diff(&control_parent.1.0, translation);
+            .add_diff(&control_parent.1.entity, translation);
         let is_snapped_arrow = self.snapped_control_arrow.get(arrow).is_ok();
         // Only adjust the control parent
-        let is_already_snapped = self.snapped.get(control_parent.1.0).is_ok();
+        let is_already_snapped = self.snapped.get(control_parent.1.entity).is_ok();
         let cant_snap_to_curve = self
             .cant_snap_to_curve
-            .get(control_parent.1.0)
+            .get(control_parent.1.entity)
             .ok()
             .cloned();
 
         let cant_snap_to_entities = self
             .cant_snap_to_entities
-            .get(control_parent.1.0)
+            .get(control_parent.1.entity)
             .ok()
             .cloned();
 
-        let is_temporarily_blocked = self.is_temporarily_blocked.get(control_parent.1.0).is_ok();
+        let is_temporarily_blocked = self.is_temporarily_blocked.get(control_parent.1.entity).is_ok();
 
-        let changed_entity = control_parent.1.0;
-        let control_point = self.transform_set.p0().get(control_parent.1.0).copied();
+        let changed_entity = control_parent.1.entity;
+        let control_point = self.transform_set.p0().get(control_parent.1.entity).copied();
         if let Ok(t) = control_point {
             if t.translation.is_nan() {
                 panic!("T is none");
@@ -514,7 +513,7 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     // snapping
                     let snap = self
                         .snapped
-                        .get(control_parent.1.0)
+                        .get(control_parent.1.entity)
                         .ok()
                         .map(|v| *v.1)
                         .expect(
@@ -535,11 +534,11 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             } else {
                 // Always remove the snapped point, when snapping behaviour is off
                 self.commands
-                    .entity(control_parent.1.0)
+                    .entity(control_parent.1.entity)
                     .remove::<SnappedPoint>();
 
                 let mut p0 = self.transform_set.p0();
-                let mut t = p0.get_mut(control_parent.1.0).unwrap();
+                let mut t = p0.get_mut(control_parent.1.entity).unwrap();
                 t.translation += translation;
                 t.translation
             };

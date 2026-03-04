@@ -5,7 +5,7 @@ use bevy::{
 
 use crate::{
     bezier_curve::render_info::RenderInformation,
-    translation_control::translation_controller::{AssignedShadowMarkers, ShadowMarker},
+    translation_control::translation_controller::AssignedShadowMarkers,
 };
 
 #[derive(Component)]
@@ -22,14 +22,8 @@ impl AssignedShadowBoxes {
     }
 }
 
-pub enum ShadowBoxCylinderAlignment {
-    X,
-    Y,
-    Z,
-}
-
 #[derive(Component)]
-pub struct ShadowBoxCylinder(ShadowBoxCylinderAlignment);
+pub struct ShadowBoxCylinder;
 
 pub fn generate_shadow_box_bundle(
     diff: Vec3,
@@ -51,7 +45,7 @@ pub fn generate_shadow_box_bundle(
             MeshMaterial3d(red.clone()),
             Transform::from_xyz(0.0, 0.0, -diff.x.abs() / 2.0)
                 .with_rotation(Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians())),
-            ShadowBoxCylinder(ShadowBoxCylinderAlignment::X),
+            ShadowBoxCylinder,
         )
     };
 
@@ -61,7 +55,7 @@ pub fn generate_shadow_box_bundle(
             MeshMaterial3d(green.clone()),
             Transform::from_xyz(0.0, 0.0, -diff.y.abs() / 2.0)
                 .with_rotation(Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians())),
-            ShadowBoxCylinder(ShadowBoxCylinderAlignment::Y),
+            ShadowBoxCylinder,
         )
     };
 
@@ -71,7 +65,7 @@ pub fn generate_shadow_box_bundle(
             MeshMaterial3d(blue.clone()),
             Transform::from_xyz(0.0, 0.0, -diff.z.abs() / 2.0)
                 .with_rotation(Quat::from_axis_angle(Vec3::X, 90.0_f32.to_radians())),
-            ShadowBoxCylinder(ShadowBoxCylinderAlignment::Z),
+            ShadowBoxCylinder,
         )
     };
     (

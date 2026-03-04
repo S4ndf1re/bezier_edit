@@ -34,7 +34,9 @@ pub struct ToggleRobotVisibilityEvent;
 pub struct TemporaryInvisible;
 
 #[derive(Component)]
-pub struct CoordinateTextMarker(bool);
+pub struct CoordinateTextMarker {
+    use_root: bool,
+}
 
 #[derive(Event)]
 pub struct MovedEntityEvent {
@@ -72,8 +74,12 @@ impl AssignedShadowMarkers {
 pub struct EnableTranslationControl {
     type_of: EnableTranslationControlType,
     use_root: bool,
+    use_parent_translation: bool,
     invert: bool,
     hide_lines: bool,
+    no_shadow: bool,
+    no_text: bool,
+    custom_root: Option<Entity>,
 }
 
 impl EnableTranslationControl {
@@ -81,8 +87,12 @@ impl EnableTranslationControl {
         Self {
             type_of,
             use_root: false,
+            use_parent_translation: false,
             invert: false,
             hide_lines: false,
+            no_shadow: false,
+            no_text: false,
+            custom_root: None,
         }
     }
 
@@ -90,9 +100,18 @@ impl EnableTranslationControl {
         Self {
             type_of,
             use_root: true,
+            use_parent_translation: true,
             invert: false,
             hide_lines: false,
+            no_shadow: false,
+            no_text: false,
+            custom_root: None,
         }
+    }
+
+    pub fn use_parent_translation(mut self) -> Self {
+        self.use_parent_translation = true;
+        self
     }
 
     pub fn invert(mut self) -> Self {
@@ -102,6 +121,21 @@ impl EnableTranslationControl {
 
     pub fn hide_lines(mut self) -> Self {
         self.hide_lines = true;
+        self
+    }
+
+    pub fn no_shadow(mut self) -> Self {
+        self.no_shadow = true;
+        self
+    }
+
+    pub fn no_text(mut self) -> Self {
+        self.no_text = true;
+        self
+    }
+
+    pub fn with_custom_root(mut self, root: Entity) -> Self {
+        self.custom_root = Some(root);
         self
     }
 }
@@ -129,7 +163,13 @@ pub struct OnPlaneMovableMarker {
 pub struct SnappedArrow;
 
 #[derive(Component)]
-pub struct ControlParent(pub Entity, bool);
+pub struct ControlParent {
+    pub entity: Entity,
+    use_root: bool,
+    no_shadow: bool,
+    no_text: bool,
+    custom_root: Option<Entity>,
+}
 
 #[derive(Component)]
 pub struct ControlSphere;
@@ -264,7 +304,7 @@ fn register_deletes(
 ) {
     for event in deleted.read() {
         for (entity, mut visibility, contrl) in controls.iter_mut() {
-            if contrl.0 == event {
+            if contrl.entity == event {
                 *visibility = Visibility::Hidden;
                 commands.entity(entity).insert(Pickable::IGNORE);
                 commands.entity(entity).remove::<TemporaryInvisible>();
@@ -487,7 +527,7 @@ fn show_transitional_controls(
         let multiplier: f32 = if enabled_control.invert { -1.0 } else { 1.0 };
         let mut already_created = false;
         for (parent_entity, mut visibility, parent) in already_existing.iter_mut() {
-            if parent.0 == entity {
+            if parent.entity == entity {
                 already_created = true;
                 // Match behaviour with toggle_visibility system
                 if state.invisible_robots {
@@ -537,7 +577,13 @@ fn show_transitional_controls(
 
         commands.get_entity(entity).unwrap().with_children(|cmd| {
             let mut parent = cmd.spawn((
-                ControlParent(entity, enabled_control.use_root),
+                ControlParent {
+                    entity,
+                    use_root: enabled_control.use_root,
+                    no_shadow: enabled_control.no_shadow,
+                    no_text: enabled_control.no_text,
+                    custom_root: enabled_control.custom_root,
+                },
                 Name::new("Control Parent"),
                 transform,
                 if state.invisible_robots {
@@ -782,103 +828,110 @@ fn drag_start(
     let dragged_parent = dragged_childof.parent();
 
     let control_parent = control_parents.get(dragged_parent).unwrap();
-    let mut start_transform = *all_transforms.get(control_parent.0).unwrap();
+    let mut start_transform = *all_transforms.get(control_parent.entity).unwrap();
     start_transform.rotation = Quat::IDENTITY;
 
-    accumulated_movement.start_movement_entity(control_parent.0, start_transform.translation);
+    accumulated_movement.start_movement_entity(control_parent.entity, start_transform.translation);
 
     let scale = scale.scale;
 
-    let mut entity_commands = commands.spawn((
-        ShadowMarker(control_parent.0),
-        start_transform,
-        Visibility::default(),
-        Snappable,
-    ));
+    // When no_shadow = true, don't spawn shadows and helper lines
+    if !control_parent.no_shadow {
+        let mut entity_commands = commands.spawn((
+            ShadowMarker(control_parent.entity),
+            start_transform,
+            Visibility::default(),
+            Snappable,
+        ));
 
-    entity_commands.with_children(|parent| {
-        for arrow in arrows.as_ref().iter_arrows() {
-            parent
-                .spawn((
-                    Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.normalized, Vec3::Y),
-                    Control(arrow.normalized),
-                    Picking3dInteractable::default(),
-                    Visibility::default(),
-                ))
-                .with_children(|parent| {
-                    draw_arrow(
-                        parent,
-                        materials.add(arrow.shadow_color),
-                        materials.add(arrow.shadow_color),
-                        &mut meshes,
-                        scale,
-                        true,
-                        Picking3dInteractable::Ignore,
-                        Pickable::IGNORE,
-                        true,
-                    );
-                });
+        entity_commands.with_children(|parent| {
+            for arrow in arrows.as_ref().iter_arrows() {
+                parent
+                    .spawn((
+                        Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.normalized, Vec3::Y),
+                        Control(arrow.normalized),
+                        Picking3dInteractable::default(),
+                        Visibility::default(),
+                    ))
+                    .with_children(|parent| {
+                        draw_arrow(
+                            parent,
+                            materials.add(arrow.shadow_color),
+                            materials.add(arrow.shadow_color),
+                            &mut meshes,
+                            scale,
+                            true,
+                            Picking3dInteractable::Ignore,
+                            Pickable::IGNORE,
+                            true,
+                        );
+                    });
+            }
+        });
+
+        if control_parent.use_root {
+            entity_commands.insert(ChildOf(root));
         }
-    });
 
-    if control_parent.1 {
-        entity_commands.insert(ChildOf(root));
+        // Spawn box
+        let diff = Vec3::new(0.0, 0.0, 0.0);
+        commands.spawn(generate_shadow_box_bundle(
+            diff,
+            &mut materials,
+            &mut meshes,
+            control_parent.entity,
+            scale,
+        ));
     }
 
-    // Spawn box
-    let diff = Vec3::new(0.0, 0.0, 0.0);
-    commands.spawn(generate_shadow_box_bundle(
-        diff,
-        &mut materials,
-        &mut meshes,
-        control_parent.0,
-        scale,
-    ));
+    if !control_parent.no_text {
+        // Spawn texts
+        let start_transform = *all_transforms.get(control_parent.entity).unwrap();
+        let camera_transform = camera.single().unwrap();
+        let camera_forward = root_transform
+            .compute_affine()
+            .inverse()
+            .transform_vector3(camera_transform.forward().normalize_or_zero());
 
-    // Spawn texts
-    let start_transform = *all_transforms.get(control_parent.0).unwrap();
-    let camera_transform = camera.single().unwrap();
-    let camera_forward = root_transform
-        .compute_affine()
-        .inverse()
-        .transform_vector3(camera_transform.forward().normalize_or_zero());
-
-    commands.spawn((
-        ChildOf(control_parent.0),
-        Transform::from_rotation(start_transform.rotation.inverse()),
-        CoordinateTextMarker(control_parent.1),
-        Visibility::Inherited,
-        children![(
-            Transform::from_translation(-camera_forward * 1.0 * scale + Vec3::Y * scale)
-                .looking_to(camera_forward, Vec3::Y)
-                .with_scale(Vec3::ONE * 0.0025 * scale),
-            Text3d::new(format!(
-                "({:.3}, {:.3}, {:.3})",
-                start_transform.translation.x / scale,
-                start_transform.translation.y / scale,
-                start_transform.translation.z / scale
-            )),
-            Text3dStyling {
-                size: 64.0,
-                color: Srgba::new(0., 0., 0., 1.),
-                align: TextAlign::Center,
-                font: Arc::from("Rajdhani"),
-                weight: Weight::BOLD,
-                ..Default::default()
+        commands.spawn((
+            ChildOf(control_parent.entity),
+            Transform::from_rotation(start_transform.rotation.inverse()),
+            CoordinateTextMarker {
+                use_root: control_parent.use_root,
             },
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
-                alpha_mode: AlphaMode::Blend,
-                unlit: true,
-                ..Default::default()
-            })),
-            Mesh3d::default(),
             Visibility::Inherited,
-        )],
-    ));
+            children![(
+                Transform::from_translation(-camera_forward * 1.0 * scale + Vec3::Y * scale)
+                    .looking_to(camera_forward, Vec3::Y)
+                    .with_scale(Vec3::ONE * 0.0025 * scale),
+                Text3d::new(format!(
+                    "({:.3}, {:.3}, {:.3})",
+                    start_transform.translation.x / scale,
+                    start_transform.translation.y / scale,
+                    start_transform.translation.z / scale
+                )),
+                Text3dStyling {
+                    size: 64.0,
+                    color: Srgba::new(0., 0., 0., 1.),
+                    align: TextAlign::Center,
+                    font: Arc::from("Rajdhani"),
+                    weight: Weight::BOLD,
+                    ..Default::default()
+                },
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
+                    alpha_mode: AlphaMode::Blend,
+                    unlit: true,
+                    ..Default::default()
+                })),
+                Mesh3d::default(),
+                Visibility::Inherited,
+            )],
+        ));
+    }
 
     history.write(HistoryLogEvent::Begin(
-        control_parent.0,
+        control_parent.entity,
         Some(start_transform),
     ));
 }
@@ -906,103 +959,109 @@ fn drag_start3d(
     let dragged_parent = dragged_childof.parent();
 
     let control_parent = control_parents.get(dragged_parent).unwrap();
-    let mut start_transform = *all_transforms.get(control_parent.0).unwrap();
+    let mut start_transform = *all_transforms.get(control_parent.entity).unwrap();
     start_transform.rotation = Quat::IDENTITY;
 
-    accumulated_movement.start_movement_entity(control_parent.0, start_transform.translation);
+    accumulated_movement.start_movement_entity(control_parent.entity, start_transform.translation);
 
     let scale = scale.scale;
 
-    let mut entity_commands = commands.spawn((
-        ShadowMarker(control_parent.0),
-        start_transform,
-        Visibility::default(),
-        ChildOf(root),
-        Snappable,
-    ));
+    if !control_parent.no_shadow {
+        let mut entity_commands = commands.spawn((
+            ShadowMarker(control_parent.entity),
+            start_transform,
+            Visibility::default(),
+            ChildOf(root),
+            Snappable,
+        ));
 
-    entity_commands.with_children(|parent| {
-        for arrow in arrows.as_ref().iter_arrows() {
-            parent
-                .spawn((
-                    Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.normalized, Vec3::Y),
-                    Control(arrow.normalized),
-                    Visibility::default(),
-                ))
-                .with_children(|parent| {
-                    draw_arrow(
-                        parent,
-                        materials.add(arrow.shadow_color),
-                        materials.add(arrow.shadow_color),
-                        &mut meshes,
-                        scale,
-                        true,
-                        Picking3dInteractable::Ignore,
-                        Pickable::IGNORE,
-                        true,
-                    );
-                });
+        entity_commands.with_children(|parent| {
+            for arrow in arrows.as_ref().iter_arrows() {
+                parent
+                    .spawn((
+                        Transform::from_xyz(0.0, 0.0, 0.0).looking_to(arrow.normalized, Vec3::Y),
+                        Control(arrow.normalized),
+                        Visibility::default(),
+                    ))
+                    .with_children(|parent| {
+                        draw_arrow(
+                            parent,
+                            materials.add(arrow.shadow_color),
+                            materials.add(arrow.shadow_color),
+                            &mut meshes,
+                            scale,
+                            true,
+                            Picking3dInteractable::Ignore,
+                            Pickable::IGNORE,
+                            true,
+                        );
+                    });
+            }
+        });
+
+        if control_parent.use_root {
+            entity_commands.insert(ChildOf(root));
         }
-    });
 
-    if control_parent.1 {
-        entity_commands.insert(ChildOf(root));
+        // Spawn box
+        let diff = Vec3::new(0.0, 0.0, 0.0);
+        commands.spawn(generate_shadow_box_bundle(
+            diff,
+            &mut materials,
+            &mut meshes,
+            control_parent.entity,
+            scale,
+        ));
     }
 
-    // Spawn box
-    let diff = Vec3::new(0.0, 0.0, 0.0);
-    commands.spawn(generate_shadow_box_bundle(
-        diff,
-        &mut materials,
-        &mut meshes,
-        control_parent.0,
-        scale,
-    ));
+    if !control_parent.no_text {
+        // Spawn texts
+        let start_transform = *all_transforms.get(control_parent.entity).unwrap();
+        let camera_transform = camera.single().unwrap();
+        let camera_forward = root_transform
+            .compute_affine()
+            .inverse()
+            .transform_vector3(camera_transform.forward().normalize_or_zero());
 
-    // Spawn texts
-    let start_transform = *all_transforms.get(control_parent.0).unwrap();
-    let camera_transform = camera.single().unwrap();
-    let camera_forward = root_transform
-        .compute_affine()
-        .inverse()
-        .transform_vector3(camera_transform.forward().normalize_or_zero());
-
-    commands.spawn((
-        ChildOf(control_parent.0),
-        Transform::from_rotation(start_transform.rotation.inverse()),
-        CoordinateTextMarker(control_parent.1),
-        Visibility::Inherited,
-        children![(
-            Transform::from_translation(-camera_forward * 1.0 * scale + Vec3::Y * scale)
-                .looking_to(camera_forward, Vec3::Y)
-                .with_scale(Vec3::ONE * 0.0025 * scale),
-            Text3d::new(format!(
-                "({:.3}, {:.3}, {:.3})",
-                start_transform.translation.x,
-                start_transform.translation.y,
-                start_transform.translation.z
-            )),
-            Text3dStyling {
-                size: 64.0,
-                color: Srgba::new(0., 0., 0., 1.),
-                align: TextAlign::Center,
-                font: Arc::from("Rajdhani"),
-                weight: Weight::BOLD,
-                ..Default::default()
+        commands.spawn((
+            ChildOf(control_parent.entity),
+            Transform::from_rotation(start_transform.rotation.inverse()),
+            CoordinateTextMarker {
+                use_root: control_parent.use_root,
             },
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
-                alpha_mode: AlphaMode::Blend,
-                unlit: true,
-                ..Default::default()
-            })),
-            Mesh3d::default(),
             Visibility::Inherited,
-        )],
-    ));
+            children![(
+                Transform::from_translation(-camera_forward * 1.0 * scale + Vec3::Y * scale)
+                    .looking_to(camera_forward, Vec3::Y)
+                    .with_scale(Vec3::ONE * 0.0025 * scale),
+                Text3d::new(format!(
+                    "({:.3}, {:.3}, {:.3})",
+                    start_transform.translation.x,
+                    start_transform.translation.y,
+                    start_transform.translation.z
+                )),
+                Text3dStyling {
+                    size: 64.0,
+                    color: Srgba::new(0., 0., 0., 1.),
+                    align: TextAlign::Center,
+                    font: Arc::from("Rajdhani"),
+                    weight: Weight::BOLD,
+                    ..Default::default()
+                },
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
+                    alpha_mode: AlphaMode::Blend,
+                    unlit: true,
+                    ..Default::default()
+                })),
+                Mesh3d::default(),
+                Visibility::Inherited,
+            )],
+        ));
+    }
 
     history.write(HistoryLogEvent::Begin(
-        control_parent.0,
+        control_parent.entity,
         Some(start_transform),
     ));
 }
@@ -1028,35 +1087,35 @@ fn drag_end_trigger_redraw(
     let dragged_parent = dragged_childof.parent();
     let control_parent = control_parents.get(dragged_parent).unwrap();
 
-    accumulated_movement.end_movement(&control_parent.0);
+    accumulated_movement.end_movement(&control_parent.entity);
 
     redraw_writer.write(RedrawEvent::HighQuality);
     redraw_curves_writer.write(RedrawCurvesEvent);
 
-    if let Ok(markers) = assigned_markers.get(control_parent.0) {
+    if let Ok(markers) = assigned_markers.get(control_parent.entity) {
         for marker in markers.entities() {
             let _ = commands.get_entity(*marker).map(|mut e| e.despawn());
         }
     }
 
-    if let Ok(boxes) = assigned_boxes.get(control_parent.0) {
+    if let Ok(boxes) = assigned_boxes.get(control_parent.entity) {
         for r#box in boxes.entities() {
             let _ = commands.get_entity(*r#box).map(|mut e| e.despawn());
         }
     }
 
     // Despawn text
-    for child in children.get(control_parent.0).unwrap() {
+    for child in children.get(control_parent.entity).unwrap() {
         if let Ok(text_entity) = text_marker.get(*child) {
             let _ = commands.get_entity(text_entity).map(|mut e| e.despawn());
         }
     }
 
-    let _ = commands.get_entity(control_parent.0).map(|mut e| {
+    let _ = commands.get_entity(control_parent.entity).map(|mut e| {
         e.remove::<TemporaryCurveSnappingBlocker>();
     });
 
-    history.write(HistoryLogEvent::End(control_parent.0, None));
+    history.write(HistoryLogEvent::End(control_parent.entity, None));
 }
 
 #[allow(clippy::complexity)]
@@ -1080,35 +1139,35 @@ fn drag_end3d_trigger_redraw(
     let dragged_parent = dragged_childof.parent();
     let control_parent = control_parents.get(dragged_parent).unwrap();
 
-    accumulated_movement.end_movement(&control_parent.0);
+    accumulated_movement.end_movement(&control_parent.entity);
 
     redraw_writer.write(RedrawEvent::HighQuality);
     redraw_curves_writer.write(RedrawCurvesEvent);
 
-    if let Ok(markers) = assigned_markers.get(control_parent.0) {
+    if let Ok(markers) = assigned_markers.get(control_parent.entity) {
         for marker in markers.iter() {
             let _ = commands.get_entity(marker).map(|mut e| e.despawn());
         }
     }
 
-    if let Ok(boxes) = assigned_boxes.get(control_parent.0) {
+    if let Ok(boxes) = assigned_boxes.get(control_parent.entity) {
         for r#box in boxes.entities() {
             let _ = commands.get_entity(*r#box).map(|mut e| e.despawn());
         }
     }
 
     // Despawn text
-    for child in children.get(control_parent.0).unwrap() {
+    for child in children.get(control_parent.entity).unwrap() {
         if let Ok(text_entity) = text_marker.get(*child) {
             let _ = commands.get_entity(text_entity).map(|mut e| e.despawn());
         }
     }
 
-    let _ = commands.get_entity(control_parent.0).map(|mut e| {
+    let _ = commands.get_entity(control_parent.entity).map(|mut e| {
         e.remove::<TemporaryCurveSnappingBlocker>();
     });
 
-    history.write(HistoryLogEvent::End(control_parent.0, None));
+    history.write(HistoryLogEvent::End(control_parent.entity, None));
 }
 
 pub fn handle_translate_by_delta_event(
@@ -1139,7 +1198,11 @@ pub fn drag_plane(
     camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
-    mut params: ParamSet<(ObligatoryDragParams, Query<&GlobalTransform>)>,
+    mut params: ParamSet<(
+        ObligatoryDragParams,
+        Query<&GlobalTransform>,
+        Query<&Transform>,
+    )>,
 ) {
     let (control_entity, control, child_of) = control_query.get(trigger.target()).unwrap();
 
@@ -1148,7 +1211,11 @@ pub fn drag_plane(
 
     if let Ok((camera, camera_transform)) = camera.single() {
         let diff = {
-            let dist = (params.p1().get(control_parent.0).unwrap().translation()
+            let dist = (params
+                .p1()
+                .get(control_parent.entity)
+                .unwrap()
+                .translation()
                 - camera_transform.translation())
             .length();
 
@@ -1165,14 +1232,26 @@ pub fn drag_plane(
 
             let start = mouse_start.get_point(dist);
             let end = mouse_end.get_point(dist);
-            if control_parent.1 {
+            let diff = end - start;
+
+            if control_parent.use_root {
                 root.single()
                     .unwrap()
                     .affine()
                     .inverse()
-                    .transform_vector3(end - start)
+                    .transform_vector3(diff)
+            } else if let Some(custom_root) = control_parent.custom_root {
+                let custom_query = params.p2();
+                let custom_transform = custom_query
+                    .get(custom_root)
+                    .expect("critical error, cannot recover");
+
+                custom_transform
+                    .compute_affine()
+                    .inverse()
+                    .transform_vector3(diff)
             } else {
-                end - start
+                diff
             }
         };
 
@@ -1209,7 +1288,7 @@ pub fn drag_plane3d(
         trigger.event.real_delta
     };
 
-    let diff = if control_parent.1 {
+    let diff = if control_parent.use_root {
         root.single()
             .unwrap()
             .affine()
@@ -1241,7 +1320,11 @@ pub fn drag_sphere_controller(
 
     if let Ok((camera, camera_transform)) = camera.single() {
         let diff = {
-            let dist = (params.p1().get(control_parent.0).unwrap().translation()
+            let dist = (params
+                .p1()
+                .get(control_parent.entity)
+                .unwrap()
+                .translation()
                 - camera_transform.translation())
             .length();
 
@@ -1258,7 +1341,7 @@ pub fn drag_sphere_controller(
 
             let start = mouse_start.get_point(dist);
             let end = mouse_end.get_point(dist);
-            if control_parent.1 {
+            if control_parent.use_root {
                 root.single()
                     .unwrap()
                     .affine()
@@ -1296,7 +1379,7 @@ pub fn drag_sphere_controller3d(
     } else {
         trigger.event.real_delta
     };
-    let diff = if control_parent.1 {
+    let diff = if control_parent.use_root {
         root.single()
             .unwrap()
             .affine()
@@ -1316,7 +1399,11 @@ pub fn drag_controller(
     camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut control_parents: Query<&ControlParent>,
     root: Query<&GlobalTransform, With<RootTransform>>,
-    mut params: ParamSet<(ObligatoryDragParams, Query<&GlobalTransform>)>,
+    mut params: ParamSet<(
+        ObligatoryDragParams,
+        Query<&GlobalTransform>,
+        Query<&Transform>,
+    )>,
 ) {
     let (control_entity, control, child_of) = control_query.get(trigger.target()).unwrap();
 
@@ -1325,7 +1412,11 @@ pub fn drag_controller(
 
     if let Ok((camera, camera_transform)) = camera.single() {
         let diff = {
-            let dist = (params.p1().get(control_parent.0).unwrap().translation()
+            let dist = (params
+                .p1()
+                .get(control_parent.entity)
+                .unwrap()
+                .translation()
                 - camera_transform.translation())
             .length();
 
@@ -1342,14 +1433,39 @@ pub fn drag_controller(
 
             let start = mouse_start.get_point(dist);
             let end = mouse_end.get_point(dist);
-            if control_parent.1 {
+            let diff = end - start;
+
+            // let diff = if control_parent.use_parent_translation {
+            //     let query = params.p2();
+            //     let parent_transform = query
+            //         .get(control_parent.entity)
+            //         .expect("must be child of parent");
+            //
+            //     let translation = parent_transform.translation;
+            //
+            //     diff - translation
+            // } else {
+            //     diff
+            // };
+
+            if control_parent.use_root {
                 root.single()
                     .unwrap()
                     .affine()
                     .inverse()
-                    .transform_vector3(end - start)
+                    .transform_vector3(diff)
+            } else if let Some(custom_root) = control_parent.custom_root {
+                let custom_query = params.p2();
+                let custom_transform = custom_query
+                    .get(custom_root)
+                    .expect("critical error, cannot recover");
+
+                custom_transform
+                    .compute_affine()
+                    .inverse()
+                    .transform_vector3(diff)
             } else {
-                end - start
+                diff
             }
         };
 
@@ -1386,7 +1502,7 @@ pub fn drag_controller3d(
     } else {
         trigger.event.real_delta
     };
-    let diff = if control_parent.1 {
+    let diff = if control_parent.use_root {
         root.single()
             .unwrap()
             .affine()
@@ -1415,7 +1531,7 @@ fn rotate_start(
     let (mut control_rotation, child_of) = control_query.get_mut(trigger.target()).unwrap();
     let parent = child_of.parent();
     let control_parent = control_parents.get(parent).unwrap();
-    let parent_transform = *transforms.get(control_parent.0).unwrap();
+    let parent_transform = *transforms.get(control_parent.entity).unwrap();
 
     let root = root.single().unwrap();
 
@@ -1423,8 +1539,18 @@ fn rotate_start(
         && let Ok(ray) =
             camera.viewport_to_world(camera_transform, trigger.pointer_location.position)
     {
-        let (new_origin, new_direction) = if control_parent.1 {
+        let (new_origin, new_direction) = if control_parent.use_root {
             let inverse = root.compute_affine().inverse();
+            (
+                inverse.transform_point3(ray.origin),
+                inverse.transform_vector3(ray.direction.as_vec3()),
+            )
+        } else if let Some(custom_root) = control_parent.custom_root {
+            let custom_transform = transforms
+                .get(custom_root)
+                .expect("Critical error, can't recover");
+            let inverse = custom_transform.compute_affine();
+
             (
                 inverse.transform_point3(ray.origin),
                 inverse.transform_vector3(ray.direction.as_vec3()),
@@ -1464,13 +1590,13 @@ fn rotate_start3d(
     let (mut control_rotation, child_of) = control_query.get_mut(trigger.target()).unwrap();
     let parent = child_of.parent();
     let control_parent = control_parents.get(parent).unwrap();
-    let parent_transform = *transforms.get(control_parent.0).unwrap();
+    let parent_transform = *transforms.get(control_parent.entity).unwrap();
 
     let root = root.single().unwrap();
 
     let origin = trigger.event().position;
     let inverse = root.compute_affine().inverse();
-    let new_origin = if control_parent.1 {
+    let new_origin = if control_parent.use_root {
         inverse.transform_point3(origin)
     } else {
         origin
@@ -1581,14 +1707,14 @@ fn rotate_controller(
 
     let parent = child_of.parent();
     let control_parent = control_parents.get(parent).unwrap();
-    let parent_transform = *changable_transforms.get(control_parent.0).unwrap();
+    let parent_transform = *changable_transforms.get(control_parent.entity).unwrap();
     let root = root.single().unwrap();
 
     if let Ok((camera, camera_transform)) = camera.single()
         && let Ok(ray) =
             camera.viewport_to_world(camera_transform, trigger.pointer_location.position)
     {
-        let (new_origin, new_direction) = if control_parent.1 {
+        let (new_origin, new_direction) = if control_parent.use_root {
             let inverse = root.compute_affine().inverse();
             (
                 inverse.transform_point3(ray.origin),
@@ -1619,7 +1745,8 @@ fn rotate_controller(
             let angle = last_diff.angle_between(diff);
             let sign = (last_diff.cross(diff).dot(control_rotation.normal)).signum();
 
-            let mut parent_transform_mut = changable_transforms.get_mut(control_parent.0).unwrap();
+            let mut parent_transform_mut =
+                changable_transforms.get_mut(control_parent.entity).unwrap();
             let mut inverse = {
                 parent_transform_mut.rotation =
                     Quat::from_axis_angle(control_rotation.normal, angle * sign)
@@ -1685,7 +1812,7 @@ fn rotate_controller3d(
     let (mut control_rotation, child_of) = control_query.get_mut(trigger.target()).unwrap();
     let parent = child_of.parent();
     let control_parent = control_parents.get(parent).unwrap();
-    let parent_transform = *changeable_transforms.get(control_parent.0).unwrap();
+    let parent_transform = *changeable_transforms.get(control_parent.entity).unwrap();
 
     let root = root.single().unwrap();
 
@@ -1695,7 +1822,7 @@ fn rotate_controller3d(
         trigger.event().event.real_current_entity_position
     };
     let inverse = root.compute_affine().inverse();
-    let new_origin = if control_parent.1 {
+    let new_origin = if control_parent.use_root {
         inverse.transform_point3(origin)
     } else {
         origin
@@ -1723,7 +1850,9 @@ fn rotate_controller3d(
         let angle = last_diff.angle_between(diff);
         let sign = (last_diff.cross(diff).dot(control_rotation.normal)).signum();
 
-        let mut parent_transform_mut = changeable_transforms.get_mut(control_parent.0).unwrap();
+        let mut parent_transform_mut = changeable_transforms
+            .get_mut(control_parent.entity)
+            .unwrap();
         let mut inverse = {
             parent_transform_mut.rotation =
                 Quat::from_axis_angle(control_rotation.normal, angle * sign)
@@ -1825,7 +1954,7 @@ fn update_snapped_points(
                 curve: snap_curve,
             },
             entity,
-        )) = snapped.get_mut(control_parent.0)
+        )) = snapped.get_mut(control_parent.entity)
         {
             if let Some(curve) = curves.get(snap_curve) {
                 let p = curve.f(&[*snap_u]);
@@ -1900,7 +2029,7 @@ fn update_texts(
     for (text_entity, &ChildOf(parent), children, marker) in coordinate_texts {
         let start_transform = *transforms.get(parent).unwrap();
 
-        let camera_forward = if marker.0 {
+        let camera_forward = if marker.use_root {
             root_transform
                 .compute_affine()
                 .inverse()
@@ -1993,7 +2122,7 @@ fn update_texts(
     for (text_entity, &ChildOf(parent), children, marker) in coordinate_texts {
         let start_transform = *transforms.get(parent).unwrap();
 
-        let camera_forward = if marker.0 {
+        let camera_forward = if marker.use_root {
             root_transform
                 .compute_affine()
                 .inverse()

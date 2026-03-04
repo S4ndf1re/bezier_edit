@@ -24,9 +24,15 @@ pub struct RecreateAlignmentChildren;
 #[derive(Component)]
 pub struct CrossManipulatorMarker;
 
+enum MainDirection {
+    Z,
+    X,
+}
+
 #[derive(Component)]
 pub struct CrossOriginMarker {
     actual_origin: Entity,
+    main_direction: MainDirection,
 }
 
 #[derive(Component)]
@@ -160,6 +166,7 @@ fn handle_rebuild(
                 }
                 EnabledAlignmentMode::Rotate => {
                     entity_cmds.remove::<EnableTranslationControl>();
+                    let parent_id = entity_cmds.id();
                     entity_cmds.with_children(|spawner| {
                         spawner
                             .spawn((
@@ -174,13 +181,20 @@ fn handle_rebuild(
                                     .spawn((
                                         Name::new("CrossOriginMarker"),
                                         Transform::from_xyz(0.0, 0.0, 1.0),
-                                        CrossOriginMarker { actual_origin },
+                                        CrossOriginMarker {
+                                            actual_origin,
+                                            main_direction: MainDirection::Z,
+                                        },
                                         Visibility::Inherited,
                                         CantSnapToEntities::All,
                                         CantSnapToCurve::All,
                                         EnableTranslationControl::new_without_root(
                                             EnableTranslationControlType::OnlyTranslation,
                                         )
+                                        .use_parent_translation()
+                                        .no_shadow()
+                                        .no_text()
+                                        .with_custom_root(parent_id)
                                         .hide_lines(),
                                     ))
                                     .observe(handle_moved_trigger)
@@ -202,7 +216,10 @@ fn handle_rebuild(
                                     .spawn((
                                         Name::new("CrossOriginMarker"),
                                         Transform::from_xyz(0.0, 0.0, -1.0),
-                                        CrossOriginMarker { actual_origin },
+                                        CrossOriginMarker {
+                                            actual_origin,
+                                            main_direction: MainDirection::Z,
+                                        },
                                         Visibility::Inherited,
                                         CantSnapToEntities::All,
                                         CantSnapToCurve::All,
@@ -210,6 +227,10 @@ fn handle_rebuild(
                                             EnableTranslationControlType::OnlyTranslation,
                                         )
                                         .invert()
+                                        .use_parent_translation()
+                                        .no_shadow()
+                                        .no_text()
+                                        .with_custom_root(parent_id)
                                         .hide_lines(),
                                     ))
                                     .observe(handle_moved_trigger)
@@ -231,13 +252,20 @@ fn handle_rebuild(
                                     .spawn((
                                         Name::new("CrossOriginMarker"),
                                         Transform::from_xyz(1.0, 0.0, 0.0),
-                                        CrossOriginMarker { actual_origin },
+                                        CrossOriginMarker {
+                                            actual_origin,
+                                            main_direction: MainDirection::X,
+                                        },
                                         Visibility::Inherited,
                                         CantSnapToEntities::All,
                                         CantSnapToCurve::All,
                                         EnableTranslationControl::new_without_root(
                                             EnableTranslationControlType::OnlyTranslation,
                                         )
+                                        .use_parent_translation()
+                                        .no_shadow()
+                                        .no_text()
+                                        .with_custom_root(parent_id)
                                         .hide_lines(),
                                     ))
                                     .observe(handle_moved_trigger)
@@ -259,7 +287,10 @@ fn handle_rebuild(
                                     .spawn((
                                         Name::new("CrossOriginMarker"),
                                         Transform::from_xyz(-1.0, 0.0, 0.0),
-                                        CrossOriginMarker { actual_origin },
+                                        CrossOriginMarker {
+                                            actual_origin,
+                                            main_direction: MainDirection::X,
+                                        },
                                         Visibility::Inherited,
                                         CantSnapToEntities::All,
                                         CantSnapToCurve::All,
@@ -267,6 +298,10 @@ fn handle_rebuild(
                                             EnableTranslationControlType::OnlyTranslation,
                                         )
                                         .invert()
+                                        .use_parent_translation()
+                                        .no_shadow()
+                                        .no_text()
+                                        .with_custom_root(parent_id)
                                         .hide_lines(),
                                     ))
                                     .observe(handle_moved_trigger)
@@ -325,7 +360,7 @@ pub fn handle_moved_trigger(
 ) {
     let cross_origin_maker_entity = trigger.target();
 
-    let Ok(cross_origin_marker) = cross_origin_markers.get(trigger.target()) else {
+    let Ok(cross_origin_marker) = cross_origin_markers.get(cross_origin_maker_entity) else {
         return;
     };
     let Ok(cross_manipulator_marker) = child_of.get(cross_origin_maker_entity).map(|e| e.parent())
@@ -345,10 +380,18 @@ pub fn handle_moved_trigger(
     let _ = transforms
         .get_mut(cross_origin_maker_entity)
         .map(|mut trans| {
-            trans.translation -= delta; // Reset transform
-            old_pos = trans.translation;
-            new_pos = trans.translation + delta;
-            trans.translation.z += delta.z;
+            dbg!(trans.translation, delta);
+            if matches!(cross_origin_marker.main_direction, MainDirection::Z) {
+                trans.translation -= delta; // Reset transform
+                old_pos = trans.translation;
+                new_pos = trans.translation + delta;
+                trans.translation.z += delta.z;
+            } else {
+                trans.translation -= delta; // Reset transform
+                old_pos = trans.translation;
+                new_pos = trans.translation + delta;
+                trans.translation.x += delta.x;
+            }
         });
 
     let _ = transforms
