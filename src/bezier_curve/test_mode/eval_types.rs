@@ -314,7 +314,6 @@ impl ToRenderCommandsForEvaluation for EvaluationCurves {
             }
         }
 
-        // TODO: Fix a bug that the lines are not rendered directly
         redraw_event.write(RedrawEvent::HighQuality);
     }
 

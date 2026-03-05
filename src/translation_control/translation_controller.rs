@@ -568,7 +568,6 @@ fn show_transitional_controls(
         let rotation_inverse = parent_transform.rotation.inverse();
 
         let transform = Transform::from_xyz(0.0, 0.0, 0.0).with_rotation(rotation_inverse);
-        // TODO: Add robot invisibility on spawn
         let (pickable3d, pickable) = if state.invisible_robots {
             (Picking3dInteractable::Ignore, Pickable::IGNORE)
         } else {
