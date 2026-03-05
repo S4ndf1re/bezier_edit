@@ -440,14 +440,16 @@ fn on_enter_idle_state(
     texts: Query<Entity, With<EvalTextMarker>>,
     mut new_surface_writer: EventWriter<ResetDefaultCurveEvent>,
 ) {
-    // NOTE(Kleinmann): Only cleanup
-    // NOTE(Kleinmann): Assume that each evaluation has a parent
+    // NOTE: Only cleanup
+    // NOTE: Assume that each evaluation has a parent
     for parent in evaluation_parents {
-        let _ = commands.get_entity(parent).map(|mut e| e.despawn());
+        let _ = commands.get_entity(parent).map(|mut e| e.try_despawn());
     }
 
     for text_entity in texts {
-        let _ = commands.get_entity(text_entity).map(|mut e| e.despawn());
+        let _ = commands
+            .get_entity(text_entity)
+            .map(|mut e| e.try_despawn());
     }
 
     // NOTE: When returning to idle mode, let the user play around with a surface. This inherently leads to a better experience
@@ -480,6 +482,10 @@ fn on_enter_eval_state(
             next_state.set(EvaluationFlowState::Result);
             return;
         }
+        EvaluationFlowState::Result => {
+            next_state.set(EvaluationFlowState::Idle);
+            return;
+        }
         _ => (),
     }
 
@@ -493,7 +499,6 @@ fn on_enter_eval_state(
     eval_state_reader.clear();
 
     let mut next_surface = None;
-    info!("In eval state");
 
     if matches!(
         evaluation.current_creation_type.as_ref().expect("just set"),
@@ -506,13 +511,15 @@ fn on_enter_eval_state(
         next_state.set(EvaluationFlowState::Creation);
     }
 
-    // NOTE(Kleinmann): Assume that each evaluation has a parent
+    // NOTE: Assume that each evaluation has a parent
     for parent in evaluation_parents {
-        let _ = commands.get_entity(parent).map(|mut e| e.despawn());
+        let _ = commands.get_entity(parent).map(|mut e| e.try_despawn());
     }
 
     for text_entity in texts {
-        let _ = commands.get_entity(text_entity).map(|mut e| e.despawn());
+        let _ = commands
+            .get_entity(text_entity)
+            .map(|mut e| e.try_despawn());
     }
 
     // Display next surface, if present
@@ -573,7 +580,6 @@ fn on_enter_result_state(
         ),
     >,
     control_points: Query<(&Transform, &RenderPoint)>,
-    mut next_state_res: ResMut<NextState<EvaluationFlowState>>,
     mut commands: Commands,
     root: Query<Entity, With<RootTransform>>,
     info: Res<RenderInformation>,
@@ -628,9 +634,6 @@ fn on_enter_result_state(
 
     // Reset current creation type here
     evaluation.current_creation_type = None;
-
-    // Reset flow state to idle, use ui to change back to evaluation or creation
-    next_state_res.set(EvaluationFlowState::Idle);
 }
 
 #[allow(clippy::complexity)]

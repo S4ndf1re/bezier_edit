@@ -256,6 +256,7 @@ pub fn distribute_redraw_event(
     mut redraw_event_reader: EventReader<RedrawEvent>,
     mut redraw_boxes: EventWriter<RedrawBoxesEvent>,
     mut redraw_iso_lines: EventWriter<RedrawLinesEvent>,
+    mut redraw_curves: EventWriter<RedrawCurvesEvent>,
     mut update_ortho_views: EventWriter<UpdateOrthoViews>,
     mut update_inspector: EventWriter<UpdateSurfaceInspectorEvent>,
 ) {
@@ -264,6 +265,7 @@ pub fn distribute_redraw_event(
         redraw_iso_lines.write(RedrawLinesEvent::from(*event));
         update_ortho_views.write(UpdateOrthoViews);
         update_inspector.write(UpdateSurfaceInspectorEvent);
+        redraw_curves.write(RedrawCurvesEvent);
     }
 }
 
@@ -794,7 +796,7 @@ pub fn generate_default_curve(
             .p0()
             .0
             .get_entity(entity)
-            .map(|mut e| e.despawn());
+            .map(|mut e| e.try_despawn());
     }
 
     let root = surface_creator.root.single().expect("must be present");
@@ -988,6 +990,8 @@ pub fn generate_default_curve(
                     points.sort_by_key(|p| p.0);
                 }
             }
+
+            surface_creator.event_writer.write(RedrawEvent::HighQuality);
         }
     }
 }
@@ -1037,25 +1041,30 @@ impl Plugin for BezierRenderPlugin {
 
         // app.add_systems(PreUpdate, (handle_keyboard, solve_constraints));
         app.add_systems(
-            PreUpdate,
+            First,
             (
                 handle_keyboard,
                 generate_default_curve.run_if(on_event::<ResetDefaultCurveEvent>),
             ),
         );
         app.add_systems(
+            PreUpdate,
+            (generate_pointcloud, distribute_redraw_event).run_if(on_event::<RedrawEvent>),
+        );
+
+        app.add_systems(
             Update,
             (
-                (generate_pointcloud, distribute_redraw_event).run_if(on_event::<RedrawEvent>),
+                render_curves.run_if(on_event::<RedrawCurvesEvent>),
+                update_sphere_positions,
+                redraw_boxes.run_if(on_event::<RedrawBoxesEvent>),
+                redraw_iso_lines.run_if(on_event::<RedrawLinesEvent>),
                 update_lines,
                 update_surface_inspector
                     .run_if(inspectors_exist.and(on_event::<UpdateSurfaceInspectorEvent>)),
-                redraw_boxes.after(generate_pointcloud),
-                redraw_iso_lines.after(generate_pointcloud),
-                render_curves,
-                update_sphere_positions,
             ),
-        ); // , listen_to_mouse_left_button));
+        );
+
         app.add_systems(
             PostUpdate,
             (
