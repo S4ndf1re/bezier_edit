@@ -36,6 +36,7 @@ pub fn derive_after_de_casteljau(points: &[Vec<Point>], r: usize) -> Point {
     let mut sum = Point::default();
     // The rth derivative is not defined for surfaces with n < r, hence set r = min(n, r), so that n <= r
     let r = r.min(n);
+    #[allow(clippy::needless_range_loop)]
     for j in 0..=r {
         sum = sum + points[n - r][j] * (n_choose_k(r, j) as f64) * pow(-1.0, r - j);
     }
@@ -73,6 +74,7 @@ pub fn atiken(points: &[Point], ts: &[f64], t: f64) -> Vec<Vec<Point>> {
 /// Split a bezier curve at parameter t, resulting in two sub bezier lines with n control points.
 /// Lower is the splitted line defined in the interval [0, t] whereas upper is defined in the
 /// interval [c, 1]. Each resunting curve will be defined in [0,1], each.
+#[allow(unused)]
 pub fn split_at<T: AsRef<[Point]>>(points: T, t: f64) -> (Vec<Point>, Vec<Point>) {
     let decas = de_casteljau(points.as_ref(), t);
 

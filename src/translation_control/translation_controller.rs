@@ -2103,11 +2103,6 @@ fn update_texts(
     root: Query<Entity, With<RootTransform>>,
     coordinate_texts: Query<
         (Entity, &ChildOf, &Children, &CoordinateTextMarker),
-        Without<DistanceTextMarker>,
-    >,
-    distance_texts: Query<
-        (Entity, &ChildOf, &Children, &DistanceTextMarker),
-        Without<CoordinateTextMarker>,
     >,
     mut text3d: Query<&mut Text3d>,
     markers: Query<&AssignedShadowMarkers>,
@@ -2158,22 +2153,31 @@ fn update_texts(
             )
         };
 
+        let signs = (
+            if diff.x >= 0.0 { "+" } else { "" },
+            if diff.y >= 0.0 { "+" } else { "" },
+            if diff.z >= 0.0 { "+" } else { "" },
+        );
+
         for child in children {
             let mut transform = transforms.get_mut(*child).unwrap();
             transform.translation = -camera_forward * 0.3 * info.scale + Vec3::Y * info.scale;
             transform.look_to(camera_forward, Vec3::Y);
             if let Ok(mut text3d) = text3d.get_mut(*child) {
                 *text3d = Text3d::new(format!(
-                    "X {:.3}, {:.3}, {:.3}\nY {:.3}, {:.3}, {:.3}\nZ {:.3}, {:.3}, {:.3}",
-                    start.x,
-                    diff.x,
-                    current.x,
-                    start.y,
-                    diff.y,
-                    current.y,
-                    start.z,
-                    diff.z,
-                    current.z,
+                    "X {:.3}, \t{}{:.3}, \t{:.3}\nY {:.3}, \t{}{:.3}, \t{:.3}\nZ {:.3}, \t{}{:.3}, \t{:.3}",
+                    start.x * 1000.0,
+                    signs.0,
+                    diff.x * 1000.0,
+                    current.x * 1000.0,
+                    start.y * 1000.0,
+                    signs.1,
+                    diff.y * 1000.0,
+                    current.y * 1000.0,
+                    start.z * 1000.0,
+                    signs.2,
+                    diff.z * 1000.0,
+                    current.z * 1000.0,
                 ));
             }
         }

@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use bevy::asset::RenderAssetUsages;
-use bevy::ecs::system::QueryLens;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::{color::palettes::css::BLACK, prelude::*};
@@ -281,13 +280,13 @@ impl<'w, 's> ToControlPoints2D for &Query<'w, 's, (&Transform, &RenderPoint)> {
         // First get all points in order for each sub curve
         let mut multi_curves = Vec::<(usize, Vec<Point>)>::new();
         for (i, points) in points.iter_mut() {
-            points.sort_by(|a, b| a.0.cmp(&b.0));
+            points.sort_by_key(|a| a.0);
             let points = points.iter().map(|p| p.1).collect::<Vec<_>>();
             multi_curves.push((*i, points));
         }
 
         // Then order the subcurves by index
-        multi_curves.sort_by(|a, b| a.0.cmp(&b.0));
+        multi_curves.sort_by_key(|a| a.0);
         let multi_curves: Vec<Vec<Point>> =
             multi_curves.iter().map(|p| p.1.clone()).collect::<Vec<_>>();
 
@@ -315,13 +314,13 @@ impl<'w, 's> ToControlPoints2D for &Query<'w, 's, (&Transform, &RenderPoint), Wi
         // First get all points in order for each sub curve
         let mut multi_curves = Vec::<(usize, Vec<Point>)>::new();
         for (i, points) in points.iter_mut() {
-            points.sort_by(|a, b| a.0.cmp(&b.0));
+            points.sort_by_key(|a| a.0);
             let points = points.iter().map(|p| p.1).collect::<Vec<_>>();
             multi_curves.push((*i, points));
         }
 
         // Then order the subcurves by index
-        multi_curves.sort_by(|a, b| a.0.cmp(&b.0));
+        multi_curves.sort_by_key(|a| a.0);
         let multi_curves: Vec<Vec<Point>> =
             multi_curves.iter().map(|p| p.1.clone()).collect::<Vec<_>>();
 

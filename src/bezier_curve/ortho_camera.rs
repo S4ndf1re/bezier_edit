@@ -1,10 +1,13 @@
 use bevy::prelude::*;
+
+#[cfg(feature = "vr_enable")]
 use bevy_xr_utils::tracking_utils::XrTrackedView;
 
-use super::{
-    bezier_curve_renderer::EndModeEvent, components::RenderPoint, helper_curves::ControlCurvePoint,
-};
-use crate::{MainCamera, picking3d, projection::EnableOrthoCamera};
+use super::bezier_curve_renderer::EndModeEvent;
+use crate::{MainCamera, projection::EnableOrthoCamera};
+
+#[cfg(feature = "vr_enable")]
+use crate::picking3d;
 
 #[allow(clippy::complexity)]
 /// Enable a camera in space

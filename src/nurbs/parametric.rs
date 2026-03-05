@@ -9,6 +9,7 @@ use super::{
 
 pub struct MinDistanceResult<const PARAMS: usize, R> {
     pub params: [f64; PARAMS],
+    #[allow(unused)]
     pub value: R,
     pub distance: f64,
 }
@@ -24,6 +25,7 @@ pub trait Parametric<const PARAMS: usize, R> {
     fn f(&self, ts: &[f64; PARAMS]) -> R;
 
     /// Get the range that the parameter is contained in
+    #[allow(unused)]
     fn range(&self) -> [[f64; 2]; PARAMS];
 
     fn derive(&self, ts: &[f64; PARAMS], r: usize) -> [R; PARAMS];

@@ -1,5 +1,3 @@
-use std::thread::spawn;
-
 use super::bridges::{BridgeSpawner, update_lines};
 use super::curvature_display_mode::{
     ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,
@@ -12,6 +10,10 @@ use super::helper_curves::{
     CreateCurveState, RedrawCurvesEvent, add_point, commit_curve, enter_create_curve_mode,
     render_curves,
 };
+
+#[cfg(feature = "vr_enable")]
+use super::helper_curves::enter_create_curve_mode_vr;
+
 use super::test_mode::EvaluationPlugin;
 use super::{components::*, handle_generic_deleted_event};
 
@@ -38,7 +40,7 @@ use crate::bezier_curve::align_mode::{
     HomeRootTransformEvent, RecreateAlignmentChildren, create_alignment_sphere,
     delete_alignment_sphere, handle_home_root_transform, update_cross_bridge,
 };
-use crate::bezier_curve::bridges::{Bridge, BridgeMarker, draw_bridge_cylinder};
+use crate::bezier_curve::bridges::{Bridge, draw_bridge_cylinder};
 use crate::bezier_curve::helper_curves::{
     AddPointToCurveEvent, RemovePointFromCurveEvent, add_point_to_curve_handler,
     remove_point_from_curve_handler, spawn_new_curve, update_sphere_positions,

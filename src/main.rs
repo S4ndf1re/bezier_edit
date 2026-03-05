@@ -15,32 +15,23 @@ pub mod vr_control;
 pub mod vr_menu;
 
 use crate::advanced_orbit_controls::AdvancedOrbitControls;
+
+#[cfg(feature = "vr_enable")]
 use crate::thirdparty_copy::transform_util_copy::{SnapToPosition, SnapToRotation};
+
 use crate::translation_control::control_storage::ControlStorage;
+
+#[cfg(feature = "vr_enable")]
 use bevy::app::PluginGroupBuilder;
-use bevy::color::palettes::tailwind::GRAY_700;
+
 use bevy::prelude::*;
-use bevy::render::RenderPlugin;
-use bevy::window::PresentMode;
-use bevy_mod_openxr::features::handtracking::HandTrackingPlugin;
-use bevy_mod_openxr::features::passthrough::OxrPassthroughPlugin;
-use bevy_mod_openxr::init::OxrInitPlugin;
-use bevy_mod_openxr::poll_events::OxrEventsPlugin;
-use bevy_mod_openxr::reference_space::OxrReferenceSpacePlugin;
-use bevy_mod_openxr::render::OxrRenderPlugin;
-use bevy_mod_openxr::{action_binding, action_set_attaching, action_set_syncing, features, spaces};
-use bevy_mod_xr::camera::XrCameraPlugin;
-use bevy_mod_xr::session::XrSessionPlugin;
 use bevy_skein::SkeinPlugin;
-use bevy_xr_utils::xr_utils_actions::{XRUtilsActionSystemSet, XRUtilsActionsPlugin};
 use bezier_curve::bezier_curve_renderer::*;
 use history::plugin::HistoryPlugin;
 
+#[cfg(feature = "vr_enable")]
 use crate::bezier_curve::render_info::RenderInformation;
-use crate::linked_entities::LinkedEntitiesPlugin;
-use crate::picking3d::picking_3d::ObjectPicking3d;
-use crate::projection::ProjectionPlugin;
-use crate::vr_menu::VrMenuPlugin;
+
 use bevy::render::view::RenderLayers;
 use projection::DisplayIn;
 use translation_control::translation_controller::TranslationController;
@@ -62,7 +53,6 @@ fn setup(mut commands: Commands) {
         RenderLayers::from(DisplayIn::Normal),
         MainCamera,
     ));
-
 
     commands.spawn((
         DirectionalLight {
@@ -104,14 +94,13 @@ fn setup(
     position_writer.write(SnapToPosition(position.translation));
     rotation_writer.write(SnapToRotation(position.rotation));
 
-    commands.spawn((RootTransform));
+    commands.spawn(RootTransform);
 }
 
 #[cfg(not(feature = "vr_enable"))]
 fn create_app() -> App {
-    use bevy::color::palettes::tailwind::{GRAY_700, GRAY_900};
+    use bevy::color::palettes::tailwind::GRAY_700;
     use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
-    use bevy_rich_text3d::Text3dPlugin;
     use linked_entities::LinkedEntitiesPlugin;
     use projection::ProjectionPlugin;
     use vr_menu::VrMenuPlugin;
@@ -140,7 +129,21 @@ fn create_app() -> App {
 
 #[cfg(feature = "vr_enable")]
 fn custom_add_xr_plugins<G: PluginGroup>(plugins: G) -> PluginGroupBuilder {
-    let mut oxr_plugin = OxrInitPlugin::default();
+    use bevy::render::RenderPlugin;
+    use bevy::window::PresentMode;
+    use bevy_mod_openxr::features::handtracking::HandTrackingPlugin;
+    use bevy_mod_openxr::features::passthrough::OxrPassthroughPlugin;
+    use bevy_mod_openxr::init::OxrInitPlugin;
+    use bevy_mod_openxr::poll_events::OxrEventsPlugin;
+    use bevy_mod_openxr::reference_space::OxrReferenceSpacePlugin;
+    use bevy_mod_openxr::render::OxrRenderPlugin;
+    use bevy_mod_openxr::{
+        action_binding, action_set_attaching, action_set_syncing, features, spaces,
+    };
+    use bevy_mod_xr::camera::XrCameraPlugin;
+    use bevy_mod_xr::session::XrSessionPlugin;
+
+    let oxr_plugin = OxrInitPlugin::default();
 
     #[cfg(feature = "varjo_ready")]
     {
@@ -189,10 +192,15 @@ fn custom_add_xr_plugins<G: PluginGroup>(plugins: G) -> PluginGroupBuilder {
 
 #[cfg(feature = "vr_enable")]
 fn create_app() -> App {
+    use crate::picking3d::picking_3d::ObjectPicking3d;
+    use crate::projection::ProjectionPlugin;
     use crate::vr_control::VrControlPlugin;
+    use crate::vr_menu::VrMenuPlugin;
+    use bevy::color::palettes::tailwind::GRAY_700;
     use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
     use bevy_mod_openxr::resources::OxrSessionConfig;
     use bevy_mod_openxr::types::EnvironmentBlendMode;
+    use linked_entities::LinkedEntitiesPlugin;
 
     info!("Creating VR App");
     let mut app = App::new();

@@ -2,7 +2,7 @@ use std::collections::{HashSet, hash_set::Iter};
 
 use bevy::{
     asset::RenderAssetUsages,
-    color::palettes::tailwind::{BLUE_500, GRAY_500, GRAY_700, GRAY_800, RED_800},
+    color::palettes::tailwind::{BLUE_500, GRAY_500},
     ecs::system::{SystemParam, lifetimeless::Read},
     prelude::*,
     render::{
@@ -15,8 +15,7 @@ use bevy::{
 use crate::{
     RootTransform,
     bezier_curve::{
-        bezier_curve_renderer::{EndModeEvent, RedrawEvent},
-        components::ControlState,
+        bezier_curve_renderer::EndModeEvent, components::ControlState,
         render_info::RenderInformation,
     },
     linked_entities::{
@@ -361,7 +360,7 @@ fn update_ortho_camera_positions(
 fn update_ortho_camera_viewports(
     mut reader: EventReader<UpdateOrthoViews>,
     mut cameras: Query<(&mut OrthoCamera, &mut Projection), Without<OrthoSurfacePlane>>,
-    root: Query<&Transform, With<RootTransform>>,
+    // root: Query<&Transform, With<RootTransform>>,
     transforms: Query<&Transform, Without<RootTransform>>,
     mut images: ResMut<Assets<Image>>,
     children: Query<&Children>,
@@ -379,9 +378,9 @@ fn update_ortho_camera_viewports(
     }
     reader.clear();
 
-    let root = root
-        .single()
-        .expect("root must be initialzed and must have a transform");
+    // let root = root
+    //     .single()
+    //     .expect("root must be initialzed and must have a transform");
 
     for (mut ortho, mut projection) in &mut cameras {
         let mut max_distance = (f64::MIN, f64::MIN);

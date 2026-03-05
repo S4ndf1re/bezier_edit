@@ -1,7 +1,7 @@
 use bevy::{
     color::palettes::tailwind::RED_400,
     prelude::*,
-    render::{mesh::VertexAttributeValues, render_resource::AsBindGroupShaderType},
+    render::{mesh::VertexAttributeValues},
 };
 use struct_patch::Patch;
 

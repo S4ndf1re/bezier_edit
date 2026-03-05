@@ -1,19 +1,26 @@
-use crate::vr_control::thumbstick3d::AccumulatedThumbstickInfoLeft;
-use crate::{MainCamera, RootTransform};
+#[cfg(not(feature = "vr_enable"))]
+use crate::MainCamera;
+
+use crate::RootTransform;
 use bevy::app::App;
 use bevy::prelude::*;
-use bevy_xr_utils::tracking_utils::XrTrackedView;
 
 #[cfg(feature = "vr_enable")]
-use crate::vr_control::thumbstick3d::AccumulatedThumbstickInfoRight;
+use crate::vr_control::thumbstick3d::{
+    AccumulatedThumbstickInfoLeft, AccumulatedThumbstickInfoRight,
+};
+#[cfg(feature = "vr_enable")]
+use bevy_xr_utils::tracking_utils::XrTrackedView;
 
 #[cfg(not(feature = "vr_enable"))]
 use bevy::input::mouse::AccumulatedMouseMotion;
 
 #[derive(Debug, Resource)]
 struct CameraSettings {
+    #[allow(unused)]
     pub pitch_speed: f32,
     // Clamp pitch to this range
+    #[allow(unused)]
     pub yaw_speed: f32,
 }
 
@@ -95,6 +102,7 @@ fn move_root(
 }
 
 #[cfg(feature = "vr_enable")]
+#[allow(unused)]
 fn orbit(
     mut root: Single<&mut Transform, With<RootTransform>>,
     camera_settings: Res<CameraSettings>,
@@ -114,6 +122,7 @@ fn orbit(
 }
 
 #[cfg(feature = "vr_enable")]
+#[allow(unused)]
 fn move_root(
     mut root: Single<&mut Transform, With<RootTransform>>,
     accumulated_thumbstick_info: Res<AccumulatedThumbstickInfoLeft>,

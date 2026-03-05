@@ -11,6 +11,7 @@ use std::collections::{hash_map, HashMap, HashSet};
 // Beta: The angle between the to_target vector and the forward vector of each state (old, new)
 pub struct VectorState {
     to_target: Vec3,
+    #[allow(unused)]
     forward: Vec3,
     origin: Vec3,
     beta: f32,

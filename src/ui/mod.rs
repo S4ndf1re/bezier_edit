@@ -1,12 +1,12 @@
 pub mod button;
 pub mod slider;
 
-use crate::{
-    MainCamera,
-    bezier_curve::{
-        render_info::{ChangeCoordinateMode, CoordinateMode, UpdateIsoDimEvent},
-        test_mode::EnterEvalEvent,
-    },
+#[cfg(not(feature = "vr_enable"))]
+use crate::MainCamera;
+
+use crate::bezier_curve::{
+    render_info::{ChangeCoordinateMode, CoordinateMode, UpdateIsoDimEvent},
+    test_mode::EnterEvalEvent,
 };
 use bevy::{
     color::palettes::tailwind::GRAY_900, ecs::relationship::RelatedSpawnerCommands, prelude::*,

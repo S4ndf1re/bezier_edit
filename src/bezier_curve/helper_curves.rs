@@ -13,7 +13,9 @@ use crate::translation_control::translation_controller::{
     CantSnapToCurve, EnableTranslationControlType,
 };
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
+#[cfg(feature = "vr_enable")]
 use crate::vr_control::{GripLeft, GripRight};
+
 use crate::vr_menu::VrMenuRoot;
 use crate::{MainCamera, picking3d};
 use crate::{
@@ -22,7 +24,6 @@ use crate::{
     picking3d::events::{self, Pointer3d},
     translation_control::translation_controller::EnableTranslationControl,
 };
-use bevy::pbr::wireframe::Mesh3dWireframe;
 use bevy::render::view::RenderLayers;
 use bevy::{
     color::palettes::tailwind::PURPLE_600,

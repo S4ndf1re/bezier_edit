@@ -6,18 +6,19 @@ use crate::bezier_curve::components::ControlState;
 use crate::bezier_curve::curvature_display_mode::CurvatureDisplayMode;
 use crate::bezier_curve::render_info::SurfaceMeshMode;
 use crate::bezier_curve::test_mode::NextEvaluationEvent;
-use crate::picking3d::events::HoveredBy;
-use crate::picking3d::picking_3d::{self, Picking3dTranslation};
+
 use crate::translation_control::translation_controller::{
-    SetPrismMode, SnappingBehaviour, ToggleRobotVisibilityEvent, handle_set_prism_mode,
-    handle_toggle_snapping,
+    SetPrismMode, SnappingBehaviour, ToggleRobotVisibilityEvent,
 };
-use crate::vr_control::vibrate::{VibrateLeftEvent, VibrateRightEvent, Vibration};
-use crate::vr_control::{AimLeft, AimRight};
 #[cfg(feature = "vr_enable")]
-use crate::vr_control::{GripLeft, GripRight, trigger::ControllerSqueeze};
+use crate::vr_control::trigger::ControllerSqueeze;
+#[cfg(feature = "vr_enable")]
+use crate::vr_control::{AimLeft, AimRight};
+
+#[cfg(not(feature = "vr_enable"))]
+use crate::MainCamera;
+
 use crate::{
-    MainCamera,
     bezier_curve::{
         bezier_curve_renderer::{
             CreateCurveEvent, CreateOrthoCameraEvent, DeleteModeEvent, EndModeEvent,

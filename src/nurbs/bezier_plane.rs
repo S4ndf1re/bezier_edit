@@ -115,6 +115,7 @@ pub fn derive_2d(control_points: &ControlPoints2D, u: f64, v: f64, r: usize) -> 
 
 /// Imagine a top down view on a 2d surface. The structure represents the split in the middle on
 /// both axis
+#[allow(unused)]
 pub struct SurfaceSplit {
     pub bottom_left: ControlPoints2D,
     pub bottom_right: ControlPoints2D,
@@ -124,6 +125,7 @@ pub struct SurfaceSplit {
 }
 
 /// Split a surface into 4 parts. View `SurfaceSplit` for further information
+#[allow(unused)]
 pub fn split_surface(control_points: &ControlPoints2D, u: f64, v: f64) -> SurfaceSplit {
     let m = control_points.len() - 1;
     assert!(m >= 1);
@@ -188,6 +190,7 @@ pub fn split_surface(control_points: &ControlPoints2D, u: f64, v: f64) -> Surfac
     }
 }
 
+#[allow(unused)]
 pub fn minmax_box(points: &ControlPoints2D) -> BoundingBox3D {
     let mut bbox = BoundingBox3D::new();
 
@@ -200,6 +203,7 @@ pub fn minmax_box(points: &ControlPoints2D) -> BoundingBox3D {
     bbox
 }
 
+#[allow(unused)]
 fn determine_u_v_rec(
     points: &ControlPoints2D,
     to_test: &Point,
@@ -275,6 +279,7 @@ fn determine_u_v_rec(
 
 /// Try to find u and v coordinate using numerical approximation until each sub bounding box has
 /// volume `box_volume_threshold`.
+#[allow(unused)]
 pub fn determine_u_v(
     points: &ControlPoints2D,
     to_test: &Point,

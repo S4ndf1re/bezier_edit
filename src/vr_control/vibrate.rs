@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_mod_openxr::{openxr_session_running, session::OxrSession};
-use openxr::{Duration, HapticVibration};
+use openxr::HapticVibration;
 
 use super::ControllerActions;
 

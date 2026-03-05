@@ -7,6 +7,7 @@ pub struct Pointer3dState {
     grab_right_prev_state: bool,
     toggled_left_since: u32,
     toggled_right_since: u32,
+    #[allow(unused)]
     max_ticks: u32,
 }
 
@@ -56,6 +57,8 @@ impl Pointer3dState {
     }
 
     /// Test if the controller is toggled in shorter than n ticks (<)
+    #[allow(unused)]
+    #[deprecated(note = "Should not be used in the future. Use distance based toggle detection instead")]
     pub fn is_just_toggled(&self, controller: &HoveredBy) -> bool {
         match controller {
             HoveredBy::Left => self.toggled_left_since < self.max_ticks,

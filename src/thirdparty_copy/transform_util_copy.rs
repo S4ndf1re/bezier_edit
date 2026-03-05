@@ -1,3 +1,5 @@
+#![cfg(feature = "vr_enable")]
+
 use bevy::prelude::*;
 use bevy_mod_openxr::{
     helper_traits::{ToQuat, ToVec3},

@@ -525,7 +525,7 @@ fn handle_input_grab(
                             current_position: tracked.0.transform_point(dist),
                             actual_position: transform.translation(),
                             timer: None,
-                            hover_by: hover_by,
+                            hover_by,
                         },
                     ));
 
