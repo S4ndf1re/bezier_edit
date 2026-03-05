@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    fmt::Display,
     fs::File,
     io::{Read, Write},
     path::PathBuf,
@@ -37,16 +38,29 @@ use crate::{
         bezier_plane::{ControlPoints2D, ToControlPoints2D},
         point::Point,
     },
+    ui::UiStateChangeset,
 };
 
 #[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord, States, Default, Hash, Debug)]
-enum EvaluationFlowState {
+pub enum EvaluationFlowState {
     #[default]
     Idle,
     Eval,
     Result,
     Creation,
     Created,
+}
+
+impl Display for EvaluationFlowState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EvaluationFlowState::Idle => write!(f, "Idle"),
+            EvaluationFlowState::Eval => write!(f, "Eval"),
+            EvaluationFlowState::Result => write!(f, "Result"),
+            EvaluationFlowState::Creation => write!(f, "Creation"),
+            EvaluationFlowState::Created => write!(f, "Created"),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
@@ -119,7 +133,7 @@ pub struct Evaluation {
     #[serde(skip)]
     counter: usize,
     #[serde(skip)]
-    start_counter: usize,
+    number_of_evals: usize,
 
     #[serde(skip)]
     reference_surfaces: Vec<EvaluationType>,
@@ -149,7 +163,7 @@ impl Evaluation {
 
         Ok(Self {
             evaluations: Vec::new(),
-            start_counter: reference_surfaces.len(),
+            number_of_evals: reference_surfaces.len(),
             reference_surfaces,
             counter: 0,
             pathbuf_references: PathBuf::from(path),
@@ -227,7 +241,7 @@ impl Evaluation {
     }
 
     pub fn can_evaluate_further(&self) -> bool {
-        self.counter < self.start_counter
+        self.counter < self.number_of_evals
     }
 }
 
@@ -584,6 +598,7 @@ fn on_enter_result_state(
     root: Query<Entity, With<RootTransform>>,
     info: Res<RenderInformation>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut ui_update: EventWriter<UiStateChangeset>,
 ) {
     let mut points = Vec::new();
     for (vec, RenderPoint(y, x)) in control_points {
@@ -593,6 +608,11 @@ fn on_enter_result_state(
     if evaluation.can_evaluate_further()
         && let Some(eval_info) = evaluation.end_evaluation(points.clone())
     {
+        ui_update.write(UiStateChangeset {
+            eval_current: Some(evaluation.counter),
+            ..default()
+        });
+
         let root = root.single().unwrap();
 
         commands.spawn((
@@ -783,6 +803,27 @@ fn follow_camera(
     }
 }
 
+/// handle any state change of the `EvaluationFlowState`
+fn on_state_change(
+    state: Res<State<EvaluationFlowState>>,
+    mut ui_update: EventWriter<UiStateChangeset>,
+) {
+    if state.is_changed() {
+        ui_update.write(UiStateChangeset {
+            eval_state: Some(*state.get()),
+            ..default()
+        });
+    }
+}
+
+fn update_ui_from_test_mode(eval: Res<Evaluation>, mut update_ui: EventWriter<UiStateChangeset>) {
+    update_ui.write(UiStateChangeset {
+        eval_current: Some(0),
+        eval_count: Some(eval.number_of_evals),
+        ..default()
+    });
+}
+
 pub struct EvaluationPlugin;
 
 impl Plugin for EvaluationPlugin {
@@ -793,6 +834,8 @@ impl Plugin for EvaluationPlugin {
                 .expect("This must be here, in order to start evaluation"),
         );
 
+        app.add_systems(Startup, update_ui_from_test_mode);
+
         app.add_systems(
             PostUpdate,
             on_enter_eval_state.run_if(on_event::<EnterEvalEvent>),
@@ -802,6 +845,11 @@ impl Plugin for EvaluationPlugin {
         app.add_systems(OnEnter(EvaluationFlowState::Created), on_enter_create_state);
         app.add_systems(Last, handle_state_change_event);
         app.add_systems(Update, follow_camera);
+
+        app.add_systems(
+            Update,
+            on_state_change.run_if(state_changed::<EvaluationFlowState>),
+        );
 
         app.add_event::<NextEvaluationEvent>();
 

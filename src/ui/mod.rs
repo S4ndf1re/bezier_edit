@@ -1,12 +1,14 @@
 pub mod button;
 pub mod slider;
 
+use std::sync::Arc;
+
 #[cfg(not(feature = "vr_enable"))]
 use crate::MainCamera;
 
 use crate::bezier_curve::{
     render_info::{ChangeCoordinateMode, CoordinateMode, UpdateIsoDimEvent},
-    test_mode::EnterEvalEvent,
+    test_mode::{EnterEvalEvent, EvaluationFlowState},
 };
 use bevy::{
     color::palettes::tailwind::GRAY_900, ecs::relationship::RelatedSpawnerCommands, prelude::*,
@@ -34,6 +36,13 @@ struct USlider;
 #[derive(Component)]
 struct VSlider;
 
+/// Mark the eval state text field. it is required to have a text
+#[derive(Component)]
+struct EvalStateMarker;
+
+#[derive(Component)]
+struct EvalProgressMarker;
+
 #[derive(Resource, Patch)]
 #[patch(name = "UiStateChangeset", attribute(derive(Event, Clone, Default)))]
 pub struct UiState {
@@ -47,6 +56,9 @@ pub struct UiState {
     box_depth: f32,
     coordinate_mode: CoordinateMode,
     number_of_points_and_curves: usize,
+    eval_state: EvaluationFlowState,
+    eval_current: usize,
+    eval_count: usize,
 }
 
 impl Default for UiState {
@@ -60,8 +72,11 @@ impl Default for UiState {
             box_width: 0.25,
             box_height: 0.1,
             box_depth: 0.25,
-            coordinate_mode: CoordinateMode::default(),
+            coordinate_mode: default(),
             number_of_points_and_curves: 1,
+            eval_state: default(),
+            eval_count: 0,
+            eval_current: 0,
         }
     }
 }
@@ -140,7 +155,11 @@ fn spawn_uv_control(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: &Res
     });
 }
 
-fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<UiState>) {
+fn spawn_layouted(
+    ui: &mut RelatedSpawnerCommands<'_, ChildOf>,
+    ui_state: Res<UiState>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+) {
     ui.spawn((
         Name::new("Layout Second"),
         UiLayout::window()
@@ -499,6 +518,78 @@ fn spawn_layouted(ui: &mut RelatedSpawnerCommands<'_, ChildOf>, ui_state: Res<Ui
                 },
             );
         });
+
+        ui.spawn((
+            UiLayout::window()
+                .size(Rl((100.0, 1.0 / 4.0 * 100.0)))
+                .pos(Rl((0.0, 100.0)))
+                .anchor(Anchor::TopLeft)
+                .pack(),
+            Name::new("Eval Text"),
+        ))
+        .with_children(|ui| {
+                    ui.spawn((
+                        EvalStateMarker,
+                        UiColor::new(vec![
+                            (UiBase::id(), Color::WHITE),
+                        ]),
+                        UiLayout::solid().size(Rl(100.0)).pack(),
+                        Text3d::new(ui_state.eval_state.to_string()),
+                        Text3dStyling {
+                            size: 64.0,
+                            color: Srgba::new(1., 1., 1., 1.),
+                            align: TextAlign::Center,
+                            font: Arc::from("Rajdhani"),
+                            weight: Weight::BOLD,
+                            ..Default::default()
+                        },
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
+                            alpha_mode: AlphaMode::Blend,
+                            unlit: true,
+                            ..Default::default()
+                        })),
+                        Mesh3d::default(),
+                        // OnHoverSetCursor::new(SystemCursorIcon::Pointer),
+                        Pickable::IGNORE,
+                    ));
+        });
+
+        ui.spawn((
+            UiLayout::window()
+                .size(Rl((100.0, 1.0 / 4.0 * 100.0)))
+                .pos(Rl((0.0, 125.0)))
+                .anchor(Anchor::TopLeft)
+                .pack(),
+            Name::new("Eval Progress"),
+        ))
+        .with_children(|ui| {
+                    ui.spawn((
+                        EvalProgressMarker,
+                        UiColor::new(vec![
+                            (UiBase::id(), Color::WHITE),
+                        ]),
+                        UiLayout::solid().size(Rl(100.0)).pack(),
+                        Text3d::new(format!("Eval: {}/{}", ui_state.eval_current, ui_state.eval_count)),
+                        Text3dStyling {
+                            size: 64.0,
+                            color: Srgba::new(1., 1., 1., 1.),
+                            align: TextAlign::Center,
+                            font: Arc::from("Rajdhani"),
+                            weight: Weight::BOLD,
+                            ..Default::default()
+                        },
+                        MeshMaterial3d(materials.add(StandardMaterial {
+                            base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
+                            alpha_mode: AlphaMode::Blend,
+                            unlit: true,
+                            ..Default::default()
+                        })),
+                        Mesh3d::default(),
+                        // OnHoverSetCursor::new(SystemCursorIcon::Pointer),
+                        Pickable::IGNORE,
+                    ));
+        });
     });
 }
 
@@ -524,7 +615,7 @@ fn build_ui(
         ))
         .with_children(|ui| {
             spawn_background(ui, materials.as_mut()); // spawn_text(ui, materials.as_mut());
-            spawn_layouted(ui, ui_state);
+            spawn_layouted(ui, ui_state, &mut materials);
         });
 }
 
@@ -559,6 +650,8 @@ fn handle_ui_state_change(
     mut state: ResMut<UiState>,
     u_sliders: Query<Entity, (With<USlider>, Without<VSlider>)>,
     v_sliders: Query<Entity, (With<VSlider>, Without<USlider>)>,
+    mut eval_texts: Query<&mut Text3d, (With<EvalStateMarker>, Without<EvalProgressMarker>)>,
+    mut progress_texts: Query<&mut Text3d, (With<EvalProgressMarker>, Without<EvalStateMarker>)>,
     mut commands: Commands,
 ) {
     for evt in event_reader.read() {
@@ -574,6 +667,14 @@ fn handle_ui_state_change(
             if let Ok(mut slider) = commands.get_entity(v_slider) {
                 slider.trigger(ChangeSliderValueEvent::new(state.v as f32));
             }
+        }
+
+        for mut t in eval_texts.iter_mut() {
+            *t = Text3d::new(state.eval_state.to_string());
+        }
+
+        for mut t in progress_texts.iter_mut() {
+            *t = Text3d::new(format!("Eval: {}/{}", state.eval_current, state.eval_count));
         }
     }
 }
