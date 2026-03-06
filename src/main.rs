@@ -143,6 +143,10 @@ fn custom_add_xr_plugins<G: PluginGroup>(plugins: G) -> PluginGroupBuilder {
     use bevy_mod_xr::camera::XrCameraPlugin;
     use bevy_mod_xr::session::XrSessionPlugin;
 
+    #[cfg(feature = "varjo_ready")]
+    let mut oxr_plugin = OxrInitPlugin::default();
+
+    #[cfg(not(feature = "varjo_ready"))]
     let oxr_plugin = OxrInitPlugin::default();
 
     #[cfg(feature = "varjo_ready")]
@@ -196,7 +200,6 @@ fn create_app() -> App {
     use crate::projection::ProjectionPlugin;
     use crate::vr_control::VrControlPlugin;
     use crate::vr_menu::VrMenuPlugin;
-    use bevy::color::palettes::tailwind::GRAY_700;
     use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
     use bevy_mod_openxr::resources::OxrSessionConfig;
     use bevy_mod_openxr::types::EnvironmentBlendMode;
@@ -232,8 +235,12 @@ fn create_app() -> App {
 
     #[cfg(feature = "varjo_ready")]
     app.insert_resource(ClearColor(Color::NONE));
+
     #[cfg(not(feature = "varjo_ready"))]
-    app.insert_resource(ClearColor(GRAY_700.into()));
+    {
+        use bevy::color::palettes::tailwind::GRAY_700;
+        app.insert_resource(ClearColor(GRAY_700.into()));
+    }
 
     app
 }
