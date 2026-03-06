@@ -180,7 +180,7 @@ fn handle_rebuild(
                                 let cross_origin = spawner
                                     .spawn((
                                         Name::new("CrossOriginMarker"),
-                                        Transform::from_xyz(0.0, 0.0, 1.0),
+                                        Transform::from_xyz(0.0, 0.0, 1.0 * render_info.scale),
                                         CrossOriginMarker {
                                             actual_origin,
                                             main_direction: MainDirection::Z,
@@ -215,7 +215,7 @@ fn handle_rebuild(
                                 let cross_origin = spawner
                                     .spawn((
                                         Name::new("CrossOriginMarker"),
-                                        Transform::from_xyz(0.0, 0.0, -1.0),
+                                        Transform::from_xyz(0.0, 0.0, -1.0 * render_info.scale),
                                         CrossOriginMarker {
                                             actual_origin,
                                             main_direction: MainDirection::Z,
@@ -251,7 +251,7 @@ fn handle_rebuild(
                                 let cross_origin = spawner
                                     .spawn((
                                         Name::new("CrossOriginMarker"),
-                                        Transform::from_xyz(1.0, 0.0, 0.0),
+                                        Transform::from_xyz(1.0 * render_info.scale, 0.0, 0.0),
                                         CrossOriginMarker {
                                             actual_origin,
                                             main_direction: MainDirection::X,
@@ -286,7 +286,7 @@ fn handle_rebuild(
                                 let cross_origin = spawner
                                     .spawn((
                                         Name::new("CrossOriginMarker"),
-                                        Transform::from_xyz(-1.0, 0.0, 0.0),
+                                        Transform::from_xyz(-1.0 * render_info.scale, 0.0, 0.0),
                                         CrossOriginMarker {
                                             actual_origin,
                                             main_direction: MainDirection::X,
@@ -380,7 +380,6 @@ pub fn handle_moved_trigger(
     let _ = transforms
         .get_mut(cross_origin_maker_entity)
         .map(|mut trans| {
-            dbg!(trans.translation, delta);
             if matches!(cross_origin_marker.main_direction, MainDirection::Z) {
                 trans.translation -= delta; // Reset transform
                 old_pos = trans.translation;

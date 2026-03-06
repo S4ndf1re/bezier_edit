@@ -13,10 +13,7 @@ use crate::{
         helper_curves::{CurveCollection, RedrawCurvesEvent},
         render_info::RenderInformation,
     },
-    nurbs::{
-        parametric::Parametric,
-        point::Point,
-    },
+    nurbs::{parametric::Parametric, point::Point},
     picking3d::picking_3d::Picking3dInteractable,
     projection::ProjectedSnappingDetector,
 };
@@ -77,16 +74,16 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     .current_diff(&control_parent.1.entity)
                     .unwrap()
                     .length()
-                    > 0.01 * self.info.scale
+                    > 0.1 / 1000.0
                 {
                     let current = self
                         .accumulated_movement
                         .current_point(&control_parent.1.entity)
                         .unwrap();
-                    // 0.05
-                    let scaled = current * (100.0 / self.info.scale);
+                    // 0.1 / 100 = 0.001 m = 0.1 cm = 1 mm
+                    let scaled = current * 1000.0;
                     let floored = scaled.round();
-                    let final_vec = floored / (100.0 / self.info.scale);
+                    let final_vec = floored / 1000.0;
                     self.accumulated_movement
                         .reset(control_parent.1.entity, final_vec);
                     final_vec
@@ -100,16 +97,16 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     .current_diff(&control_parent.1.entity)
                     .unwrap()
                     .length()
-                    > 0.05 * self.info.scale
+                    > 0.5 / 100.0
                 {
                     let current = self
                         .accumulated_movement
                         .current_point(&control_parent.1.entity)
                         .unwrap();
-                    // 0.05
-                    let scaled = current * (20.0 / self.info.scale);
+                    // 0.5 / 100 =  0.005 m = 0.5 cm = 5mm
+                    let scaled = current * 200.0;
                     let floored = scaled.round();
-                    let final_vec = floored / (20.0 / self.info.scale);
+                    let final_vec = floored / 200.0;
                     self.accumulated_movement
                         .reset(control_parent.1.entity, final_vec);
                     final_vec
@@ -123,16 +120,16 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     .current_diff(&control_parent.1.entity)
                     .unwrap()
                     .length()
-                    > 0.10 * self.info.scale
+                    > 1.0 / 100.0
                 {
                     let current = self
                         .accumulated_movement
                         .current_point(&control_parent.1.entity)
                         .unwrap();
-                    // 0.10
-                    let scaled = current * (10.0 / self.info.scale);
+                    // 1.0 / 100 = 0.01 m = 1 cm = 10 mm.
+                    let scaled = current * 100.0;
                     let floored = scaled.round();
-                    let final_vec = floored / (10.0 / self.info.scale);
+                    let final_vec = floored / 100.0;
                     self.accumulated_movement
                         .reset(control_parent.1.entity, final_vec);
                     final_vec
@@ -247,13 +244,19 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                 && *dist > 2.0 * SNAPPING_DIST as f64 * self.info.scale as f64
                 && is_temporarily_blocked
             {
-                let _ = self.commands.get_entity(control_parent.1.entity).map(|mut e| {
-                    e.remove::<TemporaryCurveSnappingBlocker>();
-                });
+                let _ = self
+                    .commands
+                    .get_entity(control_parent.1.entity)
+                    .map(|mut e| {
+                        e.remove::<TemporaryCurveSnappingBlocker>();
+                    });
             } else if shortest.is_none() {
-                let _ = self.commands.get_entity(control_parent.1.entity).map(|mut e| {
-                    e.remove::<TemporaryCurveSnappingBlocker>();
-                });
+                let _ = self
+                    .commands
+                    .get_entity(control_parent.1.entity)
+                    .map(|mut e| {
+                        e.remove::<TemporaryCurveSnappingBlocker>();
+                    });
             }
             self.handel_default(control_parent, translation)
         }
@@ -432,8 +435,9 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                         .remove::<SnappedPoint>();
 
                     // Consider adding back the curve when not
-                    if let Some(accumulated_diff) =
-                        self.accumulated_movement.current_diff(&control_parent.1.entity)
+                    if let Some(accumulated_diff) = self
+                        .accumulated_movement
+                        .current_diff(&control_parent.1.entity)
                     {
                         self.try_snap_to_curve(
                             control_parent,
@@ -487,10 +491,17 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             .ok()
             .cloned();
 
-        let is_temporarily_blocked = self.is_temporarily_blocked.get(control_parent.1.entity).is_ok();
+        let is_temporarily_blocked = self
+            .is_temporarily_blocked
+            .get(control_parent.1.entity)
+            .is_ok();
 
         let changed_entity = control_parent.1.entity;
-        let control_point = self.transform_set.p0().get(control_parent.1.entity).copied();
+        let control_point = self
+            .transform_set
+            .p0()
+            .get(control_parent.1.entity)
+            .copied();
         if let Ok(t) = control_point {
             if t.translation.is_nan() {
                 panic!("T is none");
