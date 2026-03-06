@@ -68,6 +68,29 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
         let mut p0 = self.transform_set.p0();
         let mut t = p0.get_mut(control_parent.1.entity).unwrap();
         t.translation = match self.state.step_mode {
+            StepMode::MM05 => {
+                if self
+                    .accumulated_movement
+                    .current_diff(&control_parent.1.entity)
+                    .unwrap()
+                    .length()
+                    > 0.05 / 1000.0
+                {
+                    let current = self
+                        .accumulated_movement
+                        .current_point(&control_parent.1.entity)
+                        .unwrap();
+                    // 0.05 / 100 = 0.0005 m = 0.05 cm = 0.5 mm
+                    let scaled = current * 2000.0;
+                    let floored = scaled.round();
+                    let final_vec = floored / 2000.0;
+                    self.accumulated_movement
+                        .reset(control_parent.1.entity, final_vec);
+                    final_vec
+                } else {
+                    t.translation
+                }
+            }
             StepMode::MM1 => {
                 if self
                     .accumulated_movement
@@ -84,6 +107,29 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
                     let scaled = current * 1000.0;
                     let floored = scaled.round();
                     let final_vec = floored / 1000.0;
+                    self.accumulated_movement
+                        .reset(control_parent.1.entity, final_vec);
+                    final_vec
+                } else {
+                    t.translation
+                }
+            }
+            StepMode::MM2 => {
+                if self
+                    .accumulated_movement
+                    .current_diff(&control_parent.1.entity)
+                    .unwrap()
+                    .length()
+                    > 0.2 / 1000.0
+                {
+                    let current = self
+                        .accumulated_movement
+                        .current_point(&control_parent.1.entity)
+                        .unwrap();
+                    // 0.2 / 100 = 0.002 m = 0.2 cm = 2 mm
+                    let scaled = current * 500.0;
+                    let floored = scaled.round();
+                    let final_vec = floored / 500.0;
                     self.accumulated_movement
                         .reset(control_parent.1.entity, final_vec);
                     final_vec
