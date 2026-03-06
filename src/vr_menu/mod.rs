@@ -172,7 +172,15 @@ struct MM0;
 
 #[derive(Component, Reflect)]
 #[reflect(Component)]
+struct MM05;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct MM1;
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+struct MM2;
 
 #[derive(Component, Reflect)]
 #[reflect(Component)]
@@ -844,8 +852,14 @@ fn trigger_scene_spawn(trigger: Trigger<SceneInstanceReady>, world: &mut World) 
                 == translation_controller::StepMode::None
                 && !components.contains(&world.component_id::<MM0>().unwrap())
                 || world.resource::<TranslationControllerState>().step_mode
+                    == translation_controller::StepMode::MM05
+                    && !components.contains(&world.component_id::<MM05>().unwrap())
+                || world.resource::<TranslationControllerState>().step_mode
                     == translation_controller::StepMode::MM1
                     && !components.contains(&world.component_id::<MM1>().unwrap())
+                || world.resource::<TranslationControllerState>().step_mode
+                    == translation_controller::StepMode::MM2
+                    && !components.contains(&world.component_id::<MM2>().unwrap())
                 || world.resource::<TranslationControllerState>().step_mode
                     == translation_controller::StepMode::MM5
                     && !components.contains(&world.component_id::<MM5>().unwrap())
@@ -1163,7 +1177,9 @@ impl Plugin for VrMenuPlugin {
         app.register_type::<EvaluationMode>();
         app.register_type::<EndAnyMode>();
         app.register_type::<MM0>();
+        app.register_type::<MM05>();
         app.register_type::<MM1>();
+        app.register_type::<MM2>();
         app.register_type::<MM5>();
         app.register_type::<MM10>();
         app.register_type::<GizmoMode>();
