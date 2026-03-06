@@ -16,7 +16,7 @@ use bevy::prelude::*;
 use super::picking_state::VectorState;
 
 /// PRISM Constant minimal velocity
-const MIN_V: f32 = 0.05;
+const MIN_V: f32 = 0.07;
 
 /// PRISM Constant SC
 const SC: f32 = 0.30;
