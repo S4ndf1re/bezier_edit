@@ -8,9 +8,8 @@
 - Pencil by [farooq.smurf](https://skfb.ly/oOH6B)
 - Checkmark by [Austin Beaulier](https://skfb.ly/6Wtpt)
 
+## Mögliche Aufgaben 
 
-
-# Mögliche Aufgaben 
 - Annähern einer Fläche an eine Punktewolke / Fläche
 - Annähern einer Fläche an mehrere Kurven
 - Randomisierte Kurve zu ebener Ebene Umwandeln.   
@@ -25,6 +24,7 @@
 - Mündliches Feedback der Experten (skala 1-7 pro Tool)
 
 ## Mögliche Fragen im Fragebogen:
+
 - Demographie:
   - Alter
   - Jahre Erfahrung im Beruf
