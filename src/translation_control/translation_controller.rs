@@ -917,7 +917,7 @@ fn drag_start(
                     size: 64.0,
                     color: Srgba::new(0., 0., 0., 1.),
                     align: TextAlign::Center,
-                    font: Arc::from("Rajdhani"),
+                    font: Arc::from("MonaspaceArgon"),
                     weight: Weight::BOLD,
                     ..Default::default()
                 },
@@ -1047,7 +1047,7 @@ fn drag_start3d(
                     size: 64.0,
                     color: Srgba::new(0., 0., 0., 1.),
                     align: TextAlign::Center,
-                    font: Arc::from("Rajdhani"),
+                    font: Arc::from("MonaspaceArgon"),
                     weight: Weight::BOLD,
                     ..Default::default()
                 },
@@ -2087,12 +2087,6 @@ fn update_texts(
             )
         };
 
-        let signs = (
-            if diff.x >= 0.0 { "+" } else { "" },
-            if diff.y >= 0.0 { "+" } else { "" },
-            if diff.z >= 0.0 { "+" } else { "" },
-        );
-
         let length = diff.length();
 
         for child in children {
@@ -2100,21 +2094,27 @@ fn update_texts(
             transform.translation = -camera_forward * 0.3 * info.scale + Vec3::Y * info.scale;
             transform.look_to(camera_forward, Vec3::Y);
             if let Ok(mut text3d) = text3d.get_mut(*child) {
-                *text3d = Text3d::new(format!(
-                    "X {:.3}, \t{}{:.3}, \t{:.3}\nY {:.3}, \t{}{:.3}, \t{:.3}\nZ {:.3}, \t{}{:.3}, \t{:.3}\nMagnitude: {:.3}",
+                let line1 = format!(
+                    "X {:>8.1} {:>8.1} {:>8.1}",
                     start.x * 1000.0,
-                    signs.0,
                     diff.x * 1000.0,
                     current.x * 1000.0,
+                );
+                let line2 = format!(
+                    "Y {:>8.1} {:>8.1} {:>8.1}",
                     start.y * 1000.0,
-                    signs.1,
                     diff.y * 1000.0,
                     current.y * 1000.0,
+                );
+                let line3 = format!(
+                    "Z {:>8.1} {:>8.1} {:>8.1}",
                     start.z * 1000.0,
-                    signs.2,
                     diff.z * 1000.0,
                     current.z * 1000.0,
-                    length,
+                );
+                *text3d = Text3d::new(format!(
+                    "{}\n{}\n{}\nDistance: {:>8.1}",
+                    line1, line2, line3, length
                 ));
             }
         }
@@ -2178,12 +2178,6 @@ fn update_texts(
             )
         };
 
-        let signs = (
-            if diff.x >= 0.0 { "+" } else { "" },
-            if diff.y >= 0.0 { "+" } else { "" },
-            if diff.z >= 0.0 { "+" } else { "" },
-        );
-
         let length = diff.length();
 
         for child in children {
@@ -2191,21 +2185,27 @@ fn update_texts(
             transform.translation = -camera_forward * 0.3 * info.scale + Vec3::Y * info.scale;
             transform.look_to(camera_forward, Vec3::Y);
             if let Ok(mut text3d) = text3d.get_mut(*child) {
-                *text3d = Text3d::new(format!(
-                    "X {:.3}, \t{}{:.3}, \t{:.3}\nY {:.3}, \t{}{:.3}, \t{:.3}\nZ {:.3}, \t{}{:.3}, \t{:.3}\nMagnitude: {:.3}",
+                let line1 = format!(
+                    "X {:>8.1} {:>8.1} {:>8.1}",
                     start.x * 1000.0,
-                    signs.0,
                     diff.x * 1000.0,
                     current.x * 1000.0,
+                );
+                let line2 = format!(
+                    "Y {:>8.1} {:>8.1} {:>8.1}",
                     start.y * 1000.0,
-                    signs.1,
                     diff.y * 1000.0,
                     current.y * 1000.0,
+                );
+                let line3 = format!(
+                    "Z {:>8.1} {:>8.1} {:>8.1}",
                     start.z * 1000.0,
-                    signs.2,
                     diff.z * 1000.0,
                     current.z * 1000.0,
-                    length,
+                );
+                *text3d = Text3d::new(format!(
+                    "{}\n{}\n{}\nDistance: {:>8.1}",
+                    line1, line2, line3, length
                 ));
             }
         }
