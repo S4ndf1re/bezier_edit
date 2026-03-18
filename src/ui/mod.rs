@@ -400,6 +400,7 @@ fn spawn_layouted(
                 );
         });
 
+        #[cfg(not(feature = "evaluation"))]
         ui.spawn((
             UiLayout::window()
                 .size(Rl((100.0, 1.0 / 4.0 * 100.0)))
@@ -447,6 +448,7 @@ fn spawn_layouted(
             });
         });
 
+        #[cfg(not(feature = "evaluation"))]
         ui.spawn((
             UiLayout::window()
                 .size(Rl((100.0, 1.0 / 4.0 * 100.0)))
@@ -495,6 +497,7 @@ fn spawn_layouted(
             });
         });
 
+        #[cfg(not(feature = "evaluation"))]
         ui.spawn((
             UiLayout::window()
                 .size(Rl((100.0, 1.0 / 4.0 * 100.0)))

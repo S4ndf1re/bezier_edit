@@ -623,7 +623,7 @@ fn on_enter_result_state(
             Name::new("Evaluation Text Marker"),
             Text3d::new(format!(
                 "Average Distance: {:.3}\nMin. Distance: {:.3}\nMax. Distance: {:.3}\nTime (s): {:.3}",
-                eval_info.average_dist, eval_info.min_dist, eval_info.max_dist, eval_info.time as f64 / 1000.0
+                eval_info.average_dist * 1000.0, eval_info.min_dist * 1000.0, eval_info.max_dist * 1000.0, eval_info.time as f64 / 1000.0
             )),
             Text3dStyling {
                 size: 64.0,

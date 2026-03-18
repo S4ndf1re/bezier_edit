@@ -40,7 +40,9 @@ opt-level = 3
 
 [features]
 vr_enable = []
-varjo_ready = []
+varjo_ready = ["vr_enable"]
+evaluation = []
+
 
 
 [dependencies.openxr]
