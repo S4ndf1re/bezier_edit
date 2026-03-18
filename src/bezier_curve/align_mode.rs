@@ -40,12 +40,12 @@ pub struct CrossBridge(Entity, Entity);
 
 pub fn create_alignment_sphere(
     mut commands: Commands,
-    root_transform: Query<Entity, With<RootTransform>>,
+    root_transform: Query<&Transform, With<RootTransform>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     render_info: Res<RenderInformation>,
 ) {
-    if let Ok(_root_entity) = root_transform.single() {
+    if let Ok(root_transform) = root_transform.single() {
         let mut mat: StandardMaterial = Color::Srgba(Srgba {
             red: 206.0 / 255.0,
             green: 132.0 / 255.0,
@@ -61,7 +61,7 @@ pub fn create_alignment_sphere(
 
         commands
             .spawn((
-                Transform::default(),
+                *root_transform,
                 // ChildOf(root_entity),
                 AlignmentCenterMarker,
                 MeshMaterial3d(mat_handle),
