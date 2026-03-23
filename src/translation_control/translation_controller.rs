@@ -17,7 +17,7 @@ use bevy::color::palettes::tailwind::{
 };
 use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::prelude::*;
-use bevy_lunex::prelude::{Text3d, Text3dStyling, TextAlign, TextAtlas, TextRenderer, Weight};
+use bevy_lunex::prelude::{Text3d, Text3dStyling, TextAlign, TextAtlas, Weight};
 use bevy_xr_utils::tracking_utils::XrTrackedView;
 use std::collections::HashSet;
 use std::f32::consts::FRAC_PI_2;
