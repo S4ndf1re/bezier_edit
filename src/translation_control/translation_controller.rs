@@ -918,7 +918,7 @@ fn drag_start(
                     color: Srgba::new(0., 0., 0., 1.),
                     align: TextAlign::Center,
                     font: Arc::from("Bitstream Vera Sans Mono"),
-                    weight: Weight::BOLD,
+                    weight: Weight::default(),
                     ..Default::default()
                 },
                 MeshMaterial3d(materials.add(StandardMaterial {
@@ -1048,7 +1048,7 @@ fn drag_start3d(
                     color: Srgba::new(0., 0., 0., 1.),
                     align: TextAlign::Center,
                     font: Arc::from("Bitstream Vera Sans Mono"),
-                    weight: Weight::BOLD,
+                    weight: Weight::default(),
                     ..Default::default()
                 },
                 MeshMaterial3d(materials.add(StandardMaterial {
