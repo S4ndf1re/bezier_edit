@@ -3,7 +3,7 @@ use std::{
     io::Write,
 };
 
-use bevy::ecs::resource::Resource;
+use bevy::{ecs::resource::Resource, log::info, transform::components::Transform};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -27,6 +27,9 @@ pub struct InteractionProfile {
 #[derive(Serialize, Deserialize, Resource)]
 pub struct Config {
     pub profiles: Vec<InteractionProfile>,
+    pub root_transform: Option<Transform>,
+    #[serde(skip)]
+    pub original_path: &'static str,
 }
 
 impl Default for Config {
@@ -53,27 +56,40 @@ impl Default for Config {
                     output: "/user/hand/right/output/haptic".to_owned(),
                 },
             }],
+            root_transform: None,
+            original_path: "",
         }
     }
 }
 
 impl Config {
-    pub fn read_or_create_default(path: &str) -> Config {
+    pub fn read_or_create_default(path: &'static str) -> Config {
         if let Ok(content) = read_to_string(path)
             && let Ok(config) = serde_json::from_str::<Config>(&content)
         {
             return config;
         }
 
-        let config = Config::default();
+        let mut config = Config::default();
+        config.original_path = path;
+        config.write_config();
 
-        let content = serde_json::to_string(&config);
-        if let Ok(mut file) = File::create(path)
+        config
+    }
+
+    pub fn write_config(&self) {
+        let content = serde_json::to_string(self);
+        if let Ok(mut file) = File::create(self.original_path)
             && let Ok(content) = content
         {
             let _ = file.write_all(content.as_bytes());
         }
+    }
+}
 
-        config
+impl Drop for Config {
+    fn drop(&mut self) {
+        info!("Dropping config");
+        self.write_config();
     }
 }

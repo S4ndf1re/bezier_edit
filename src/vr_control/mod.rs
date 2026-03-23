@@ -20,6 +20,8 @@ use thumbstick3d::ThumbstickPlugin;
 use trigger::TriggerPlugin;
 use vibrate::VibrationPlugin;
 
+use crate::{RootTransform, setup};
+
 struct ControllerActionSet {
     set: openxr::ActionSet,
     aim: openxr::Action<Posef>,
@@ -248,6 +250,26 @@ fn spawn_hand_tracking(
     cmds.spawn((right_space, GripRight));
 }
 
+fn on_change_root_transform(
+    changed: Query<&Transform, (With<RootTransform>, Changed<Transform>)>,
+    mut config: ResMut<Config>,
+) {
+    for changed in changed {
+        config.root_transform = Some(*changed)
+    }
+}
+
+fn apply_root_transform_from_config(
+    mut roots: Query<&mut Transform, With<RootTransform>>,
+    config: Res<Config>,
+) {
+    if let Some(root_transform) = config.root_transform {
+        for mut root in roots.iter_mut() {
+            *root = root_transform;
+        }
+    }
+}
+
 pub struct VrControlPlugin;
 
 impl Plugin for VrControlPlugin {
@@ -263,7 +285,14 @@ impl Plugin for VrControlPlugin {
                 .run_if(openxr_session_running),
         );
         app.add_systems(OxrSendActionBindings, suggest_action_bindings);
-        app.add_systems(Startup, create_actions.run_if(session_available));
+        app.add_systems(
+            Startup,
+            (
+                create_actions.run_if(session_available),
+                apply_root_transform_from_config.after(setup),
+            ),
+        );
+        app.add_systems(Last, on_change_root_transform);
         app.add_plugins(ThumbstickPlugin);
         app.add_plugins(TriggerPlugin);
         app.add_plugins(VibrationPlugin);

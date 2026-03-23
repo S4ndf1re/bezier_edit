@@ -46,7 +46,7 @@ pub struct RootTransform;
 pub struct MainCamera;
 
 #[cfg(not(feature = "vr_enable"))]
-fn setup(mut commands: Commands) {
+pub fn setup(mut commands: Commands) {
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(-10.0, 0.0, 0.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
@@ -67,7 +67,7 @@ fn setup(mut commands: Commands) {
 }
 
 #[cfg(feature = "vr_enable")]
-fn setup(
+pub fn setup(
     mut commands: Commands,
     mut rotation_writer: EventWriter<SnapToRotation>,
     mut position_writer: EventWriter<SnapToPosition>,
