@@ -79,7 +79,7 @@ impl Config {
     }
 
     pub fn write_config(&self) {
-        let content = serde_json::to_string(self);
+        let content = serde_json::to_string_pretty(self);
         let mut file = File::create(self.original_path);
         if let Ok(file) = file.as_mut()
             && let Ok(content) = content.as_ref()
