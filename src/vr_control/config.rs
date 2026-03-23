@@ -65,8 +65,9 @@ impl Default for Config {
 impl Config {
     pub fn read_or_create_default(path: &'static str) -> Config {
         if let Ok(content) = read_to_string(path)
-            && let Ok(config) = serde_json::from_str::<Config>(&content)
+            && let Ok(mut config) = serde_json::from_str::<Config>(&content)
         {
+            config.original_path = path;
             return config;
         }
 
@@ -79,10 +80,25 @@ impl Config {
 
     pub fn write_config(&self) {
         let content = serde_json::to_string(self);
-        if let Ok(mut file) = File::create(self.original_path)
-            && let Ok(content) = content
+        let mut file = File::create(self.original_path);
+        if let Ok(file) = file.as_mut()
+            && let Ok(content) = content.as_ref()
         {
+            info!("Writing file");
             let _ = file.write_all(content.as_bytes());
+        } else {
+            if file.is_err() {
+                info!(
+                    "encoutered error while writing config in path {}: {}",
+                    self.original_path,
+                    file.err().unwrap()
+                );
+            } else {
+                info!(
+                    "encoutered error while writing config: {}",
+                    content.err().unwrap()
+                );
+            }
         }
     }
 }
