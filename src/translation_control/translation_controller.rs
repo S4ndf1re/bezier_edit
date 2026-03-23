@@ -2087,7 +2087,7 @@ fn update_texts(
             )
         };
 
-        let length = diff.length();
+        let length = diff.length() * 1000.0;
 
         for child in children {
             let mut transform = transforms.get_mut(*child).unwrap();
@@ -2178,7 +2178,7 @@ fn update_texts(
             )
         };
 
-        let length = diff.length();
+        let length = diff.length() * 1000.0;
 
         for child in children {
             let mut transform = transforms.get_mut(*child).unwrap();
