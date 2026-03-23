@@ -33,6 +33,7 @@ use history::plugin::HistoryPlugin;
 use crate::bezier_curve::render_info::RenderInformation;
 
 use bevy::render::view::RenderLayers;
+use bevy_lunex::prelude::LoadFonts;
 use projection::DisplayIn;
 use translation_control::translation_controller::TranslationController;
 use ui::UiPlugin;
@@ -122,6 +123,10 @@ fn create_app() -> App {
         .add_plugins(VrMenuPlugin)
         .init_resource::<ControlStorage>()
         .insert_resource(ClearColor(GRAY_700.into()))
+        .insert_resource(LoadFonts {
+            font_directories: vec!["assets/fonts".to_owned()],
+            ..default()
+        })
         .add_systems(Startup, setup.before(generate_default_curve));
 
     app
@@ -231,6 +236,10 @@ fn create_app() -> App {
     .add_plugins(LinkedEntitiesPlugin)
     .add_plugins(VrMenuPlugin)
     .add_systems(Startup, (setup.before(generate_default_curve),))
+    .insert_resource(LoadFonts {
+        font_directories: vec!["assets/fonts".to_owned()],
+        ..default()
+    })
     .init_resource::<ControlStorage>();
 
     #[cfg(feature = "varjo_ready")]

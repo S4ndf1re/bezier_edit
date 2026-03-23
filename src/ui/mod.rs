@@ -690,10 +690,6 @@ impl Plugin for UiPlugin {
         app.add_plugins((SliderPlugin, ButtonPlugin));
         app.add_event::<UiStateChangeset>();
         app.init_resource::<UiState>();
-        app.insert_resource(LoadFonts {
-            font_directories: vec!["assets/fonts".to_owned()],
-            ..default()
-        });
         app.add_systems(Startup, build_ui);
         app.add_systems(Update, follow_camera.chain());
         app.add_systems(PostUpdate, handle_ui_state_change);

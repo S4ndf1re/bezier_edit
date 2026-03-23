@@ -17,7 +17,7 @@ use bevy::color::palettes::tailwind::{
 };
 use bevy::ecs::relationship::RelatedSpawnerCommands;
 use bevy::prelude::*;
-use bevy_lunex::prelude::{Text3d, Text3dStyling, TextAlign, TextAtlas, Weight};
+use bevy_lunex::prelude::{Text3d, Text3dStyling, TextAlign, TextAtlas, TextRenderer, Weight};
 use bevy_xr_utils::tracking_utils::XrTrackedView;
 use std::collections::HashSet;
 use std::f32::consts::FRAC_PI_2;
@@ -917,7 +917,7 @@ fn drag_start(
                     size: 64.0,
                     color: Srgba::new(0., 0., 0., 1.),
                     align: TextAlign::Center,
-                    font: Arc::from("MonaspaceArgon"),
+                    font: Arc::from("Bitstream Vera Sans Mono"),
                     weight: Weight::BOLD,
                     ..Default::default()
                 },
@@ -1047,7 +1047,7 @@ fn drag_start3d(
                     size: 64.0,
                     color: Srgba::new(0., 0., 0., 1.),
                     align: TextAlign::Center,
-                    font: Arc::from("MonaspaceArgon"),
+                    font: Arc::from("Bitstream Vera Sans Mono"),
                     weight: Weight::BOLD,
                     ..Default::default()
                 },
