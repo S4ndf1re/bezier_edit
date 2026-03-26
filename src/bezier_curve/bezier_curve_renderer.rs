@@ -448,7 +448,9 @@ pub fn redraw_iso_lines(
     }
 
     {
-        let surface = surface.single().unwrap();
+        let Ok(surface) = surface.single() else {
+            return;
+        };
         commands
             .spawn((
                 Transform::default(),
