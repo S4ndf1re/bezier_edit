@@ -255,7 +255,6 @@ fn on_change_root_transform(
     mut config: ResMut<Config>,
 ) {
     for changed in changed {
-        info!("Applied Root transform to config");
         config.root_transform = Some(*changed)
     }
 }
