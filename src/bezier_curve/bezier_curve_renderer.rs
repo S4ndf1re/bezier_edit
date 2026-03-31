@@ -968,7 +968,7 @@ pub fn generate_default_curve(
                         parent,
                         &mut meshes,
                         &mut materials,
-                        &[Vec3::new(i as f32, 0.0, 0.0), Vec3::new(i as f32, 0.0, 1.0)],
+                        &[Vec3::new(i as f32 / 10.0, 0.0, 0.0), Vec3::new(i as f32 / 10.0, 0.0, 1.0)],
                         &info,
                         false,
                     )
