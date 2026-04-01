@@ -30,6 +30,42 @@ use super::{
 
 const SNAPPING_DIST: f32 = 0.07;
 
+pub fn add_snap_to_curve_arrow(
+    commands: &mut Commands,
+    entity: Entity,
+    deriv: Point,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    info: &RenderInformation,
+) {
+    let mat = materials.add(StandardMaterial::from_color(YELLOW_600));
+    let mat_hover = materials.add(StandardMaterial::from_color(YELLOW_400));
+
+    commands.get_entity(entity).unwrap().with_children(|cmd| {
+        cmd.spawn((
+            Control(Vec3::from(deriv)),
+            SnappedArrow,
+            Transform::default().looking_to(Vec3::from(deriv), Vec3::Y),
+            Visibility::Inherited,
+        ))
+        .with_children(|cmd| {
+            draw_arrow(
+                cmd,
+                mat,
+                mat_hover,
+                meshes,
+                info.scale,
+                false,
+                Picking3dInteractable::Default,
+                Pickable::default(),
+                false,
+            );
+        })
+        .observe(drag_controller)
+        .observe(drag_controller3d);
+    });
+}
+
 #[allow(clippy::complexity)]
 #[derive(SystemParam)]
 pub struct ObligatoryDragParams<'w, 's> {
@@ -240,9 +276,6 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             let mut t = p0.get_mut(control_parent.1.entity).unwrap();
             t.translation = (*p).into();
 
-            let mat = self.materials.add(StandardMaterial::from_color(YELLOW_600));
-            let mat_hover = self.materials.add(StandardMaterial::from_color(YELLOW_400));
-
             let deriv = points.derive(&[*u], 1)[0];
 
             self.commands
@@ -256,32 +289,15 @@ impl<'w, 's> ObligatoryDragParams<'w, 's> {
             // Create a new arrow (directional), that follows the curvature of the
             // curve that the point was snapped to. The direction of the arrow is
             // updated each frame, to adhere to movement along the curve
-            self.commands
-                .get_entity(control_parent.0)
-                .unwrap()
-                .with_children(|cmd| {
-                    cmd.spawn((
-                        Control(Vec3::from(deriv)),
-                        SnappedArrow,
-                        Transform::default().looking_to(Vec3::from(deriv), Vec3::Y),
-                        Visibility::Inherited,
-                    ))
-                    .with_children(|cmd| {
-                        draw_arrow(
-                            cmd,
-                            mat,
-                            mat_hover,
-                            &mut self.meshes,
-                            self.info.scale,
-                            false,
-                            Picking3dInteractable::Default,
-                            Pickable::default(),
-                            false,
-                        );
-                    })
-                    .observe(drag_controller)
-                    .observe(drag_controller3d);
-                });
+            add_snap_to_curve_arrow(
+                &mut self.commands,
+                control_parent.0,
+                deriv,
+                &mut self.meshes,
+                &mut self.materials,
+                &self.info,
+            );
+
             self.accumulated_movement
                 .reset(control_parent.1.entity, t.translation);
             t.translation

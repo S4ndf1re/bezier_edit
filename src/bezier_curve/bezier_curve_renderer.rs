@@ -1,3 +1,6 @@
+// TODO(jan): add slider to scale ALL UI components (prio medium)
+// FIXME(jan): spheres stay dark after moving (sometinges, prio low)
+
 use super::bridges::{BridgeSpawner, update_lines};
 use super::curvature_display_mode::{
     ChangeCurvatureDisplayModeEvent, CurvatureDisplayMode, handle_change_curvature,

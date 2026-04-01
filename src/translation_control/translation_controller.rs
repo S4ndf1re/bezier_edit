@@ -2285,6 +2285,16 @@ fn toggle_visibility(
     }
 }
 
+/// If the childof parent has changed, this means that the control parent is now under a different parent.
+/// Reflect these changes here
+fn match_control_parent_with_child_of(
+    mut changed: Query<(&mut ControlParent, &ChildOf), Changed<ChildOf>>,
+) {
+    for (mut parent, child_of) in &mut changed {
+        parent.entity = child_of.parent();
+    }
+}
+
 pub struct TranslationController;
 
 impl Plugin for TranslationController {
@@ -2302,6 +2312,7 @@ impl Plugin for TranslationController {
                 update_texts,
                 update_boxes,
                 toggle_visibility.run_if(on_event::<ToggleRobotVisibilityEvent>),
+                match_control_parent_with_child_of,
             ),
         );
         app.init_resource::<ControlStorage>();

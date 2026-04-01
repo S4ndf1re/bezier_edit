@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
 use super::bezier_curve_renderer::EndModeEvent;
-use super::bridges::BridgeSpawner;
-use super::{EntityDeletedEvent, components::ControlState, render_info::RenderInformation};
+pub(crate) use super::bridges::BridgeSpawner;
+pub(crate) use super::{
+    EntityDeletedEvent, components::ControlState, render_info::RenderInformation,
+};
 use crate::bezier_curve::bezier_curve_renderer::hover_3d;
 use crate::bezier_curve::bridges::BridgeDespawner;
 use crate::nurbs::bezier::{de_casteljau, increase_degree};
@@ -10,7 +12,7 @@ use crate::nurbs::parametric::Parametric;
 use crate::picking3d::picking_3d::Picking3dInteractable;
 use crate::projection::{AddBoundingEntityEvent, BoundingEntitiesManager, DisplayIn};
 use crate::translation_control::translation_controller::{
-    CantSnapToCurve, EnableTranslationControlType,
+    CantSnapToCurve, EnableTranslationControlType, SnappedPoint,
 };
 use crate::translation_control::{enable_gizmo, enable_gizmo3d};
 #[cfg(feature = "vr_enable")]
@@ -596,11 +598,17 @@ pub fn add_point_to_curve_handler(
         BridgeSpawner,
         BridgeDespawner,
         (ResMut<Assets<Mesh>>, ResMut<Assets<StandardMaterial>>),
+        (
+            Commands,
+            ResMut<Assets<Mesh>>,
+            ResMut<Assets<StandardMaterial>>,
+        ),
     )>,
     points: Query<(Entity, &ChildOf, &ControlCurvePoint)>,
     mut end_mode_writer: EventWriter<EndModeEvent>,
     mut redraw_curves: EventWriter<RedrawCurvesEvent>,
     mut transforms: Query<&mut Transform>,
+    snapped: Query<&SnappedPoint>,
     info: Res<RenderInformation>,
 ) {
     for evt in reader.read() {
@@ -638,10 +646,23 @@ pub fn add_point_to_curve_handler(
         }
 
         let new_points = increase_degree(&control_points);
+        let mut snapped_value = None;
 
         for (idx, (_, point_entity)) in points_collected.iter().enumerate() {
             if let Ok(mut transform) = transforms.get_mut(*point_entity) {
                 transform.translation = Vec3::from(new_points[idx]);
+            }
+
+            // NOTE(jan): the end point is now the second last point, i.e. new_points[i-2].
+            //            If the previous last point was snapped, make sure to apply the snapp to the
+            //            new last point and unsnap the old last
+            if idx == points_collected.len() - 1
+                && let Ok(snap) = snapped.get(*point_entity)
+            {
+                let _ = duplicate_set.p0().get_entity(*point_entity).map(|mut e| {
+                    e.remove::<SnappedPoint>();
+                });
+                snapped_value = Some(*snap);
             }
         }
 
@@ -649,7 +670,7 @@ pub fn add_point_to_curve_handler(
         let mut points_with_position = Vec::new();
         let mut ids = Vec::new();
 
-        for p in points_collected {
+        for p in &points_collected {
             ids.push(p.1);
 
             let position = transforms
@@ -667,9 +688,9 @@ pub fn add_point_to_curve_handler(
         };
         let counter = points_with_position.last().unwrap().0 + 1;
 
-        let new_id = duplicate_set
-            .p0()
-            .spawn((
+        let new_id = {
+            let mut commands = duplicate_set.p0();
+            let mut new_entity = commands.spawn((
                 ChildOf(curve),
                 ControlCurvePoint(counter),
                 Name::new(format!("Curve point {}", counter)),
@@ -679,11 +700,31 @@ pub fn add_point_to_curve_handler(
                 RenderLayers::from(DisplayIn::BothNormalAndOrtho),
                 Picking3dInteractable::default(),
                 CantSnapToCurve::Single(curve),
-            ))
-            .observe(hover_3d)
-            .observe(handle_click_on_curve_point3d)
-            .observe(handle_click_on_curve_point)
-            .id();
+            ));
+            new_entity
+                .observe(hover_3d)
+                .observe(handle_click_on_curve_point3d)
+                .observe(handle_click_on_curve_point);
+
+            if let Some(snap) = snapped_value {
+                new_entity.insert(snap);
+            }
+
+            new_entity.id()
+        };
+
+        // Finally, move all old pos children to new pos. Treat the old last point as the newly created point
+        for (_, point_entity) in &points_collected {
+            let Ok(children) = children.get(*point_entity) else {
+                continue;
+            };
+
+            for child in children {
+                let _ = duplicate_set.p0().get_entity(*child).map(|mut e| {
+                    e.insert(ChildOf(new_id));
+                });
+            }
+        }
 
         ids.push(new_id);
         points_with_position.push((counter, Vec3::from(*new_points.last().unwrap())));
