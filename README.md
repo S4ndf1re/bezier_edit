@@ -23,7 +23,7 @@
 - Genauigkeit der erreichten Fläche (Score) (u,v-Abtastung)
 - Mündliches Feedback der Experten (skala 1-7 pro Tool)
 
-## Mögliche Fragen im Fragebogen:
+## Mögliche Fragen im Fragebogen
 
 - Demographie:
   - Alter
@@ -50,3 +50,63 @@
   - Ich habe das Gefühl, Flächen schneller zu modellieren als in Desktop Umbegungen
   - Ich habe das Gefühlt, dass die Flächen Anschaulicher zu betrachten sind, als in Desktop Umgebungen 
   - Generelle Kommentare (freitext, gut, schlecht, was fehlt)
+
+
+## 99461
+
+- 16-18: Kugeln ziehen ist ein Problem
+- 19: Sensoren großes Problem. Alignment Wichtig
+- Aufpassen, dass Snapping aus ist
+- Proband bewegt sich dynamisch im Raum
+
+## 22144
+
+- Man braucht nur einen Controller
+- Haken auch mit Kugel zum besseren anpeilen
+- Beim loslassen des Controllers verspringt das arg
+- Experte, hat super schnell alles verstanden und gemacht
+
+## 34568
+
+- Durchaus inituitiv
+- Menü Platzierung gefährlich. Man klickt oft drauf, wenn man nicht aufpasst
+- Kugel verdeckt den Eckpunkt, daher MUSS ein Scaler rein, der aber nicht die Bewegung einschränkt
+- Punkt Transparent, damit Mittelpunkt hochgenau angezeigt wird
+- Keine genaueren Kontrollmöglichkeiten, Ränder stimmen nicht, ist nicht ersichtlich, da zu große Kurven
+- Fehlen von minimalen Kleinen Bewegungen
+- Kommt sehr oft auf das dauerhafte Menü. Vielleicht das Menü auch ausblenden
+- Kriege das gar nicht genau hingeschoben. Deckungsgleichheit lediglich über Augenmaß
+- Kugeln anfassen ist ok. Intuitiv
+- Loslassen der Kugeln trotz Präzisionsmodus verreißt
+- Boxen besser Durchsichtig bei Ziehen
+- Daumenmenü immer zu nah am Körper, besser fixe distanze
+
+## 98562
+
+- Man geht ungern in die Fläche Rein, (intuitiv)
+- Es ist gut mit dem dicht heran gehen, dann kann man genauer arbeiten. Dann ist das Wackeln nicht mehr so schlimm
+- Sensoren sind das A. und O. schlechte sensorik, macht die Precision zu nichte
+- Iso Linien müssen auf jeden Fall dicker
+- Kügelchen helfen auf jedenfall bei der Orientierung
+- Dicht genug rangehen, lässt sich aber gut bewegen. Präzise == dicht heran
+- Entfernung wirkt natürlich, auch die Bewegung
+- Vielleicht unsichtbar machen auch nicht unbedingt hilfreich, aber kleiner
+- Bei Kugel ein kleines Koordinatensystem einblenden (beim Ziehen)
+- Man müsste testen, welche features etwas ausmachen, oder egal sind, indem man einen gegentest machet
+- Iso linien zu klein
+- Fläche vielleicht ein bisschen durchsichtig
+- AR hilft, nirgends gegen zu laufen
+- AR könnte geholfen haben, gegen VR Sickness zu arbeiten
+- Vielleicht Raum der größe nach anpassen. Aufgeräumt
+- Menü war zu nar dran, sonst gut
+- GGF wenn man viel Übung hat. War aber nicht schneller, als am Desktop. Man konnte direkt an die Kontrollpunkte, und konnte die viel besser Visualisieren. Ggf sogar präziser als am Desktop
+
+## 88300
+
+- Irritierend durch die Fläche zu laufen
+- Wäre cool, wenn die Control Sphere transparent wäre
+- Robots immer zu dem "Spieler" gerichtet
+- Reihen Anfasser lieber als Zylinder
+- Wenn boxen, dann nur NUV
+- Menü zu nah am Körper
+- Menü zu unübersichtlich
