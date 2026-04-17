@@ -3,3 +3,7 @@
 ./dir-locals.el
 .DS_Store
 evaluation/
+
+**/.clj-kondo
+**/.lsp
+**/.clerk
