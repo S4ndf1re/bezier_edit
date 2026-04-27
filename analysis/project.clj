@@ -7,7 +7,8 @@
                  [io.github.nextjournal/clerk "0.18.1158"]
                  [meta-csv "0.1.0"]
                  [scicloj/tablecloth "8.016"]
-                 [cheshire "6.2.0"]]
+                 [cheshire "6.2.0"]
+                 [generateme/fastmath "2.4.0"]]
   :main ^:skip-aot analysis.core
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all

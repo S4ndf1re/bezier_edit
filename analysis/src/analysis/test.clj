@@ -3,7 +3,8 @@
   (:require [nextjournal.clerk :as cl]
             [tablecloth.api :as tc]
             [cheshire.core :as json]
-            [analysis.bezier :as bezier]))
+            [analysis.bezier :as bezier]
+            [fastmath.stats :as stats]))
 
 ; **INFO**: This code may be used to enable the clerk runtime
 ^{:nextjournal.clerk/visibility #{:hide}}
@@ -139,8 +140,9 @@
 (cl/table menu)
 
 (cl/vl {:data {:values (tc/rows immersion :as-maps)}
-        :width 500
-        :heigth 500
+        :width 800
+        :heigth 1000
+        :transform [{:calculate "random() - 0.5" :as :offset}]
         :encoding {:x {:field :immersive-category
                        :type :nominal
                        :title "Manipulation and Immersion"}
@@ -148,10 +150,17 @@
                        :type :quantitative
                        :title "Likert Scale [0,6]. 0 beeing worst, 6 beeing best"}}
 
-        :layer [{:mark {:type :boxplot}}
+        :layer [{:mark {:type :point :opacity 0.8 :filled true :size 100}
+                 :encoding {:xOffset {:field :offset
+                                      :scale {:domain [-1.5 1.5]}
+                                      :type :quantitative}
+                            :color {:field :immersive-category
+                                    :title "Immersive Category"}}}
                 {:mark {:type :point
                         :color :red
-                        :shape :diamond}
+                        :shape :diamond
+                        :filled true
+                        :size 200}
                  :encoding {:y {:field :value
                                 :aggregate :mean
                                 :type :quantitative}
@@ -167,8 +176,9 @@
 ;; It was noted multiple times, that prolonged time to train might improve the perceived speed difference to classical Desktop environments. (IMPORTANT to note for future work)
 
 (cl/vl {:data {:values (tc/rows tool-usage :as-maps)}
-        :width 500
-        :heigth 500
+        :width 800
+        :heigth 1000
+        :transform [{:calculate "random() - 0.5" :as :offset}]
         :encoding {:x {:field :tool-category
                        :type :nominal
                        :title "Tool Usage"}
@@ -176,10 +186,18 @@
                        :type :quantitative
                        :title "Likert Scale [0,6]. 0 beeing worst, 6 beeing best"}}
 
-        :layer [{:mark {:type :boxplot}}
+        :layer [{:mark {:type :point :opacity 0.8 :filled true :size 100}
+                 :encoding {:xOffset {:field :offset
+                                      :scale {:domain [-1.5 1.5]}
+                                      :type :quantitative}
+                            :color {:field :tool-category
+                                    :title "Tool Category"}}}
+
                 {:mark {:type :point
                         :color :red
-                        :shape :diamond}
+                        :shape :diamond
+                        :filled true
+                        :size 200}
                  :encoding {:y {:field :value
                                 :aggregate :mean
                                 :type :quantitative}
@@ -203,6 +221,7 @@
 (cl/vl {:data {:values (tc/rows menu :as-maps)}
         :width 100
         :heigth 500
+        :transform [{:calculate "random() - 0.5" :as :offset}]
         :encoding {:x {:field :menu-category
                        :type :nominal
                        :title "Menu usefullness"}
@@ -210,10 +229,15 @@
                        :type :quantitative
                        :title "Likert Scale [0,6]. 0 beeing worst, 6 beeing best"}}
 
-        :layer [{:mark {:type :boxplot}}
+        :layer [{:mark {:type :point :opacity 0.8 :filled true :size 100}
+                 :encoding {:xOffset {:field :offset
+                                      :scale {:domain [-1.5 1.5]}
+                                      :type :quantitative}}}
                 {:mark {:type :point
                         :color :red
-                        :shape :diamond}
+                        :shape :diamond
+                        :filled true
+                        :size 200}
                  :encoding {:y {:field :value
                                 :aggregate :mean
                                 :type :quantitative}
@@ -230,13 +254,13 @@
 ;; # Adding in Evaluation Recorded Data
 
 (def expert-runs
-  {11111 "evals/2026_4_1_12_19.json"
-   99461 "evals/2026_4_1_12_19.json"
-   57849 "evals/2026_4_1_12_19.json"
-   34568 "evals/2026_4_1_12_19.json"
-   98562 "evals/2026_4_1_12_19.json"
-   88300 "evals/2026_4_1_12_19.json"
-   22144 "evals/2026_4_1_12_19.json"})
+  {11111 "eval_4_7/2026_4_7_11_45.json"
+   99461 "eval_4_7/2026_4_7_11_45.json"
+   57849 "eval_4_7/2026_4_7_12_14.json"
+   22144 "eval_4_7/2026_4_7_13_11.json"
+   34568 "eval_4_7/2026_4_7_13_52.json"
+   98562 "eval_4_7/2026_4_7_14_37.json"
+   88300 "eval_4_7/2026_4_7_15_10.json"})
 
 (defn read-data-sample
   "sample path as input"
@@ -261,21 +285,54 @@
 
 (cl/table data-with-eval)
 
-(def recorded-data-sample
-  (read-data-sample 11111 expert-runs))
+(def pivoted
+  (tc/pivot->longer data-with-eval (remove #{:participant-id :filepath :free-form-text :coordinate-alignmnt} (vec (tc/column-names data)))
+                    {:target-columns :category
+                     :value-column-name :value}))
+
+(defn display-participant
+  [data participant-id]
+  (cl/vl {:data {:values (tc/rows (tc/select-rows data (comp #(= % participant-id) :participant-id)) :as-maps)}
+          :width 1000
+          :heigth 700
+          :encoding {:x {:field :category
+                         :type :nominal
+                         :title "Manipulation and Immersion"
+                         :sort :ascending}
+                     :y {:field :value
+                         :type :quantitative
+                         :title "Likert Scale [0,6]. 0 beeing worst, 6 beeing best"
+                         :scale {:domain [0 6]}
+                         :axis {:format :d
+                                :tickMinStep 1
+                                :values [0 1 2 3 4 5 6]}}}
+
+          :layer [{:mark {:type :bar}}]}))
+
+(cl/table pivoted)
+
+(map #(display-participant pivoted %) (tc/column data-with-eval :participant-id))
 
 (defn to-control-point-rows
-  [raw-data & {:keys [inverse] :or {inverse false}}]
-  (if (not inverse)
-    (->> raw-data
-         (sort-by #(vector (get % "x_idx") (get % "y_idx")))
-         (group-by #(get % "x_idx"))
-         (map #(val %)))
+  "When only corners is true, only return the 4 corners of the resulted nested list"
+  [raw-data & {:keys [inverse only-corners] :or {inverse false only-corners false}}]
+  (let [rows
+        (if (not inverse)
+          (->> raw-data
+               (sort-by #(vector (get % "x_idx") (get % "y_idx")))
+               (group-by #(get % "x_idx"))
+               (map #(val %)))
 
-    (->> raw-data
-         (sort-by #(vector (get % "y_idx") (get % "y_idx")))
-         (group-by #(get % "y_idx"))
-         (map #(val %)))))
+          (->> raw-data
+               (sort-by #(vector (get % "y_idx") (get % "y_idx")))
+               (group-by #(get % "y_idx"))
+               (map #(val %))))]
+    (if only-corners
+      (vector (first (first rows))
+              (last (first rows))
+              (first (last rows))
+              (last (last rows)))
+      rows)))
 
 (defn points-to-xyz-samples-2d
   [pts resolution]
@@ -323,9 +380,305 @@
                                         :thickness 20}})
                 :config {:displayModeBar false}})))
 
-(for [phase (range (count recorded-data-sample))]
-  (plot-phase recorded-data-sample phase))
+(defn print-all-phases
+  [participant]
+  (let [recorded-data-sample (read-data-sample participant expert-runs)]
+    (for [phase (range (count recorded-data-sample))]
+      (plot-phase recorded-data-sample phase))))
 
+(defn eval-min-max-avg-single-control-point-distance
+  [filedata phase]
+  (if (get filedata phase)
+    (let [reference-surface-data (vec (flatten (get-in filedata [phase "reference_control_points" "Curve" "curves"])))
+          test-surface-data (get-in filedata [phase "test_control_points"])
+          reference-control-points (flatten (to-control-point-rows reference-surface-data :inverse true))
+          test-control-points (flatten (to-control-point-rows test-surface-data :only-corners true))
+          reference-raw-points (mapv #(get % "point") reference-control-points)
+          test-raw-points (mapv #(get % "point") test-control-points)
+          point-assignments (bezier/greedy-min-assignment test-raw-points reference-raw-points)]
+      (if (seq point-assignments)
+        {:min (* 1000 (reduce (fn [c v] (min c (:dist v))) Double/MAX_VALUE (vals point-assignments)))
+         :max (* 1000 (reduce (fn [c v] (max c (:dist v))) Double/MIN_VALUE (vals point-assignments)))
+         :avg (* 1000 (/ (reduce (fn [c v] (+ c (:dist v))) 0 (vals point-assignments)) (count point-assignments)))}
+        nil))
+    nil))
+
+(defn add-min-max-avg-control-point-distance
+  [df phase]
+  (let [participants (get df :participant-id)
+        filedata (map #(read-data-sample % expert-runs) participants)
+        min-max-avg (map #(eval-min-max-avg-single-control-point-distance % phase) filedata)]
+    (tc/add-columns df {(keyword (str "run-" phase "-cp-min-dist")) (map :min min-max-avg)
+                        (keyword (str "run-" phase "-cp-max-dist")) (map :max min-max-avg)
+                        (keyword (str "run-" phase "-cp-avg-dist")) (map :avg min-max-avg)})))
+
+(def df-with-cp-dist (-> data-with-eval
+                         (add-min-max-avg-control-point-distance 0)
+                         (add-min-max-avg-control-point-distance 1)))
+
+(cl/table df-with-cp-dist)
+
+(def df-with-cp-dist-filtered
+  (tc/select-rows df-with-cp-dist (comp #(not (= % 34568)) :participant-id)))
+
+(cl/table df-with-cp-dist-filtered)
+
+(def run-0-pivoted
+  (-> df-with-cp-dist
+      (tc/select-columns [:participant-id
+                          :run-0-min :run-0-max :run-0-avg
+                          :run-0-cp-min-dist :run-0-cp-max-dist :run-0-cp-avg-dist])
+      (tc/pivot->longer [:run-0-min :run-0-max :run-0-avg
+                         :run-0-cp-min-dist :run-0-cp-max-dist :run-0-cp-avg-dist] {:target-columns :run-category
+                                                                                    :value-column-name :value})
+      (tc/update-columns {:run-category #(map {:run-0-min "Min"
+                                               :run-0-max "Max"
+                                               :run-0-avg "Avg"
+                                               :run-0-cp-min-dist "Min Distance to Control Point"
+                                               :run-0-cp-max-dist "Max Distance to Control Point"
+                                               :run-0-cp-avg-dist "Avg Distance to Control Point"}
+                                              %)})))
+
+(def run-1-pivoted
+  (-> df-with-cp-dist
+      (tc/select-columns [:participant-id
+                          :run-1-min :run-1-max :run-1-avg
+                          :run-1-cp-min-dist :run-1-cp-max-dist :run-1-cp-avg-dist])
+      (tc/pivot->longer [:run-1-min :run-1-max :run-1-avg
+                         :run-1-cp-min-dist :run-1-cp-max-dist :run-1-cp-avg-dist] {:target-columns :run-category
+                                                                                    :value-column-name :value})
+      (tc/update-columns {:run-category #(map {:run-1-min "Min"
+                                               :run-1-max "Max"
+                                               :run-1-avg "Avg"
+                                               :run-1-cp-min-dist "Min Distance to Control Point"
+                                               :run-1-cp-max-dist "Max Distance to Control Point"
+                                               :run-1-cp-avg-dist "Avg Distance to Control Point"}
+                                              %)})))
+
+(def run-2-pivoted
+  (-> df-with-cp-dist
+      (tc/select-columns [:participant-id
+                          :run-2-min :run-2-max :run-2-avg])
+      (tc/pivot->longer [:run-2-min :run-2-max :run-2-avg] {:target-columns :run-category
+                                                            :value-column-name :value})
+      (tc/update-columns {:run-category #(map {:run-2-min "Min"
+                                               :run-2-max "Max"
+                                               :run-2-avg "Avg"}
+                                              %)})))
+
+(def runs-time-pivoted
+  (-> df-with-cp-dist
+      (tc/select-columns [:participant-id
+                          :run-0-time :run-1-time :run-2-time])
+      (tc/pivot->longer [:run-0-time :run-1-time :run-2-time] {:target-columns :run-category
+                                                               :value-column-name :value})
+      (tc/update-columns {:run-category #(map {:run-0-time "Run 0 Time"
+                                               :run-1-time "Run 1 Time"
+                                               :run-2-time "Run 2 Time"}
+                                              %)})))
+
+(cl/table run-0-pivoted)
+
+(defn plot-run-pivoted
+  [run run-count]
+  (cl/vl {:data {:values (tc/rows run :as-maps)}
+          :width 800
+          :heigth 1000
+          :transform [{:calculate "random() - 0.5" :as :offset}]
+          :encoding {:x {:field :run-category
+                         :type :nominal
+                         :title (str "Run " run-count " Distances")
+                         :sort ["Min" "Avg" "Max" "Min Distance to Control Point" "Avg Distance to Control Point" "Max Distance to Control Point"]}
+                     :y {:field :value
+                         :type :quantitative
+                         :title "Distance in mm to the reference curves"}}
+
+          :layer [{:mark {:type :point :opacity 0.5 :filled true :size 100}
+                   :encoding {:color {:field :run-category
+                                      :title "Min,Max,Avg"}
+                              :xOffset {:field :offset
+                                        :scale {:domain [-2.5 2.5]}
+                                        :type :quantitative}}}
+                  {:mark {:type :point
+                          :color :red
+                          :shape :diamond
+                          :filled true
+                          :size 200}
+                   :encoding {:y {:field :value
+                                  :aggregate :mean
+                                  :type :quantitative}
+                              :tooltip [{:field :value
+                                         :type :quantitative
+                                         :aggregate :mean
+                                         :title "Mean Score"
+                                         :format ".2f"}]}}]}))
+
+(plot-run-pivoted run-0-pivoted 1)
+(plot-run-pivoted run-1-pivoted 2)
+(plot-run-pivoted run-2-pivoted 3)
+
+(cl/vl {:data {:values (tc/rows runs-time-pivoted :as-maps)}
+        :width 300
+        :heigth 500
+        :encoding {:x {:field :run-category
+                       :type :nominal
+                       :title "Time to completion"
+                       :sort :ascending}
+                   :y {:field :value
+                       :type :quantitative
+                       :title "Time in seconds"}}
+
+        :layer [{:mark {:type :point :opacity 0.5}
+                 :encoding {:color {:field :run-category
+                                    :title "Min,Max,Avg"}}}
+                {:mark {:type :point
+                        :color :red
+                        :shape :diamond}
+                 :encoding {:y {:field :value
+                                :aggregate :mean
+                                :type :quantitative}
+                            :tooltip [{:field :value
+                                       :type :quantitative
+                                       :aggregate :mean
+                                       :title "Mean Score"
+                                       :format ".2f"}]}}]})
+
+;; This code may be used to calculate an correlation matrix, however,
+;; it does not seem like there is enough data to even try.
+;; Its worth noting, that a sample size of 6 is very small.
+;; It does not help, that some questionaire values are nil,
+;; and run 3 (run-2-*) was not always complete.
+;; Hence the correlation is an empty list in this case
+(def corr-matrix
+  (stats/correlation-matrix (list
+                            ;; (tc/column df-with-cp-dist :prism)
+                            ;; (tc/column df-with-cp-dist :helper-curves)
+                            ;; (tc/column df-with-cp-dist :bridges)
+                            ;; (tc/column df-with-cp-dist :shadows)
+                            ;; (tc/column df-with-cp-dist :undo-via-snapping)
+                            ;; (tc/column df-with-cp-dist :xyz-boxes)
+                            ;; (tc/column df-with-cp-dist :hide-curve)
+                            ;; (tc/column df-with-cp-dist :curvature)
+                            ;; (tc/column df-with-cp-dist :boxes)
+                            ;; (tc/column df-with-cp-dist :box-alignment)
+                            ;; (tc/column df-with-cp-dist :orthographic)
+                            ;; (tc/column df-with-cp-dist :manipulation)
+                            ;; (tc/column df-with-cp-dist :menu)
+                             (tc/column df-with-cp-dist :immersive-understanding)
+                             (tc/column df-with-cp-dist :immersive-manipulation)
+                             (tc/column df-with-cp-dist :manipulation)
+
+                             (tc/column df-with-cp-dist :run-0-min)
+                             (tc/column df-with-cp-dist :run-0-avg)
+                             (tc/column df-with-cp-dist :run-0-max)
+                             (tc/column df-with-cp-dist :run-0-time)
+                             (tc/column df-with-cp-dist :run-0-cp-min-dist)
+                             (tc/column df-with-cp-dist :run-0-cp-avg-dist)
+                             (tc/column df-with-cp-dist :run-0-cp-max-dist))))
+
+                           ;; (tc/column df-with-cp-dist :run-1-min)
+                           ;; (tc/column df-with-cp-dist :run-1-avg)
+                           ;; (tc/column df-with-cp-dist :run-1-max)
+                           ;; (tc/column df-with-cp-dist :run-1-time)
+                           ;; (tc/column df-with-cp-dist :run-1-cp-min-dist)
+                           ;; (tc/column df-with-cp-dist :run-1-cp-avg-dist)
+                           ;; (tc/column df-with-cp-dist :run-1-cp-avg-dist)))
+
+                           ;; (tc/column df-with-cp-dist :run-2-min)
+                           ;; (tc/column df-with-cp-dist :run-2-avg)
+                           ;; (tc/column df-with-cp-dist :run-2-max)
+                           ;; (tc/column df-with-cp-dist :run-2-time)))
+
+(def labels ["Immersive Understanding" "Immersive Manipulation" "Overall Manipulation" "Min" "Avg" "Max" "Time" "CP Min" "CP Avg" "CP Max"])
+(def tidy-data
+  (flatten
+   (map-indexed
+    (fn [i row]
+      (map-indexed
+       (fn [j val]
+         {:x (nth labels i) :y (nth labels j) :corr val})
+       row))
+    corr-matrix)))
+
+(def heatmap-spec
+  {:data {:values tidy-data}
+   :mark "rect"
+   :encoding {:x {:field "x" :type "nominal" :title nil :sort :ascending}
+              :y {:field "y" :type "nominal" :title nil :sort :ascending}
+              :color {:field "corr"
+                      :type "quantitative"
+                      :scale {:domain [-1 1] :scheme "redblue"}
+                      :title "Pearson Corr"}
+              :tooltip [{:field "x"} {:field "y"} {:field "corr"}]}
+   :config {:axis {:grid false}
+            :view {:stroke nil}}})
+
+(cl/vl heatmap-spec)
+
+(def corr-matrix
+  (stats/correlation-matrix (list
+                            ;; (tc/column df-with-cp-dist :prism)
+                            ;; (tc/column df-with-cp-dist :helper-curves)
+                            ;; (tc/column df-with-cp-dist :bridges)
+                            ;; (tc/column df-with-cp-dist :shadows)
+                            ;; (tc/column df-with-cp-dist :undo-via-snapping)
+                            ;; (tc/column df-with-cp-dist :xyz-boxes)
+                            ;; (tc/column df-with-cp-dist :hide-curve)
+                            ;; (tc/column df-with-cp-dist :curvature)
+                            ;; (tc/column df-with-cp-dist :boxes)
+                            ;; (tc/column df-with-cp-dist :box-alignment)
+                            ;; (tc/column df-with-cp-dist :orthographic)
+                            ;; (tc/column df-with-cp-dist :manipulation)
+                            ;; (tc/column df-with-cp-dist :menu)
+                             (tc/column df-with-cp-dist :immersive-understanding)
+                             (tc/column df-with-cp-dist :immersive-manipulation)
+                             (tc/column df-with-cp-dist :manipulation)
+
+                             ;; (tc/column df-with-cp-dist :run-0-min)
+                             ;; (tc/column df-with-cp-dist :run-0-avg)
+                             ;; (tc/column df-with-cp-dist :run-0-max)
+                             ;; (tc/column df-with-cp-dist :run-0-time)
+                             ;; (tc/column df-with-cp-dist :run-0-cp-min-dist)
+                             ;; (tc/column df-with-cp-dist :run-0-cp-avg-dist)
+                             ;; (tc/column df-with-cp-dist :run-0-cp-max-dist))
+
+                             (tc/column df-with-cp-dist :run-1-min)
+                             (tc/column df-with-cp-dist :run-1-avg)
+                             (tc/column df-with-cp-dist :run-1-max)
+                             (tc/column df-with-cp-dist :run-1-time)
+                             (tc/column df-with-cp-dist :run-1-cp-min-dist)
+                             (tc/column df-with-cp-dist :run-1-cp-avg-dist)
+                             (tc/column df-with-cp-dist :run-1-cp-max-dist))))
+
+                           ;; (tc/column df-with-cp-dist :run-2-min)
+                           ;; (tc/column df-with-cp-dist :run-2-avg)
+                           ;; (tc/column df-with-cp-dist :run-2-max)
+                           ;; (tc/column df-with-cp-dist :run-2-time)))
+
+(def tidy-data
+  (flatten
+   (map-indexed
+    (fn [i row]
+      (map-indexed
+       (fn [j val]
+         {:x (nth labels i) :y (nth labels j) :corr val})
+       row))
+    corr-matrix)))
+
+(def heatmap-spec
+  {:data {:values tidy-data}
+   :mark "rect"
+   :encoding {:x {:field "x" :type "nominal" :title nil :sort :ascending}
+              :y {:field "y" :type "nominal" :title nil :sort :ascending}
+              :color {:field "corr"
+                      :type "quantitative"
+                      :scale {:domain [-1 1] :scheme "redblue"}
+                      :title "Pearson Corr"}
+              :tooltip [{:field "x"} {:field "y"} {:field "corr"}]}
+   :config {:axis {:grid false}
+            :view {:stroke nil}}})
+
+(cl/vl heatmap-spec)
 ;; # Analytical statements
 ;; General statements on analytical results. Statistical Analysis is not possible
 ;;
@@ -340,10 +693,12 @@
 ;; - 19: Sensoren großes Problem. Alignment Wichtig
 ;; - Aufpassen, dass Snapping aus ist
 ;; - Proband bewegt sich dynamisch im Raum
+(print-all-phases 99461)
 ;;
 ;; ## 57849
 ;;
 ;; - Hat nicht viel geredet, nur freitext kommentar am Ende dargelassen
+(print-all-phases 57849)
 ;;
 ;; ## 22144
 ;;
@@ -351,6 +706,7 @@
 ;; - Haken auch mit Kugel zum besseren anpeilen
 ;; - Beim loslassen des Controllers verspringt das arg
 ;; - Experte, hat super schnell alles verstanden und gemacht
+(print-all-phases 22144)
 ;;
 ;; ## 34568
 ;;
@@ -366,6 +722,7 @@
 ;; - Loslassen der Kugeln trotz Präzisionsmodus verreißt
 ;; - Boxen besser Durchsichtig bei Ziehen
 ;; - Daumenmenü immer zu nah am Körper, besser fixe distanze
+(print-all-phases 34568)
 ;;
 ;; ## 98562
 ;;
@@ -386,6 +743,7 @@
 ;; - Vielleicht Raum der größe nach anpassen. Aufgeräumt
 ;; - Menü war zu nar dran, sonst gut
 ;; - GGF wenn man viel Übung hat. War aber nicht schneller, als am Desktop. Man konnte direkt an die Kontrollpunkte, und konnte die viel besser Visualisieren. Ggf sogar präziser als am Desktop
+(print-all-phases 98562)
 ;;
 ;; ## 88300
 ;;
@@ -396,6 +754,7 @@
 ;; - Wenn boxen, dann nur NUV
 ;; - Menü zu nah am Körper
 ;; - Menü zu unübersichtlich
+(print-all-phases 88300)
 
 ;; ## Most important Statements
 ;; - It is irritating to walk into the surface/path (2x)
